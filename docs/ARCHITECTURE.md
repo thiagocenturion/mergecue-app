@@ -548,6 +548,13 @@ Implementation notes (binding for callers):
 - Additive reads: `lastSyncAt(account:)`, `event(id:)`, `attentionItems(changeRequest:)`, `taskIDs()`,
   `approvals(previewFingerprint:)`, `hasRuleFired(ruleID:eventID:)`, `mapping(id:)`, `removeSetting(_:)`,
   `auditEntries(limit:taskID:)`, `schemaVersion()`.
+- Signature details as implemented (integration pass): `attentionItems(includeInactive:now: Date = Date())` returns,
+  when `includeInactive == false`, only actionable items (open, or snoozed with `snoozedUntil <= now`), ordered by
+  priority then `updatedAt` desc. `deleteAccount(_:)`, `deleteRule(id:)`, `deleteMapping(id:)` and
+  `recordRuleFiring(...)` return `@discardableResult Bool`; `applySyncBatch` is `@discardableResult`. Settings are
+  `setting<T: Decodable>(_:as:)` / `setSetting<T: Encodable>(_:_:)` (nil removes). `SyncBatch.init` defaults every
+  collection to empty (only `account` and `syncedAt` required). Also `static latestSchemaVersion`,
+  `nonisolated let path: String?` (nil in memory). `resetAll()` needs every other connection to the file closed.
 
 ---
 
@@ -563,20 +570,25 @@ public struct GitHubRateLimitParser, GitLabRateLimitParser, GenericRateLimitPars
 public struct RetryPolicy: Sendable { var maxAttempts: Int; var baseDelay: TimeInterval; var maxDelay: TimeInterval; static let `default`; func delay(forAttempt: Int, jitter: Double) -> TimeInterval }
 public actor ETagCache { get(url) -> (etag, body)?; set(url, etag, body) }  // bounded LRU
 public actor APIClient {
-    init(baseURL: URL, credential: Credential, transport: any HTTPTransport, rateLimitParser: any RateLimitParsing, retry: RetryPolicy = .default, etagCache: ETagCache? = ETagCache(), clock: any MCClock = SystemClock(), extraHeaders: [String: String] = [:])
+    init(baseURL: URL, credential: Credential, transport: any HTTPTransport, rateLimitParser: any RateLimitParsing, retry: RetryPolicy = .default, etagCache: ETagCache? = ETagCache(), clock: any MCClock = SystemClock(), extraHeaders: [String: String] = [:], jitter: @escaping @Sendable () -> Double = { .random(in: 0...1) })
     func get(_ path: String, query: [URLQueryItem] = [], headers: [String: String] = [:], useETag: Bool = false) async throws -> HTTPResponse
-    func getJSON<T: Decodable>(_ type: T.Type, _ path: String, query: [URLQueryItem] = [], decoder: JSONDecoder) async throws -> T
-    func send(_ method: String, _ path: String, json: (any Encodable & Sendable)?, headers: [String: String] = [:]) async throws -> HTTPResponse
-    func getAbsolute(_ url: URL, headers:) async throws -> HTTPResponse     // pagination "next" links
+    nonisolated func getJSON<T: Decodable>(_ type: T.Type, _ path: String, query: [URLQueryItem] = [], headers: [String: String] = [:], useETag: Bool = false, decoder: JSONDecoder = .mergeCueProvider) async throws -> T
+    func send(_ method: String, _ path: String, json: (any Encodable & Sendable)? = nil, headers: [String: String] = [:]) async throws -> HTTPResponse
+    func send(_ method: String, _ path: String, body: Data?, contentType: String?, headers: [String: String] = [:]) async throws -> HTTPResponse
+    nonisolated func sendJSON<T: Decodable>(_ type: T.Type, _ method: String, _ path: String, json: (any Encodable & Sendable)?, headers: [String: String] = [:], decoder: JSONDecoder = .mergeCueProvider) async throws -> T
+    func getAbsolute(_ url: URL, headers: [String: String] = [:], useETag: Bool = false) async throws -> HTTPResponse   // pagination "next" links (same origin only)
+    func sendAbsolute(_ method: String, _ url: URL, json: (any Encodable & Sendable)?, headers: [String: String] = [:]) async throws -> HTTPResponse
+    nonisolated func url(for path: String, query: [URLQueryItem] = []) throws -> URL; static func decode<T: Decodable>(_:from:decoder:) throws -> T
     var lastRateLimit: RateLimitInfo? { get }
+    // non-2xx → throws ProviderError (mapHTTPError); transport → mapTransportError; cancellation → CancellationError
 }
 public enum Pagination { static func nextLink(fromLinkHeader: String?) -> URL? }
 public func mapHTTPError(_ response: HTTPResponse, parser: any RateLimitParsing) -> ProviderError?   // 401→unauthorized, 403 (+rate-limit headers → rateLimited, else forbidden w/ scope hints from X-Accepted-OAuth-Scopes / body), 404→notFound, 409/422→conflict/invalidRequest, 429→rateLimited, 5xx→server
 public func mapTransportError(_ error: Error) -> ProviderError      // URLError.notConnectedToInternet/networkConnectionLost/… → offline, timedOut → timeout
 public final class KeychainCredentialStore: CredentialStoring   // kSecClassGenericPassword, service "dev.mergecue.credentials", account = AccountKey.id, AfterFirstUnlockThisDeviceOnly, JSON payload
 public final class InMemoryCredentialStore: CredentialStoring
-public final class StubTransport: HTTPTransport, @unchecked Sendable {  // deterministic test/demo transport
-    public struct Route { method: String; pathPattern: String /* "/repos/{owner}/{repo}/pulls/*" */; query: [String: String] = [:]; respond: @Sendable (HTTPRequest) -> HTTPResponse }
+public final class StubTransport: HTTPTransport {  // Sendable via an internal Mutex; deterministic test/demo transport
+    public struct Route { method: String; pathPattern: String /* "/repos/{owner}/{repo}/pulls/*" */; query: [String: String] = [:]; handler: @Sendable (HTTPRequest, Match) throws -> HTTPResponse /* `respond` still accepted by init and as a computed property */ }
     init(routes: [Route], baseURL: URL); func add(_ route: Route); var requests: [HTTPRequest] { get }
     static func json(_ data: Data, status: Int = 200, headers: [String: String] = [:]) -> HTTPResponse helpers
     // unmatched request → 404 with body {"message":"stub: no route for METHOD path"}
@@ -638,9 +650,12 @@ public enum IPCErrorCode: String, Codable, Sendable { case appUnavailable = "app
 public struct IPCError: Error, Codable, Sendable, Equatable { var code: IPCErrorCode; var message: String; var retryable: Bool; var data: JSONValue? }
 public struct IPCResponse: Codable, Sendable { var v: Int; var id: String; var result: JSONValue?; var error: IPCError? }
 public protocol IPCRequestHandling: Sendable { func handle(method: IPCMethod, params: JSONValue, client: IPCClientInfo) async -> Result<JSONValue, IPCError> }
-public actor IPCServer { init(paths: MergeCuePaths, handler: any IPCRequestHandling, peerValidator: PeerValidator?); func start() throws; func stop() }
+public actor IPCServer { init(paths: MergeCuePaths, handler: any IPCRequestHandling, peerValidator: (any PeerValidator)?, configuration: Configuration = .init()); func start() throws(IPCServerError); func stop(); var isRunning: Bool; func connectionCount() async -> Int }
 public actor IPCClient { init(paths: MergeCuePaths, clientInfo: IPCClientInfo, timeout: TimeInterval = 15)
     func call<P: Encodable & Sendable, R: Decodable & Sendable>(_ method: IPCMethod, _ params: P, as: R.Type) async throws(IPCError) -> R
+    func call<P: IPCMethodParams>(_ params: P) async throws(IPCError) -> P.Output          // typed: call(ClaimTaskParams(…)) → ClaimTaskResult
+    func callRaw(_ method: IPCMethod, params: JSONValue = .object([:])) async throws(IPCError) -> JSONValue   // MCP pass-through
+    func ping() async throws(IPCError) -> PingResult
     // Missing socket / ECONNREFUSED / missing token → IPCError(code: .appUnavailable, "MergeCue app is not running…", retryable: true)
 }
 ```
@@ -673,6 +688,46 @@ Engine-side guarantees (implemented in MergeCueEngine): lease validation, expect
 only, per-task rate limit (≤ 30 writes/min → `rate_limited`), terminal-state resurrection rejected
 (`terminal_state`), cross-repo/provider references rejected (`cross_scope_reference`), paths confined to the task's
 worktree (`path_outside_checkout`), every rejected write recorded as `rejected_call` activity.
+
+Implemented additions and semantics (integration pass; see doc comments in `Sources/MergeCueIPC`):
+- DTO Swift names: one `…Params`/`…Result` pair per method (`PingParams`/`PingResult`, `ListAttentionParams`/
+  `ListAttentionResult`, `ListTasksParams`/`ListTasksResult`, `GetTaskParams`/`TaskContextDTO`,
+  `GetChangeContextParams`/`ChangeContextResult`, `GetThreadParams`/`ThreadDTO`, `GetCIFailureParams`/
+  `CIFailureResult`, `GetDiffParams`/`GetDiffResult`, `ClaimTaskParams`/`ClaimTaskResult`, `HeartbeatParams` and
+  `UpdateTaskParams`/`LeaseRenewalResult`, `ReportChangesParams`/`ReportChangesResult`, `ReportTestsParams`/
+  `ReportTestsResult`, `SubmitResultParams` and `FailTaskParams`/`TaskStateResult`, `ProposeRuleParams`/
+  `ProposeRuleResult`, `ListRulesParams`/`ListRulesResult`; `Get…Result`/`HeartbeatResult`/… typealiases exist).
+  Every params type conforms to `IPCMethodParams` (`static method`, `Output`, `validate() throws(IPCError)`).
+- Validation split: `IPCCoding.decodeParams` checks structure only (`invalid_params` with the field path); the engine
+  calls `IPCCoding.decodeValidatedParams` / `validate()` so it can record `rejected_call`. Bounds live in
+  `IPCLimits` and per-DTO statics; `resolvedLimit`/`resolvedMaxBytes`/… expose defaults.
+- Defaults where the table is silent: `list_tasks` limit 50 (≤100); `get_change_context` `max_files` 100;
+  `get_diff` `max_bytes` 64 KiB; `propose_rule.preview` is a string; `quiet_hours` = `{start:"HH:MM", end, time_zone}`.
+- Optional (omitted when absent, never fabricated): `TaskContextDTO.checkout`, `ClaimTaskResult.checkout`,
+  `ThreadDTO.web_url`, `ThreadSummaryDTO.last_author`. Additive wire fields: `ThreadSummaryDTO.kind`,
+  `ChangedFileDTO.old_path`, `ChangeContextResult.changed_file_count`, `RuleSummaryDTO.task_type`.
+  `TaskSummaryDTO` = `{task_id, type, state, version, title, provider, account, repo, number, change_ref, thread_id?,
+  check_id?, agent_name?, lease_expires_at?, created_at, updated_at}`. `UntrustedText` travels as
+  `{source, author?, created_at?, text}`.
+- Core → DTO initializers (redact + bound untrusted text): `AttentionItemDTO(_:account:)`, `TaskSummaryDTO(_:account:)`,
+  `TaskContextDTO(_:account:instructions:nextSteps:artifacts:isDemo:)`, `ChangeContextResult(_:includeFiles:maxFiles:
+  maxDescriptionBytes:)`, `ThreadDTO(_:changeRef:maxCommentBytes:)`, `CIFailureResult(_:log:maxBytes:)`,
+  `GetDiffResult(_: DiffPayload)` / `GetDiffResult(_: WorkspaceChanges, baseSHA:)`, `RuleSummaryDTO(_:)`.
+- Handlers: `IPCClosureHandler { method, params, client in … }`; return `IPCCoding.result(dto)`. Requests on one
+  connection are handled in order; connections run concurrently. The server replaces `client.pid` with the
+  kernel-reported peer pid; error precedence is `protocol_version` → `unauthorized` (connection closed) →
+  `unsupported` → `invalid_params`. Error messages are redacted before sending; an over-4 MiB result becomes
+  `internal_error`. Idle connections close after 10 s (`Configuration.handshakeTimeout`).
+- `IPCServerError`: `insecureDirectory`, `insecureSocketPath`, `socketPathTooLong`, `alreadyRunning` (a live listener
+  owns the socket), `system(operation:code:)`. `stop()` removes socket/token only if they are still ours.
+- Peer validation: `PeerValidator.validate(_ peer: IPCPeerCredentials) throws`; `CodeSignaturePeerValidator.make(
+  requirement:)` returns nil for a nil/blank requirement (unsigned dev builds rely on uid + token), plus
+  `requirement(teamIdentifier:)` and `currentTeamIdentifier()`.
+- Client: one connection per call (app restarts/new tokens are picked up; one retry if the token changes mid-call).
+  Timeouts and early closes are retryable `app_unavailable`; client-made errors carry `data.reason`
+  (`token_missing|token_invalid|token_unreadable|not_running|permission_denied|busy|connect_failed|timeout|
+  connection_closed|cancelled`); cancellation is `internal_error` with reason `cancelled`. Connection-level
+  rejections are answered once with response id `""`.
 
 ---
 
