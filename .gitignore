@@ -8,3 +8,4 @@ xcuserdata/
 /dist/
 *.xcresult
 /.mergecue-home/
+.claude/worktrees/
