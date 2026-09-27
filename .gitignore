@@ -1,0 +1,10 @@
+.build/
+.swiftpm/
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+.DS_Store
+/dist/
+*.xcresult
+/.mergecue-home/
