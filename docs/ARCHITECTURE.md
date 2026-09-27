@@ -525,6 +525,30 @@ pruneHistory(olderThan: Date) -> Int
 `StoreError`: `versionConflict(current: Int)`, `notFound`, `corrupted(String)`, `sqlite(code: Int32, message: String)`.
 Corrupted DB detection: `integrityCheck()`; Runtime offers export + reset.
 
+Implementation notes (binding for callers):
+- Every method `throws` `StoreError` (plus additive cases `invalidValue(String)` — refused input such as a cross-account
+  batch row, a secret-shaped setting, a non-increasing task version — and `schemaTooNew(found:supported:)`).
+  `sqlite.code` is the extended result code; use `isUniqueConstraintViolation` to detect a `TaskID` collision on
+  `insertTask` and retry. A row that needs a missing parent (account for repositories/tasks/mappings/batches, task
+  for activities/artifacts/approvals/links, rule for firings) throws `notFound`.
+- `init(path:)`/`init(url:)` create the file (0600; a missing parent 0700) and migrate it; a non-database file throws
+  `corrupted` → `MergeCueDatabase.removeDatabaseFiles(atPath:)` is the recovery path. `resetAll()` recreates the file.
+- `updateTask(_:expectedVersion:)` requires `task.version > expectedVersion` (normally `+ 1`).
+- `applySyncBatch` rejects rows of another account; removals are applied after upserts; events use
+  `INSERT … ON CONFLICT(id) DO NOTHING` (only duplicate ids are skipped).
+- Attention merge rule (`AttentionMergePolicy`, applied per dedupe key): Sync owns content, the user owns state. Content
+  comes from the incoming item; `id`/`createdAt`/`linkedTaskID` are kept; `eventIDs` are unioned (newest 200);
+  `updatedAt` = max. **New activity** = event ids the stored item has not seen **and** incoming `updatedAt` > stored
+  `updatedAt` (so Sync must set `updatedAt` to the latest activity time). Incoming `.resolved` resolves the item unless
+  the user dismissed it. New activity reopens `.resolved`/`.acknowledged` items (`.open` + unread), marks `.open` and
+  `.snoozed` items unread (snooze kept), and never touches `.dismissed`. Otherwise the stored `isUnread`/`disposition`
+  are kept. User actions (`setAttentionUnread/Disposition`, `linkAttention`) never change `updatedAt`.
+- Free text in audit entries (`target`, `detail`), activities (`message`, `data`), artifacts and approval notes is run
+  through `SecretRedactor` on write. `AuditEntry` gained `taskID: TaskID?` (audit of non-terminal tasks is never pruned).
+- Additive reads: `lastSyncAt(account:)`, `event(id:)`, `attentionItems(changeRequest:)`, `taskIDs()`,
+  `approvals(previewFingerprint:)`, `hasRuleFired(ruleID:eventID:)`, `mapping(id:)`, `removeSetting(_:)`,
+  `auditEntries(limit:taskID:)`, `schemaVersion()`.
+
 ---
 
 ## 4. MergeCueNetworking
