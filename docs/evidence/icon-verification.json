@@ -1,0 +1,314 @@
+{
+  "cleaned_source" : {
+    "bbox_alpha_ge128" : [
+      76,
+      86,
+      1178,
+      1167
+    ],
+    "bbox_alpha_gt0" : [
+      75,
+      86,
+      1179,
+      1168
+    ],
+    "faint_pixels_beyond_12px" : 0,
+    "histogram" : {
+      "0" : 426750,
+      "1-15" : 425,
+      "128-239" : 2366,
+      "16-127" : 3081,
+      "240-252" : 1074,
+      "253-254" : 200,
+      "255" : 1138620
+    },
+    "interior_alpha_min_max" : [
+      255,
+      255
+    ],
+    "size" : [
+      1254,
+      1254
+    ]
+  },
+  "master" : {
+    "bbox_alpha_ge128" : [
+      100,
+      108,
+      924,
+      916
+    ],
+    "bbox_alpha_gt0" : [
+      99,
+      107,
+      925,
+      917
+    ],
+    "body_box" : [
+      100.0,
+      108.23,
+      924.0,
+      915.77
+    ],
+    "faint_pixels_beyond_12px" : 0,
+    "histogram" : {
+      "0" : 407435,
+      "1-15" : 168,
+      "128-239" : 1988,
+      "16-127" : 2059,
+      "240-252" : 349,
+      "253-254" : 30,
+      "255" : 636547
+    },
+    "interior_alpha_min_max" : [
+      255,
+      255
+    ],
+    "scale" : 0.747731,
+    "size" : [
+      1024,
+      1024
+    ]
+  },
+  "outputs" : {
+    "icon_128x128.png" : {
+      "alpha_dips_on_inward_scanlines" : 0,
+      "alpha_histogram" : {
+        "0" : 6200,
+        "1-254" : 384,
+        "255" : 9800
+      },
+      "antialiased_edge_pixels" : 384,
+      "center_opaque" : true,
+      "corners_transparent" : true,
+      "edge_pixels_sampled" : 334,
+      "fringe_max" : 23,
+      "fringe_p95" : 8,
+      "matches_pipeline" : true,
+      "mode_ok" : true,
+      "pass" : true,
+      "pixels_outside_body_tolerance" : 0,
+      "px" : 128,
+      "size_ok" : true
+    },
+    "icon_128x128@2x.png" : {
+      "alpha_dips_on_inward_scanlines" : 0,
+      "alpha_histogram" : {
+        "0" : 25094,
+        "1-254" : 1079,
+        "255" : 39363
+      },
+      "antialiased_edge_pixels" : 1079,
+      "center_opaque" : true,
+      "corners_transparent" : true,
+      "edge_pixels_sampled" : 645,
+      "fringe_max" : 8,
+      "fringe_p95" : 6,
+      "matches_pipeline" : true,
+      "mode_ok" : true,
+      "pass" : true,
+      "pixels_outside_body_tolerance" : 0,
+      "px" : 256,
+      "size_ok" : true
+    },
+    "icon_16x16.png" : {
+      "alpha_dips_on_inward_scanlines" : 0,
+      "alpha_histogram" : {
+        "0" : 72,
+        "1-254" : 44,
+        "255" : 140
+      },
+      "antialiased_edge_pixels" : 44,
+      "center_opaque" : true,
+      "corners_transparent" : true,
+      "edge_pixels_sampled" : 40,
+      "fringe_max" : 0,
+      "fringe_p95" : 0,
+      "matches_pipeline" : true,
+      "mode_ok" : true,
+      "pass" : true,
+      "pixels_outside_body_tolerance" : 0,
+      "px" : 16,
+      "size_ok" : true
+    },
+    "icon_16x16@2x.png" : {
+      "alpha_dips_on_inward_scanlines" : 0,
+      "alpha_histogram" : {
+        "0" : 368,
+        "1-254" : 92,
+        "255" : 564
+      },
+      "antialiased_edge_pixels" : 92,
+      "center_opaque" : true,
+      "corners_transparent" : true,
+      "edge_pixels_sampled" : 84,
+      "fringe_max" : 0,
+      "fringe_p95" : 0,
+      "matches_pipeline" : true,
+      "mode_ok" : true,
+      "pass" : true,
+      "pixels_outside_body_tolerance" : 0,
+      "px" : 32,
+      "size_ok" : true
+    },
+    "icon_256x256.png" : {
+      "alpha_dips_on_inward_scanlines" : 0,
+      "alpha_histogram" : {
+        "0" : 25094,
+        "1-254" : 1079,
+        "255" : 39363
+      },
+      "antialiased_edge_pixels" : 1079,
+      "center_opaque" : true,
+      "corners_transparent" : true,
+      "edge_pixels_sampled" : 645,
+      "fringe_max" : 8,
+      "fringe_p95" : 6,
+      "matches_pipeline" : true,
+      "mode_ok" : true,
+      "pass" : true,
+      "pixels_outside_body_tolerance" : 0,
+      "px" : 256,
+      "size_ok" : true
+    },
+    "icon_256x256@2x.png" : {
+      "alpha_dips_on_inward_scanlines" : 0,
+      "alpha_histogram" : {
+        "0" : 101359,
+        "1-254" : 2184,
+        "255" : 158601
+      },
+      "antialiased_edge_pixels" : 2184,
+      "center_opaque" : true,
+      "corners_transparent" : true,
+      "edge_pixels_sampled" : 1299,
+      "fringe_max" : 1,
+      "fringe_p95" : 0,
+      "matches_pipeline" : true,
+      "mode_ok" : true,
+      "pass" : true,
+      "pixels_outside_body_tolerance" : 0,
+      "px" : 512,
+      "size_ok" : true
+    },
+    "icon_32x32.png" : {
+      "alpha_dips_on_inward_scanlines" : 0,
+      "alpha_histogram" : {
+        "0" : 368,
+        "1-254" : 92,
+        "255" : 564
+      },
+      "antialiased_edge_pixels" : 92,
+      "center_opaque" : true,
+      "corners_transparent" : true,
+      "edge_pixels_sampled" : 84,
+      "fringe_max" : 0,
+      "fringe_p95" : 0,
+      "matches_pipeline" : true,
+      "mode_ok" : true,
+      "pass" : true,
+      "pixels_outside_body_tolerance" : 0,
+      "px" : 32,
+      "size_ok" : true
+    },
+    "icon_32x32@2x.png" : {
+      "alpha_dips_on_inward_scanlines" : 0,
+      "alpha_histogram" : {
+        "0" : 1500,
+        "1-254" : 197,
+        "255" : 2399
+      },
+      "antialiased_edge_pixels" : 197,
+      "center_opaque" : true,
+      "corners_transparent" : true,
+      "edge_pixels_sampled" : 161,
+      "fringe_max" : 0,
+      "fringe_p95" : 0,
+      "matches_pipeline" : true,
+      "mode_ok" : true,
+      "pass" : true,
+      "pixels_outside_body_tolerance" : 0,
+      "px" : 64,
+      "size_ok" : true
+    },
+    "icon_512x512.png" : {
+      "alpha_dips_on_inward_scanlines" : 0,
+      "alpha_histogram" : {
+        "0" : 101359,
+        "1-254" : 2184,
+        "255" : 158601
+      },
+      "antialiased_edge_pixels" : 2184,
+      "center_opaque" : true,
+      "corners_transparent" : true,
+      "edge_pixels_sampled" : 1299,
+      "fringe_max" : 1,
+      "fringe_p95" : 0,
+      "matches_pipeline" : true,
+      "mode_ok" : true,
+      "pass" : true,
+      "pixels_outside_body_tolerance" : 0,
+      "px" : 512,
+      "size_ok" : true
+    },
+    "icon_512x512@2x.png" : {
+      "alpha_dips_on_inward_scanlines" : 0,
+      "alpha_histogram" : {
+        "0" : 407435,
+        "1-254" : 4594,
+        "255" : 636547
+      },
+      "antialiased_edge_pixels" : 4594,
+      "center_opaque" : true,
+      "corners_transparent" : true,
+      "edge_pixels_sampled" : 3111,
+      "fringe_max" : 2,
+      "fringe_p95" : 0,
+      "matches_pipeline" : true,
+      "mode_ok" : true,
+      "pass" : true,
+      "pixels_outside_body_tolerance" : 0,
+      "px" : 1024,
+      "size_ok" : true
+    }
+  },
+  "source" : {
+    "bbox_alpha_ge128" : [
+      76,
+      87,
+      1178,
+      1167
+    ],
+    "bbox_alpha_gt0" : [
+      0,
+      0,
+      1223,
+      1254
+    ],
+    "faint_pixels_beyond_12px" : 973,
+    "file" : "Design/MergeCue-AppIcon.png",
+    "histogram" : {
+      "0" : 412749,
+      "1-15" : 14440,
+      "128-239" : 3368,
+      "16-127" : 3339,
+      "240-252" : 131811,
+      "253-254" : 1006077,
+      "255" : 732
+    },
+    "interior_alpha_min_max" : [
+      251,
+      254
+    ],
+    "silhouette_bbox" : [
+      76,
+      87,
+      1178,
+      1167
+    ],
+    "size" : [
+      1254,
+      1254
+    ]
+  }
+}
