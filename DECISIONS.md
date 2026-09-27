@@ -24,7 +24,7 @@ Living record of technical decisions (Phase 0 onward). Newest entries at the bot
 | D8 | Provider auth defaults: GitHub fine-grained/classic PAT via secure field (+ optional GitHub OAuth device flow when a client ID is configured, + explicit "Import from GitHub CLI"); GitLab PAT (`read_api`, `api` only when writes enabled); Bitbucket Cloud Atlassian API token with scopes (email + token) or workspace/repository access token. No app passwords (deprecated by Atlassian). Tokens only in Keychain. | Distributable desktop client must not embed provider secrets (plan §5.3, §9). |
 | D9 | Polling baseline for all providers; no webhooks/relay. | Plan §3. |
 | D10 | Demo mode runs the **real adapters** over a stub HTTP transport serving provider-native fixture JSON, always badged "Demo data". | Proves parsing paths; never confusable with live data. |
-| D11 | Dev bundle identifier `dev.mergecue.MergeCue` until the owner supplies a release identity. | Plan §2 default. |
+| D11 | Bundle identifier `com.thiagocenturion.MergeCue` (helper: `com.thiagocenturion.MergeCue.mcp`); signed with the owner's Apple Development identity, team `TTSKDZ455K`. No Developer ID yet → no notarization. | Owner answer 2026-09-27. |
 | D12 | Tests use Swift Testing. | Modern, parallel, built into the toolchain. |
 | D13 | Task state machine, approved-action outcome: `approved_action --markDone(system)--> done` when the last approved action succeeded; `approved_action --actionSucceeded(system)--> ready_for_review` when more actions remain. Use `TaskStateMachine.triggerAfterSuccessfulAction(moreActionsRemain:)`. | Reading of the §2.6 row "done — or ready_for_review … (engine decides by passing markDone vs. staying)"; the only way both outcomes are reachable with the listed triggers. |
 | D14 | Stable ids: `v1/<kind>/<host>/u:<user>/r:<repo>/cr:<cr>` + `/th:<kind>:<id>` / `/ck:<source>:<id>`, every component percent-encoded (RFC 3986 unreserved kept). `RepoKey.shortID` uses prefix `repo_`. Event ids: `evt_` + 32 hex. Attention dedupe keys come from `AttentionItem.dedupeKey(…)` helpers. | Injective, DB-safe keys; one shared derivation for Sync and Engine. |
@@ -33,3 +33,14 @@ Living record of technical decisions (Phase 0 onward). Newest entries at the bot
 
 ## Open questions for the owner
 Tracked with defaults in effect (plan §2 table). Answers are recorded here when received.
+
+### Owner answers (2026-09-27)
+| Question | Answer | Effect |
+| --- | --- | --- |
+| Live provider access | Use the existing `gh` login for live GitHub.com reads. No GitLab/Bitbucket access yet. | GitHub live read gate runs via the app's explicit "Import from GitHub CLI" path; GitLab.com and Bitbucket Cloud live gates stay **unverified** (fixtures only) until the owner connects accounts. |
+| Project remote | `git@github.com:thiagocenturion/mergecue-app.git` (private) is `origin`. | Source pushed there at stable checkpoints. |
+| Live remote writes (test PR/comments) | Not yet authorized. | Ask again before creating a test PR or posting comments. |
+| Real agent round trip | Claude Code **and** Codex CLI, session-only MCP config, synthetic task in a throwaway repo. | Both agent adapters are tested; no global agent config changes. |
+| Remote write actions | Replies + resolve/unresolve thread only (per-action preview + approval, off by default per account). | `postReply`, `resolveThread` enabled by policy; `requestChanges`, `commitAndPush`, `merge` modeled but hidden/disabled. `applyPatch` is local and allowed with approval. |
+| Signing / bundle id | Apple Development cert, bundle id `com.thiagocenturion.MergeCue`. | See D11. |
+| Company repo / GitButler / self-managed instances | No answer → defaults: synthetic fixtures + dedicated repos; manual checkout mapping; hosted instances only. | — |

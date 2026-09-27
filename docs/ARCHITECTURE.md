@@ -649,5 +649,7 @@ Public API groups (UI contract, exact names chosen by the implementer and docume
 - UI: `NSStatusItem` + `NSPopover` (click-opened, keyboard accessible) with sections Needs you / Waiting for agent /
   AI working / Ready (top 3 each + counts), main window (Inbox, PRs & MRs, Tasks, Rules, Settings), onboarding,
   agent wizard, task detail, diff and CI excerpt viewers, action previews. See §4 of PLAN.
-- App bundle id (dev): `dev.mergecue.MergeCue`; not sandboxed; Hardened Runtime on; `mergecue-mcp` embedded in
-  `Contents/MacOS/`. Login item via `SMAppService.mainApp` (opt-in).
+- App bundle id `com.thiagocenturion.MergeCue` (helper `com.thiagocenturion.MergeCue.mcp`), signed with Apple Development
+  (team `TTSKDZ455K`); not sandboxed; Hardened Runtime on; `mergecue-mcp` embedded in `Contents/MacOS/`.
+- Remote write policy (owner): only `post_reply` and `resolve_thread` may be enabled; `request_changes`,
+  `commit_and_push`, `merge` stay disabled/hidden. `apply_patch` (local) requires approval. Login item via `SMAppService.mainApp` (opt-in).
