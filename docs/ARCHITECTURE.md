@@ -561,6 +561,41 @@ public final class StubTransport: HTTPTransport, @unchecked Sendable {  // deter
 GET retries only on 5xx/timeout/offline (max `retry.maxAttempts`); writes are never retried automatically.
 304 responses with a cached ETag return the cached body with `status` 200 and header `x-mergecue-cache: hit`.
 
+Implemented additions and semantics (additive; see doc comments in `Sources/MergeCueNetworking`):
+- `JSONDecoder.mergeCueProvider` (fresh instance per access) + `ProviderDateParser.parse(_:)`: ISO-8601 with or
+  without any fraction and any offset (`Z`, `+00:00`, `-0800`), plus date-only `YYYY-MM-DD` (midnight UTC).
+  `APIClient.getJSON`/`sendJSON` default to it; decoding failures throw `ProviderError.decoding` (no body content).
+- Paths: `RequestURLBuilder` keeps the base path prefix (`…/api/v4` + `/projects/1`), treats `path` as already
+  percent-encoded, rejects `.`/`..` segments; query items are encoded leaving only RFC 3986 unreserved characters.
+  Adapters encode dynamic segments with `RequestURLBuilder.encodePathSegment(_:)` (`acme/api` → `acme%2Fapi`).
+- The credential only goes to the base URL's origin: `getAbsolute`/`sendAbsolute`/absolute paths on another
+  scheme/host/port throw `invalidRequest`; `URLSessionTransport` strips `Authorization`/`PRIVATE-TOKEN`/`Cookie` on
+  cross-origin redirects (e.g. GitHub Actions log downloads) and refuses `https`→`http` downgrades.
+- Retries: `RetryPolicy.delay` = `baseDelay·2^(n-1)` capped at `maxDelay`, equal jitter (`[d/2, d]`); jitter source
+  injectable (`APIClient(…, jitter:)`). `Retry-After` ≤ `RetryPolicy.maxRetryAfter` (60 s) is slept on (429, 403
+  secondary limits, 5xx); a longer one throws `.rateLimited` at once (for a 5xx GET: `rateLimited(resetAt: now+n,
+  retryAfter: n)`). 408 counts as a timeout. Cancellation always surfaces as `CancellationError`.
+- Errors thrown by `APIClient` are scrubbed of the credential's literal secret material (token, password, Basic
+  pair/base64, refresh token, and their percent-encoded forms) on top of `SecretRedactor`.
+- `lastRateLimit` = parser result of the most recent response that carried rate-limit headers (304s included).
+- `ETagCache` is per account (key = full URL), bounded by entries (512) and body bytes (32 MiB); it also keeps the
+  original response headers so a 304 hit still carries `Link`.
+- `mapHTTPError` table: 401 unauthorized; 403 rate-limited (`retry-after`, `*ratelimit-remaining: 0`, "rate limit"
+  message) else `forbidden(missingScope:)` from `X-Accepted-OAuth-Scopes` vs `X-OAuth-Scopes` (scope hierarchy aware),
+  `X-Accepted-GitHub-Permissions`, `WWW-Authenticate … scope=`, GitLab `scope` / Bitbucket `detail.required`
+  bodies; 404/410 notFound; 408 server(408); 409/412/423 conflict; 422 and other 4xx invalidRequest; 429
+  rateLimited; 5xx server. `isCancellation(_:)` helper.
+- `KeychainCredentialStore` uses the data protection keychain when entitled and falls back to the file-based
+  keychain on `errSecMissingEntitlement`; reads/deletes consult both. Real-keychain tests only run with
+  `MERGECUE_KEYCHAIN_TESTS=1`. `InMemoryCredentialStore.simulateFailure(_:)` fakes a locked keychain.
+- `StubTransport`: patterns support `{param}` (also with literal prefix/suffix, `{n}.diff`), `*` (one segment) and
+  trailing `**`; a pattern may embed a query; route `query` values of `*` only require presence. Most specific route
+  wins (literals, then exact length, then query constraints), ties go to the latest `add`. Extra API:
+  `Route(method:pathPattern:query:handler:)` with `Match` (`params`, decoded `query`), `.fixed`, `.getJSON`,
+  `.sequence` (successive responses), `.failing` (throws a `URLError`); `replaceRoutes`, `unmatchedRequests`,
+  `requests(_:path:)`, `clearRequests()`; helpers `json(_:String)`, `json(value: JSONValue)`,
+  `json(encoding:)`, `text`, `empty(status:)`; `HTTPRequest.jsonBody` / `.queryItems` for assertions.
+
 ---
 
 ## 5. MergeCueIPC — the private channel and the MCP contract (§3 Components, §7)
