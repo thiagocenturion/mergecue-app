@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: SwiftPM tests + app build (Xcode 26)
+    # Newest GitHub-hosted macOS image with Xcode 26 (arm64). Its default Xcode is 26.6, pinned explicitly below.
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 26
+        run: |
+          sudo xcode-select --switch "$DEVELOPER_DIR"
+          xcodebuild -version
+          swift --version
+
+      - name: Cache SwiftPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build/repositories
+            .build/checkouts
+            build/DerivedData/SourcePackages
+          key: spm-${{ runner.os }}-xcode26-${{ hashFiles('Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-xcode26-
+
+      - name: swift build
+        run: swift build --build-tests
+
+      - name: swift test
+        env:
+          # Tests must never touch the real ~/Library/Application Support/MergeCue (CLAUDE.md).
+          MERGECUE_HOME: ${{ runner.temp }}/mergecue-home
+        run: swift test --skip-build
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Build MergeCue.app (Debug, ad-hoc signed)
+        env:
+          SIGNING: adhoc
+        run: scripts/build-app.sh Debug
+
+      - name: Check the committed Xcode project is up to date
+        run: |
+          if ! git diff --exit-code -- MergeCue.xcodeproj; then
+            echo "::error::MergeCue.xcodeproj changed during the build. Run scripts/build-app.sh locally (it regenerates the project from project.yml and refreshes Xcode's Package.resolved) and commit MergeCue.xcodeproj."
+            exit 1
+          fi

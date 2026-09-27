@@ -1,0 +1,115 @@
+# XcodeGen spec for the MergeCue app (ARCHITECTURE §1, §10). Regenerate with `scripts/generate-project.sh` (xcodegen +
+# one normalisation step; scripts/build-app.sh runs it on every build). MergeCue.xcodeproj is committed so the project
+# opens without xcodegen; edit this file, not the generated project.
+#
+# All code lives in the SwiftPM package at the repository root (Package.swift). This project only adds the thin app
+# target (App/) and the Xcode build of the bundled `mergecue-mcp` helper, and references the root package locally.
+name: MergeCue
+
+options:
+  bundleIdPrefix: com.thiagocenturion
+  deploymentTarget:
+    macOS: "15.0"
+  xcodeVersion: "26.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+packages:
+  # The SwiftPM package at the repository root, next to this file, as a local package (XCLocalSwiftPackageReference
+  # with relative path "."). xcodegen also adds a navigator folder reference for it, named after the checkout
+  # directory ("mergecue-app", a worktree name, ...), which would make the generated project differ per clone.
+  # scripts/generate-project.sh removes that folder reference after generating; the package reference stays.
+  # (`excludeFromProject: true` is not an option: it drops the package reference too.)
+  MergeCuePackage:
+    path: .
+    group: ""
+
+fileGroups:
+  - Package.swift
+  - project.yml
+  - README.md
+
+settings:
+  base:
+    MARKETING_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: 1
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
+    DEVELOPMENT_TEAM: TTSKDZ455K
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: Apple Development
+    ENABLE_HARDENED_RUNTIME: YES
+    ENABLE_APP_SANDBOX: NO
+    DEAD_CODE_STRIPPING: YES
+
+targets:
+  MergeCue:
+    type: application
+    platform: macOS
+    sources:
+      - path: App
+    dependencies:
+      - package: MergeCuePackage
+        product: MergeCueUI
+      - package: MergeCuePackage
+        product: MergeCueRuntime
+      # Built by this project and embedded next to the app executable: MergeCue.app/Contents/MacOS/mergecue-mcp.
+      - target: mergecue-mcp
+        embed: true
+        codeSign: true
+        copy:
+          destination: executables
+    settings:
+      base:
+        PRODUCT_NAME: MergeCue
+        PRODUCT_BUNDLE_IDENTIFIER: com.thiagocenturion.MergeCue
+        INFOPLIST_FILE: App/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: App/MergeCue.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+        COMBINE_HIDPI_IMAGES: YES
+
+  mergecue-mcp:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Sources/mergecue-mcp
+    dependencies:
+      - package: MergeCuePackage
+        product: MergeCueMCPServer
+    settings:
+      base:
+        PRODUCT_NAME: mergecue-mcp
+        PRODUCT_BUNDLE_IDENTIFIER: com.thiagocenturion.MergeCue.mcp
+        # Embed an Info.plist in the binary so the code signature carries the helper's bundle identifier.
+        GENERATE_INFOPLIST_FILE: YES
+        CREATE_INFOPLIST_SECTION_IN_BINARY: YES
+        SKIP_INSTALL: YES
+
+schemes:
+  MergeCue:
+    build:
+      targets:
+        MergeCue: all
+    run:
+      config: Debug
+      commandLineArguments:
+        # Open the main window at launch (without it the app starts in the menu bar only, like a normal launch).
+        "--show-window": true
+      environmentVariables:
+        # preview | demo | live. Only `preview` exists today; demo/live fall back to preview (see App/MergeCueApp.swift).
+        - variable: MERGECUE_BACKEND
+          value: preview
+          isEnabled: false
+        # standard | authExpired | allCaughtUp | noAccounts
+        - variable: MERGECUE_PREVIEW_VARIANT
+          value: standard
+          isEnabled: false
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
