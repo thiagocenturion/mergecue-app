@@ -26,6 +26,10 @@ Living record of technical decisions (Phase 0 onward). Newest entries at the bot
 | D10 | Demo mode runs the **real adapters** over a stub HTTP transport serving provider-native fixture JSON, always badged "Demo data". | Proves parsing paths; never confusable with live data. |
 | D11 | Dev bundle identifier `dev.mergecue.MergeCue` until the owner supplies a release identity. | Plan §2 default. |
 | D12 | Tests use Swift Testing. | Modern, parallel, built into the toolchain. |
+| D13 | Task state machine, approved-action outcome: `approved_action --markDone(system)--> done` when the last approved action succeeded; `approved_action --actionSucceeded(system)--> ready_for_review` when more actions remain. Use `TaskStateMachine.triggerAfterSuccessfulAction(moreActionsRemain:)`. | Reading of the §2.6 row "done — or ready_for_review … (engine decides by passing markDone vs. staying)"; the only way both outcomes are reachable with the listed triggers. |
+| D14 | Stable ids: `v1/<kind>/<host>/u:<user>/r:<repo>/cr:<cr>` + `/th:<kind>:<id>` / `/ck:<source>:<id>`, every component percent-encoded (RFC 3986 unreserved kept). `RepoKey.shortID` uses prefix `repo_`. Event ids: `evt_` + 32 hex. Attention dedupe keys come from `AttentionItem.dedupeKey(…)` helpers. | Injective, DB-safe keys; one shared derivation for Sync and Engine. |
+| D15 | Enums with payloads encode as `{"type": "<snake_case>", …}` (`MergeReadiness`, `AttentionDisposition`, `AccountSyncState`, `RuleAction`, `TaskTrigger`, `CapabilitySupport`, `Credential.Secret`). `ChangeRequestRef` and `TaskID` encode as single strings. | Stable, readable JSON for SQLite blobs and IPC. |
+| D16 | Rules gained `commentKinds: Set<CommentKind>` (empty = any) and `ChangeEvent` gained `commentKind: CommentKind?` (set by Sync via `CommentKind.classify`). The "reviewer question" template filters on `.question`. `maxFiresPerHour <= 0` means the rule never fires. | No event type distinguishes questions; additive API. |
 
 ## Open questions for the owner
 Tracked with defaults in effect (plan §2 table). Answers are recorded here when received.
