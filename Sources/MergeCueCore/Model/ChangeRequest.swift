@@ -70,6 +70,30 @@ public struct ChangeRequestSummary: Codable, Sendable, Hashable, Identifiable {
     public var id: String { key.id }
     public var providerKind: ProviderKind { key.kind }
 
+    private enum CodingKeys: String, CodingKey {
+        case key, repository, title, author, state, isDraft, sourceBranch, targetBranch, headSHA, createdAt, updatedAt
+        case webURL, involvement, versionToken
+    }
+
+    /// `involvement` is written as a sorted array so equal summaries always encode to identical bytes.
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(key, forKey: .key)
+        try c.encode(repository, forKey: .repository)
+        try c.encode(title, forKey: .title)
+        try c.encode(author, forKey: .author)
+        try c.encode(state, forKey: .state)
+        try c.encode(isDraft, forKey: .isDraft)
+        try c.encode(sourceBranch, forKey: .sourceBranch)
+        try c.encode(targetBranch, forKey: .targetBranch)
+        try c.encodeIfPresent(headSHA, forKey: .headSHA)
+        try c.encode(createdAt, forKey: .createdAt)
+        try c.encode(updatedAt, forKey: .updatedAt)
+        try c.encode(webURL, forKey: .webURL)
+        try c.encodeSorted(involvement, forKey: .involvement, by: \.rawValue)
+        try c.encodeIfPresent(versionToken, forKey: .versionToken)
+    }
+
     /// Provider-qualified human reference (`github:github.com/acme/api#42`).
     public var ref: ChangeRequestRef {
         ChangeRequestRef(

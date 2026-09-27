@@ -53,11 +53,29 @@ public enum AttentionReason: String, Codable, Sendable, CaseIterable {
 }
 
 /// Attention priority, ordered `low < normal < high < urgent`.
+///
+/// The Int raw value (0…3) is for ordering and indexed store columns; DTOs exposed over IPC/MCP use `name`.
 public enum AttentionPriority: Int, Codable, Sendable, Comparable, CaseIterable {
     case low, normal, high, urgent
 
     public static func < (lhs: AttentionPriority, rhs: AttentionPriority) -> Bool {
         lhs.rawValue < rhs.rawValue
+    }
+
+    /// `low`, `normal`, `high`, `urgent` (the IPC/MCP representation).
+    public var name: String {
+        switch self {
+        case .low: "low"
+        case .normal: "normal"
+        case .high: "high"
+        case .urgent: "urgent"
+        }
+    }
+
+    /// Parses `name`.
+    public init?(name: String) {
+        guard let match = Self.allCases.first(where: { $0.name == name }) else { return nil }
+        self = match
     }
 }
 
@@ -129,15 +147,26 @@ public enum AttentionAction: String, Codable, Sendable, CaseIterable {
 }
 
 /// One actionable item in the inbox. One item per dedupe key (CR+thread, CR+check name, CR+reason).
+///
+/// `account`, `providerKind` and `number` are always derived from `changeRequest` (also when it is reassigned).
 public struct AttentionItem: Codable, Sendable, Hashable, Identifiable {
     /// `att_…` = `ShortID` of `dedupeKey`.
     public var id: String
     public var dedupeKey: String
-    public var account: AccountKey
-    public var providerKind: ProviderKind
-    public var changeRequest: ChangeRequestKey
+    /// Derived: `changeRequest.account`.
+    public private(set) var account: AccountKey
+    /// Derived: `changeRequest.kind`.
+    public private(set) var providerKind: ProviderKind
+    public var changeRequest: ChangeRequestKey {
+        didSet {
+            account = changeRequest.account
+            providerKind = changeRequest.kind
+            number = changeRequest.number
+        }
+    }
     public var repoFullPath: String
-    public var number: Int
+    /// Derived: `changeRequest.number`.
+    public private(set) var number: Int
     public var title: String
     public var reason: AttentionReason
     public var priority: AttentionPriority
@@ -155,11 +184,8 @@ public struct AttentionItem: Codable, Sendable, Hashable, Identifiable {
     public init(
         id: String? = nil,
         dedupeKey: String,
-        account: AccountKey,
-        providerKind: ProviderKind? = nil,
         changeRequest: ChangeRequestKey,
         repoFullPath: String,
-        number: Int? = nil,
         title: String,
         reason: AttentionReason,
         priority: AttentionPriority? = nil,
@@ -176,11 +202,11 @@ public struct AttentionItem: Codable, Sendable, Hashable, Identifiable {
     ) {
         self.id = id ?? Self.makeID(dedupeKey: dedupeKey)
         self.dedupeKey = dedupeKey
-        self.account = account
-        self.providerKind = providerKind ?? changeRequest.kind
+        self.account = changeRequest.account
+        self.providerKind = changeRequest.kind
         self.changeRequest = changeRequest
         self.repoFullPath = repoFullPath
-        self.number = number ?? changeRequest.number
+        self.number = changeRequest.number
         self.title = title
         self.reason = reason
         self.priority = priority ?? reason.defaultPriority

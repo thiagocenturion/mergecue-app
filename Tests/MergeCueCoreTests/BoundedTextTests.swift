@@ -19,23 +19,48 @@ struct BoundedTextTests {
         #expect(BoundedText.truncate("abcdef", maxBytes: -3).isTruncated)
     }
 
-    /// Every byte budget over multi-byte text yields valid UTF-8 that is a prefix/suffix of the input.
-    @Test(arguments: ["héllo wörld", "日本語のテキスト", "emoji 🚀🎉👩‍💻 end", "e\u{301}\u{301} combining", "\u{10FFFF}x\u{80}"])
-    func neverSplitsAScalar(_ text: String) {
+    /// Every byte budget over multi-byte text yields valid UTF-8 that is a prefix/suffix of the input, cut at a
+    /// grapheme-cluster boundary, giving up at most one cluster.
+    @Test(arguments: ["héllo wörld", "日本語のテキスト", "emoji 🚀🎉👩‍💻 end", "e\u{301}\u{301} combining", "\u{10FFFF}x\u{80}", "ab🇧🇷🇵🇹", "x👩‍💻y"])
+    func neverSplitsAScalarOrACluster(_ text: String) {
         let total = text.utf8.count
+        let characters = Array(text)
+        let heads = (0...characters.count).map { String(characters[..<$0]) }
+        let tails = (0...characters.count).map { String(characters[$0...]) }
+        let largestCluster = characters.map(\.utf8.count).max() ?? 0
         for budget in 0...total + 1 {
             let head = BoundedText.truncate(text, maxBytes: budget)
             #expect(head.text.utf8.count <= max(0, budget))
             #expect(text.hasPrefixBytes(head.text))
-            #expect(head.text.unicodeScalars.allSatisfy { text.unicodeScalars.contains($0) })
+            #expect(heads.contains(head.text), "split a cluster: \(head.text.unicodeScalars.map(\.value))")
             #expect(head.isTruncated == (total > budget))
-            #expect(total - head.text.utf8.count < 4 || head.text.utf8.count > budget - 4, "backed off more than one scalar")
+            #expect(total - head.text.utf8.count <= largestCluster || head.text.utf8.count > budget - largestCluster, "backed off more than one cluster")
 
             let tail = BoundedText.truncate(text, maxBytes: budget, keepTail: true)
             #expect(tail.text.utf8.count <= max(0, budget))
             #expect(text.hasSuffixBytes(tail.text))
-            #expect(total - tail.text.utf8.count < 4 || tail.text.utf8.count > budget - 4)
+            #expect(tails.contains(tail.text), "split a cluster: \(tail.text.unicodeScalars.map(\.value))")
+            #expect(total - tail.text.utf8.count <= largestCluster || tail.text.utf8.count > budget - largestCluster)
         }
+    }
+
+    @Test func graphemeBackoffExamples() {
+        #expect(BoundedText.truncate("ab🇧🇷", maxBytes: 6).text == "ab")
+        #expect(BoundedText.truncate("x👩‍💻", maxBytes: 5).text == "x")
+        #expect(BoundedText.truncate("🇧🇷b", maxBytes: 5, keepTail: true).text == "b")
+    }
+
+    /// A base character with more combining marks than the back-off cap is cut at a scalar boundary instead of
+    /// being dropped entirely.
+    @Test func pathologicalCombiningRunStillKeepsContent() {
+        let text = "a" + String(repeating: "\u{301}", count: 200)
+        let head = BoundedText.truncate(text, maxBytes: 101)
+        #expect(head.text.utf8.count <= 101)
+        #expect(head.text.utf8.count >= 99)
+        #expect(text.hasPrefixBytes(head.text))
+        let tail = BoundedText.truncate(text, maxBytes: 101, keepTail: true)
+        #expect(tail.text.utf8.count <= 101)
+        #expect(text.hasSuffixBytes(tail.text))
     }
 
     @Test func cutsBeforeAMultiByteScalar() {
@@ -75,6 +100,27 @@ struct BoundedTextTests {
         #expect(!excerpt.text.contains("line 100: "))
         #expect(excerpt.text.contains("lines omitted]"))
         #expect(excerpt.text.hasPrefix("… [498 lines omitted] …"))
+    }
+
+    /// CRLF logs (Windows runners, PTY/docker-tty output) are split into lines like LF logs.
+    @Test func crlfLogsKeepErrorContextAndTail() {
+        let log = makeLog(lines: 2_000, errorAt: [500]).replacingOccurrences(of: "\n", with: "\r\n")
+        let excerpt = BoundedText.logExcerpt(log, maxBytes: 4_096)
+        #expect(excerpt.text.utf8.count <= 4_096)
+        #expect(excerpt.text.contains("line 500: ERROR assertion failed"))
+        #expect(excerpt.text.contains("line 498: "))
+        #expect(excerpt.text.contains("line 1999: "))
+        #expect(excerpt.text.hasPrefix("… [498 lines omitted] …"))
+        #expect(!excerpt.text.contains("\r"))
+    }
+
+    @Test func mixedLineEndingsAndLoneCarriageReturns() {
+        var lines = (0..<600).map { "line \($0): " + String(repeating: "q", count: 40) + ($0.isMultiple(of: 2) ? "\r" : "") }
+        lines[100] = "progress 10%\rprogress 50%\rerror: boom"
+        let excerpt = BoundedText.logExcerpt(lines.joined(separator: "\n"), maxBytes: 2_048)
+        #expect(excerpt.text.contains("error: boom"))
+        #expect(excerpt.text.contains("line 599: "))
+        #expect(excerpt.text.utf8.count <= 2_048)
     }
 
     @Test func withoutErrorsKeepsTheTail() {

@@ -2,20 +2,22 @@ import Foundation
 
 /// Builds the stable, versioned string identifiers used as database primary keys.
 ///
-/// Every identity component is percent-encoded (everything except RFC 3986 unreserved characters), so the
-/// separators `/` and `:` never appear inside a component and the resulting ids are injective, e.g.
-/// `v1/github/github.com/u:123/r:456/cr:789`.
+/// Every identity component is NFC-normalized and then percent-encoded (everything except RFC 3986 unreserved
+/// characters), so the separators `/` and `:` never appear inside a component and the resulting ids are
+/// injective, e.g. `v1/github/github.com/u:123/r:456/cr:789`. Normalization makes ids agree with Swift `String`
+/// equality (canonical equivalence): `café` in NFC and NFD yields one id, just as the keys compare equal.
 public enum StableID {
     /// Version prefix of every stable id. Bump only together with a store migration.
     public static let version = "v1"
 
     private static let upperHex: [UInt8] = Array("0123456789ABCDEF".utf8)
 
-    /// Percent-encodes `component`, leaving only `A-Z a-z 0-9 - . _ ~` unescaped.
+    /// NFC-normalizes `component`, then percent-encodes it, leaving only `A-Z a-z 0-9 - . _ ~` unescaped.
     public static func encode(_ component: String) -> String {
+        let normalized = component.utf8.allSatisfy { $0 < 0x80 } ? component : component.precomposedStringWithCanonicalMapping
         var out: [UInt8] = []
-        out.reserveCapacity(component.utf8.count)
-        for byte in component.utf8 {
+        out.reserveCapacity(normalized.utf8.count)
+        for byte in normalized.utf8 {
             if isUnreserved(byte) {
                 out.append(byte)
             } else {

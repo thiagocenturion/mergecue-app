@@ -86,33 +86,53 @@ public struct UntrustedText: Codable, Sendable, Hashable {
         self.text = text
     }
 
-    /// Redacts secrets, then bounds the text to `maxBytes` UTF-8 bytes (keeping the head).
+    /// Appended when `bounded` cuts the text.
+    public static let truncationMarker = "\n[… truncated by MergeCue]"
+
+    /// Redacts secrets, then bounds the text to `maxBytes` UTF-8 bytes (keeping the head). When the text is cut,
+    /// `truncationMarker` is appended **within** the budget (it is omitted if the budget is smaller than the
+    /// marker), so `result.text.utf8.count <= max(0, maxBytes)` always holds.
     public static func bounded(source: String, author: String? = nil, createdAt: Date? = nil, text: String, maxBytes: Int) -> UntrustedText {
         let redacted = SecretRedactor.redact(text)
-        let bounded = BoundedText.truncate(redacted, maxBytes: maxBytes)
-        let marked = bounded.isTruncated ? bounded.text + "\n[… truncated by MergeCue]" : bounded.text
+        let budget = max(0, maxBytes)
+        let marked: String
+        if redacted.utf8.count <= budget {
+            marked = redacted
+        } else if budget >= truncationMarker.utf8.count {
+            marked = BoundedText.truncate(redacted, maxBytes: budget - truncationMarker.utf8.count).text + truncationMarker
+        } else {
+            marked = BoundedText.truncate(redacted, maxBytes: budget).text
+        }
         return UntrustedText(source: source, author: author, createdAt: createdAt, text: marked)
     }
 }
 
 /// Where a task came from (immutable after creation).
+///
+/// `account`, `providerKind` and the kind/host/number of `changeRequestRef` are always derived from
+/// `changeRequest` (also when it is reassigned), so an origin can never mix providers or accounts.
 public struct TaskOrigin: Codable, Sendable, Hashable {
     public var attentionItemID: String?
     public var ruleID: String?
-    public var account: AccountKey
-    public var providerKind: ProviderKind
-    public var changeRequest: ChangeRequestKey
-    public var changeRequestRef: ChangeRequestRef
+    /// Derived: `changeRequest.account`.
+    public private(set) var account: AccountKey
+    /// Derived: `changeRequest.kind`.
+    public private(set) var providerKind: ProviderKind
+    public var changeRequest: ChangeRequestKey {
+        didSet { deriveIdentity(repoFullPath: changeRequestRef.repoFullPath) }
+    }
+    /// Kind, host and number come from `changeRequest`; only the repository path is stored independently.
+    public private(set) var changeRequestRef: ChangeRequestRef
     public var title: String
     public var webURL: URL
     public var thread: ThreadKey?
     public var check: CheckKey?
 
+    /// Only `changeRequestRef.repoFullPath` is taken from `changeRequestRef`; its kind, host and number are
+    /// replaced by those of `changeRequest`. Validate agent-supplied refs with `ChangeRequestRef.validated` first.
     public init(
         attentionItemID: String? = nil,
         ruleID: String? = nil,
-        account: AccountKey,
-        providerKind: ProviderKind? = nil,
         changeRequest: ChangeRequestKey,
         changeRequestRef: ChangeRequestRef,
         title: String,
@@ -122,14 +142,26 @@ public struct TaskOrigin: Codable, Sendable, Hashable {
     ) {
         self.attentionItemID = attentionItemID
         self.ruleID = ruleID
-        self.account = account
-        self.providerKind = providerKind ?? changeRequest.kind
+        self.account = changeRequest.account
+        self.providerKind = changeRequest.kind
         self.changeRequest = changeRequest
         self.changeRequestRef = changeRequestRef
         self.title = title
         self.webURL = webURL
         self.thread = thread
         self.check = check
+        deriveIdentity(repoFullPath: changeRequestRef.repoFullPath)
+    }
+
+    private mutating func deriveIdentity(repoFullPath: String) {
+        account = changeRequest.account
+        providerKind = changeRequest.kind
+        changeRequestRef = ChangeRequestRef(
+            kind: changeRequest.kind,
+            host: changeRequest.account.host,
+            repoFullPath: repoFullPath,
+            number: changeRequest.number
+        )
     }
 }
 
@@ -175,6 +207,17 @@ public struct TaskErrorInfo: Codable, Sendable, Hashable {
         self.message = message
         self.retryable = retryable
         self.at = at
+    }
+
+    /// The shared mapping of a provider failure: `code` = `ProviderError.code`, `message` = the redacted
+    /// user-facing description, `retryable` = `ProviderError.isRetryable`.
+    public init(providerError: ProviderError, at: Date) {
+        self.init(
+            code: providerError.code,
+            message: providerError.errorDescription ?? providerError.code,
+            retryable: providerError.isRetryable,
+            at: at
+        )
     }
 }
 

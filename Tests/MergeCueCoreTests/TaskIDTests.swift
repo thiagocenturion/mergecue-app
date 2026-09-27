@@ -59,6 +59,16 @@ struct TaskIDTests {
         #expect(throws: DecodingError.self) { try Fixture.decode(TaskID.self, from: #""mc_BAD""#) }
     }
 
+    @Test func generateAvoidingSkipsTakenIDs() {
+        var probe = SplitMix64(state: 99)
+        let first = TaskID.generate(using: &probe)
+        var generator = SplitMix64(state: 99)
+        let next = TaskID.generate(avoiding: [first], using: &generator)
+        #expect(next != first, "the colliding first draw is skipped")
+        let taken = Set((0..<200).map { _ in TaskID.generate() })
+        #expect(!taken.contains(TaskID.generate(avoiding: taken)))
+    }
+
     @Test func ordering() throws {
         let a = try #require(TaskID(rawValue: "mc_aaaaaa"))
         let b = try #require(TaskID(rawValue: "mc_bbbbbb"))

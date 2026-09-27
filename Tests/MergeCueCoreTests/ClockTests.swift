@@ -108,6 +108,76 @@ struct ClockTests {
         #expect(clock.pendingSleeperCount == 0)
     }
 
+    // MARK: Hostile durations (Retry-After: inf, overflowing backoff)
+
+    @Test func sanitizedSleepClampsNonFiniteAndHugeValues() {
+        #expect(MCClockLimits.sanitizedSleep(.nan) == 0)
+        #expect(MCClockLimits.sanitizedSleep(-.infinity) == 0)
+        #expect(MCClockLimits.sanitizedSleep(-1) == 0)
+        #expect(MCClockLimits.sanitizedSleep(0) == 0)
+        #expect(MCClockLimits.sanitizedSleep(1.5) == 1.5)
+        #expect(MCClockLimits.sanitizedSleep(.infinity) == MCClockLimits.maxSleep)
+        #expect(MCClockLimits.sanitizedSleep(1e19) == MCClockLimits.maxSleep)
+        #expect(MCClockLimits.sanitizedSleep(Double.greatestFiniteMagnitude) == MCClockLimits.maxSleep)
+    }
+
+    @Test func systemClockReturnsImmediatelyForNaN() async throws {
+        let clock = ContinuousClock()
+        let elapsed = try await clock.measure { try await SystemClock().sleep(for: .nan) }
+        #expect(elapsed < .seconds(1))
+    }
+
+    /// These used to trap ("Double value cannot be converted…"); now they sleep (clamped) and stay cancellable.
+    @Test(arguments: [Double.infinity, 1e19, Double.greatestFiniteMagnitude])
+    func systemClockSurvivesHugeDurations(_ seconds: Double) async {
+        let task = Task { try await SystemClock().sleep(for: seconds) }
+        try? await Task.sleep(for: .milliseconds(20))
+        task.cancel()
+        let result = await task.result
+        #expect(throws: CancellationError.self) { try result.get() }
+    }
+
+    @Test func testClockClampsLikeTheSystemClock() async throws {
+        let clock = TestClock()
+        try await clock.sleep(for: .nan)
+        #expect(clock.pendingSleeperCount == 0)
+
+        let task = Task { try await clock.sleep(for: .infinity) }
+        await clock.waitForSleepers(count: 1)
+        #expect(clock.pendingDeadlines == [Fixture.date.addingTimeInterval(MCClockLimits.maxSleep)])
+        clock.advance(by: MCClockLimits.maxSleep)
+        try await task.value
+        #expect(clock.pendingSleeperCount == 0)
+    }
+
+    /// Cancellation racing `advance`: no double resume, no stuck sleeper, and no leaked bookkeeping.
+    @Test func cancellationRacingAdvanceLeaksNothing() async {
+        let clock = TestClock()
+        for round in 0..<200 {
+            await withTaskGroup(of: Void.self) { group in
+                var sleepers: [Task<Void, any Error>] = []
+                for index in 0..<8 {
+                    sleepers.append(Task { try await clock.sleep(for: index.isMultiple(of: 3) ? 0 : 1) })
+                }
+                group.addTask { clock.advance(by: 1) }
+                group.addTask {
+                    for (index, sleeper) in sleepers.enumerated() where (index + round).isMultiple(of: 2) {
+                        sleeper.cancel()
+                    }
+                }
+                await group.waitForAll()
+                // Sleepers that registered after the advance would wait forever: cancel everything left.
+                for sleeper in sleepers { sleeper.cancel() }
+                for sleeper in sleepers {
+                    _ = await sleeper.result
+                }
+            }
+            if clock.pendingSleeperCount != 0 || clock.pendingRegistrationCount != 0 { break }
+        }
+        #expect(clock.pendingSleeperCount == 0)
+        #expect(clock.pendingRegistrationCount == 0)
+    }
+
     @Test func systemClockIsCloseToNow() {
         let delta = abs(SystemClock().now.timeIntervalSinceNow)
         #expect(delta < 5)

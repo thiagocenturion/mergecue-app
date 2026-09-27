@@ -19,9 +19,10 @@ public enum RuleEvaluator {
     /// Filter match only (does not look at `isActive`, quiet hours or rate limits).
     ///
     /// Honors provider kinds, accounts, event types, repo include/exclude globs, involvement, excluded authors and
-    /// comment kinds (all "empty = any"). Events caused by the current user never match.
+    /// comment kinds (all "empty = any"). Events caused by the current user only match rules that opt in with
+    /// `includeOwnEvents`.
     public static func matches(_ rule: Rule, event: ChangeEvent, involvement: Set<Involvement>) -> Bool {
-        if event.isFromCurrentUser { return false }
+        if event.isFromCurrentUser, !rule.includeOwnEvents { return false }
         if !rule.providerKinds.isEmpty, !rule.providerKinds.contains(event.providerKind) { return false }
         if !rule.accounts.isEmpty, !rule.accounts.contains(event.account) { return false }
         if !rule.eventTypes.isEmpty, !rule.eventTypes.contains(event.type) { return false }
@@ -57,10 +58,11 @@ public enum RuleEvaluator {
     }
 
     /// Case-insensitive glob on repository paths: `*` = any run of characters except `/`, `**` = anything
-    /// including `/`, `**/` = zero or more whole path segments, `?` = one character except `/`.
+    /// including `/`, `**/` (at the start or right after a `/`) = zero or more whole path segments, `?` = one
+    /// character except `/`. Leading and trailing `/` are ignored on both sides (`/acme/*` matches `acme/api`).
     public static func glob(_ pattern: String, matches candidate: String) -> Bool {
-        let tokens = tokenize(Array(pattern.lowercased()))
-        let text = Array(candidate.lowercased())
+        let tokens = tokenize(Array(trimmingSlashes(pattern.lowercased())))
+        let text = Array(trimmingSlashes(candidate.lowercased()))
         var memo = [Int8](repeating: -1, count: (tokens.count + 1) * (text.count + 1))
         return match(tokens, 0, text, 0, &memo)
     }
@@ -75,6 +77,12 @@ public enum RuleEvaluator {
         case globstarSlash
     }
 
+    private static func trimmingSlashes(_ value: String) -> Substring {
+        let start = value.firstIndex { $0 != "/" } ?? value.endIndex
+        let end = value.lastIndex { $0 != "/" }.map { value.index(after: $0) } ?? start
+        return value[start..<max(start, end)]
+    }
+
     private static func tokenize(_ pattern: [Character]) -> [Token] {
         var tokens: [Token] = []
         var index = 0
@@ -84,9 +92,10 @@ public enum RuleEvaluator {
             case "*":
                 var end = index
                 while end < pattern.count, pattern[end] == "*" { end += 1 }
+                let startsSegment = index == 0 || pattern[index - 1] == "/"
                 if end - index == 1 {
                     tokens.append(.star)
-                } else if end < pattern.count, pattern[end] == "/" {
+                } else if startsSegment, end < pattern.count, pattern[end] == "/" {
                     tokens.append(.globstarSlash)
                     end += 1
                 } else {

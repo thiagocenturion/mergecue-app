@@ -116,6 +116,8 @@ public struct Rule: Codable, Sendable, Hashable, Identifiable {
     public var excludeAuthors: [String]
     /// Restricts comment-bearing events to these comment kinds (e.g. `.question`). Empty = any event.
     public var commentKinds: Set<CommentKind>
+    /// Opt-in for events caused by the current user (own comments, own pushes). Default false: they never match.
+    public var includeOwnEvents: Bool
     public var action: RuleAction
     /// Maximum firings in any rolling hour; values ≤ 0 mean the rule never fires.
     public var maxFiresPerHour: Int
@@ -136,6 +138,7 @@ public struct Rule: Codable, Sendable, Hashable, Identifiable {
         involvement: Set<Involvement> = [],
         excludeAuthors: [String] = [],
         commentKinds: Set<CommentKind> = [],
+        includeOwnEvents: Bool = false,
         action: RuleAction,
         maxFiresPerHour: Int = 10,
         quietHours: QuietHours? = nil,
@@ -154,6 +157,7 @@ public struct Rule: Codable, Sendable, Hashable, Identifiable {
         self.involvement = involvement
         self.excludeAuthors = excludeAuthors
         self.commentKinds = commentKinds
+        self.includeOwnEvents = includeOwnEvents
         self.action = action
         self.maxFiresPerHour = maxFiresPerHour
         self.quietHours = quietHours
@@ -163,7 +167,7 @@ public struct Rule: Codable, Sendable, Hashable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, isActive, origin, providerKinds, accounts, eventTypes, repoInclude, repoExclude, involvement
-        case excludeAuthors, commentKinds, action, maxFiresPerHour, quietHours, createdAt, updatedAt
+        case excludeAuthors, commentKinds, includeOwnEvents, action, maxFiresPerHour, quietHours, createdAt, updatedAt
     }
 
     public init(from decoder: any Decoder) throws {
@@ -180,10 +184,35 @@ public struct Rule: Codable, Sendable, Hashable, Identifiable {
         involvement = try c.decodeIfPresent(Set<Involvement>.self, forKey: .involvement) ?? []
         excludeAuthors = try c.decodeIfPresent([String].self, forKey: .excludeAuthors) ?? []
         commentKinds = try c.decodeIfPresent(Set<CommentKind>.self, forKey: .commentKinds) ?? []
+        includeOwnEvents = try c.decodeIfPresent(Bool.self, forKey: .includeOwnEvents) ?? false
         action = try c.decode(RuleAction.self, forKey: .action)
         maxFiresPerHour = try c.decode(Int.self, forKey: .maxFiresPerHour)
         quietHours = try c.decodeIfPresent(QuietHours.self, forKey: .quietHours)
         createdAt = try c.decode(Date.self, forKey: .createdAt)
         updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+    }
+
+    /// `Set` filters are written as sorted arrays, so equal rules always encode to identical bytes (fingerprints of
+    /// agent-proposed rules must survive relaunches, whose hash seeds differ).
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(isActive, forKey: .isActive)
+        try c.encode(origin, forKey: .origin)
+        try c.encodeSorted(providerKinds, forKey: .providerKinds, by: \.rawValue)
+        try c.encodeSorted(accounts, forKey: .accounts, by: \.id)
+        try c.encodeSorted(eventTypes, forKey: .eventTypes, by: \.rawValue)
+        try c.encode(repoInclude, forKey: .repoInclude)
+        try c.encode(repoExclude, forKey: .repoExclude)
+        try c.encodeSorted(involvement, forKey: .involvement, by: \.rawValue)
+        try c.encode(excludeAuthors, forKey: .excludeAuthors)
+        try c.encodeSorted(commentKinds, forKey: .commentKinds, by: \.rawValue)
+        try c.encode(includeOwnEvents, forKey: .includeOwnEvents)
+        try c.encode(action, forKey: .action)
+        try c.encode(maxFiresPerHour, forKey: .maxFiresPerHour)
+        try c.encodeIfPresent(quietHours, forKey: .quietHours)
+        try c.encode(createdAt, forKey: .createdAt)
+        try c.encode(updatedAt, forKey: .updatedAt)
     }
 }

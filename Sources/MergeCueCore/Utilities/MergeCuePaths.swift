@@ -33,8 +33,14 @@ public struct MergeCuePaths: Sendable, Hashable {
     /// True when `MERGECUE_SOCKET` overrides the socket path.
     public let usesSocketOverride: Bool
 
-    /// Resolves paths from `environment` (`MERGECUE_HOME`, `MERGECUE_SOCKET`).
-    public init(environment: [String: String] = ProcessInfo.processInfo.environment, fileManager: FileManager = .default) {
+    /// Resolves paths from `environment` (`MERGECUE_HOME`, `MERGECUE_SOCKET`). `fallbackSocketParent` is where the
+    /// `mergecue-<uid>/` socket fallback directory lives (`/tmp`; tests pass a temporary directory so they never
+    /// touch the shared production socket directory).
+    public init(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        fileManager: FileManager = .default,
+        fallbackSocketParent: URL = MergeCuePaths.defaultFallbackSocketParent
+    ) {
         let customHome = environment[Self.homeEnvironmentKey].flatMap { Self.expand($0) }
         let root: URL
         let logs: URL
@@ -50,15 +56,32 @@ public struct MergeCuePaths: Sendable, Hashable {
             logs = library.appending(path: "Logs/MergeCue", directoryHint: .isDirectory)
         }
         let socketOverride = environment[Self.socketEnvironmentKey].flatMap { Self.expand($0) }
-        self.init(root: root, logs: logs, socketOverride: socketOverride, usesCustomHome: customHome != nil)
+        self.init(
+            root: root,
+            logs: logs,
+            socketOverride: socketOverride,
+            usesCustomHome: customHome != nil,
+            fallbackSocketDirectory: Self.fallbackSocketDirectory(in: fallbackSocketParent)
+        )
     }
 
     /// Explicit layout under `root` (tests). `logs` defaults to `<root>/logs`.
-    public init(root: URL, logs: URL? = nil, socketOverride: URL? = nil) {
-        self.init(root: root, logs: logs ?? root.appending(path: "logs", directoryHint: .isDirectory), socketOverride: socketOverride, usesCustomHome: true)
+    public init(
+        root: URL,
+        logs: URL? = nil,
+        socketOverride: URL? = nil,
+        fallbackSocketParent: URL = MergeCuePaths.defaultFallbackSocketParent
+    ) {
+        self.init(
+            root: root,
+            logs: logs ?? root.appending(path: "logs", directoryHint: .isDirectory),
+            socketOverride: socketOverride,
+            usesCustomHome: true,
+            fallbackSocketDirectory: Self.fallbackSocketDirectory(in: fallbackSocketParent)
+        )
     }
 
-    private init(root: URL, logs: URL, socketOverride: URL?, usesCustomHome: Bool) {
+    private init(root: URL, logs: URL, socketOverride: URL?, usesCustomHome: Bool, fallbackSocketDirectory: URL) {
         self.root = Self.directoryURL(root)
         self.database = self.root.appending(path: "mergecue.sqlite", directoryHint: .notDirectory)
         self.ipcDirectory = self.root.appending(path: "ipc", directoryHint: .isDirectory)
@@ -76,7 +99,7 @@ public struct MergeCuePaths: Sendable, Hashable {
         } else {
             let preferred = ipcDirectory.appending(path: "mergecue.sock", directoryHint: .notDirectory)
             if Self.fileSystemPath(preferred).utf8.count > Self.maxSocketPathBytes {
-                socketDirectory = Self.fallbackSocketDirectory
+                socketDirectory = fallbackSocketDirectory
                 socket = socketDirectory.appending(path: "mergecue.sock", directoryHint: .notDirectory)
                 usesFallbackSocket = true
             } else {
@@ -88,9 +111,17 @@ public struct MergeCuePaths: Sendable, Hashable {
         }
     }
 
+    /// `/tmp`.
+    public static let defaultFallbackSocketParent = URL(filePath: "/tmp", directoryHint: .isDirectory)
+
     /// `/tmp/mergecue-<uid>/`.
     public static var fallbackSocketDirectory: URL {
-        URL(filePath: "/tmp/mergecue-\(getuid())", directoryHint: .isDirectory)
+        fallbackSocketDirectory(in: defaultFallbackSocketParent)
+    }
+
+    /// `<parent>/mergecue-<uid>/`.
+    public static func fallbackSocketDirectory(in parent: URL) -> URL {
+        directoryURL(parent.appending(path: "mergecue-\(getuid())", directoryHint: .isDirectory))
     }
 
     /// POSIX path of the socket (for `sockaddr_un`).

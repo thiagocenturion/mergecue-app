@@ -63,7 +63,6 @@ enum Fixture {
     ) -> ChangeEvent {
         ChangeEvent(
             type: type,
-            account: account,
             changeRequest: changeRequestKey(account),
             repoFullPath: repoFullPath,
             title: "Add retries",
@@ -79,17 +78,13 @@ enum Fixture {
         )
     }
 
+    /// The production wire coder (golden JSON in these tests is the IPC/MCP representation).
     static func encoder() -> JSONEncoder {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        encoder.dateEncodingStrategy = .iso8601
-        return encoder
+        MergeCueCoding.wireEncoder()
     }
 
     static func decoder() -> JSONDecoder {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return decoder
+        MergeCueCoding.wireDecoder()
     }
 
     static func json<T: Encodable>(_ value: T) throws -> String {

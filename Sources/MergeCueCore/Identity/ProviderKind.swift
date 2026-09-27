@@ -58,9 +58,13 @@ public struct ProviderInstance: Codable, Sendable, Hashable {
         self.apiURL = apiURL
     }
 
-    /// Lowercased web host, with a non-default port appended (`gitlab.example.com:8443`).
+    /// Lowercased web host, with a non-default port appended (`gitlab.example.com:8443`). IPv6 literals keep their
+    /// brackets (`[::1]:8443`) so the port stays unambiguous.
     public var host: String {
-        let base = (webURL.host(percentEncoded: false) ?? "").lowercased()
+        var base = (webURL.host(percentEncoded: false) ?? "").lowercased()
+        if base.contains(":"), !base.hasPrefix("[") {
+            base = "[\(base)]"
+        }
         guard let port = webURL.port else { return base }
         switch (webURL.scheme?.lowercased(), port) {
         case ("https", 443), ("http", 80):

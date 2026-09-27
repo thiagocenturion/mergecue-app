@@ -1,18 +1,34 @@
 import Foundation
 
-/// A configured git remote.
+/// A configured git remote. URLs are stored **sanitized** (`CanonicalRemote.sanitizedURL`): remotes such as
+/// `https://user:TOKEN@github.com/…` are common, and this value is persisted and displayed.
 public struct GitRemote: Codable, Sendable, Hashable {
     public var name: String
-    public var fetchURL: String
-    public var pushURL: String?
+    /// Sanitized fetch URL (no credentials).
+    public private(set) var fetchURL: String
+    /// Sanitized push URL (no credentials).
+    public private(set) var pushURL: String?
     public var canonical: CanonicalRemote?
 
-    /// `canonical` defaults to `CanonicalRemote.parse(fetchURL)`.
+    /// Sanitizes both URLs. `canonical` defaults to `CanonicalRemote.parse(fetchURL)` of the raw URL.
     public init(name: String, fetchURL: String, pushURL: String? = nil, canonical: CanonicalRemote? = nil) {
         self.name = name
-        self.fetchURL = fetchURL
-        self.pushURL = pushURL
+        self.fetchURL = CanonicalRemote.sanitizedURL(fetchURL)
+        self.pushURL = pushURL.map(CanonicalRemote.sanitizedURL)
         self.canonical = canonical ?? CanonicalRemote.parse(fetchURL)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name, fetchURL, pushURL, canonical
+    }
+
+    /// Re-sanitizes on decode, so values written by older builds cannot carry credentials forward.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        fetchURL = CanonicalRemote.sanitizedURL(try c.decode(String.self, forKey: .fetchURL))
+        pushURL = try c.decodeIfPresent(String.self, forKey: .pushURL).map(CanonicalRemote.sanitizedURL)
+        canonical = try c.decodeIfPresent(CanonicalRemote.self, forKey: .canonical)
     }
 }
 

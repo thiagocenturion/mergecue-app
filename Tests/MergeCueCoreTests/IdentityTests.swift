@@ -67,10 +67,102 @@ struct IdentityTests {
     }
 
     @Test func shortIDsAreStableAcrossRuns() {
-        // Pinned value: changing the id scheme silently would orphan stored rows and MCP references.
-        #expect(ShortID.make(prefix: "cr_", from: "v1/github/github.com/u:123/r:456/cr:789")
-            == "cr_" + ContentDigest.sha256Hex("v1/github/github.com/u:123/r:456/cr:789").prefix(10))
+        // Pinned literals: changing the id scheme silently would orphan stored rows and MCP references.
+        #expect(ShortID.make(prefix: "cr_", from: "v1/github/github.com/u:123/r:456/cr:789") == "cr_7d5304b264")
+        #expect(Fixture.changeRequestKey().shortID == "cr_7d5304b264")
         #expect(ContentDigest.sha256Hex("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    }
+
+    // MARK: Equality agrees with the stable id
+
+    @Test func changeRequestKeysCompareByPrimaryKeyNotNumber() {
+        let key = Fixture.changeRequestKey(number: 42)
+        let placeholder = Fixture.changeRequestKey(number: 0)
+        #expect(key == placeholder)
+        #expect(key.id == placeholder.id && key.shortID == placeholder.shortID)
+        #expect(Set([key, placeholder]).count == 1)
+        #expect([key: "row"][placeholder] == "row")
+        #expect(key != Fixture.changeRequestKey(remoteID: "790", number: 42), "same number, different remote id")
+
+        // Derived keys follow: a thread/check rebuilt from a placeholder key still finds the snapshot's objects.
+        let thread = ThreadKey(changeRequest: key, remoteID: "PRRT_1", kind: .diffThread)
+        #expect(thread == ThreadKey(changeRequest: placeholder, remoteID: "PRRT_1", kind: .diffThread))
+        #expect(CheckKey(changeRequest: key, source: .githubCheckRun, remoteID: "5") == CheckKey(changeRequest: placeholder, source: .githubCheckRun, remoteID: "5"))
+        let snapshot = ChangeRequestSnapshot(
+            summary: Fixture.summary(key),
+            threads: [ReviewThread(key: thread, isResolvable: true, comments: [], lastActivityAt: Fixture.date)],
+            fetchedAt: Fixture.date
+        )
+        #expect(snapshot.thread(ThreadKey(changeRequest: placeholder, remoteID: "PRRT_1", kind: .diffThread)) != nil)
+    }
+
+    /// Canonically equivalent strings (NFC vs NFD) compare `==` in Swift, so their ids must match as well.
+    @Test func canonicallyEquivalentComponentsShareTheirID() {
+        let nfc = "caf\u{E9}"
+        let nfd = "cafe\u{301}"
+        #expect(nfc == nfd)
+        #expect(StableID.encode(nfc) == StableID.encode(nfd))
+        let a = AccountKey(kind: .gitlab, host: "gitlab.com", remoteUserID: nfc)
+        let b = AccountKey(kind: .gitlab, host: "gitlab.com", remoteUserID: nfd)
+        #expect(a == b)
+        #expect(a.id == b.id)
+        #expect(Set([a, b]).count == 1)
+        #expect(RepoKey(account: a, remoteRepoID: nfd).id == RepoKey(account: b, remoteRepoID: nfc).id)
+    }
+
+    @Test(arguments: [
+        (Fixture.changeRequestKey(), Fixture.changeRequestKey(number: 7)),
+        (Fixture.changeRequestKey(), Fixture.changeRequestKey(Fixture.gitlabAccount)),
+        (Fixture.changeRequestKey(), Fixture.changeRequestKey(repoID: "457")),
+        (Fixture.changeRequestKey(remoteID: "caf\u{E9}"), Fixture.changeRequestKey(remoteID: "cafe\u{301}")),
+    ])
+    func equalityMatchesIDs(_ lhs: ChangeRequestKey, _ rhs: ChangeRequestKey) {
+        #expect((lhs == rhs) == (lhs.id == rhs.id))
+        #expect((lhs.hashValue == rhs.hashValue) || lhs != rhs)
+    }
+
+    // MARK: GitHub thread conventions and namespaced event objects
+
+    @Test func githubThreadHelpers() {
+        let key = Fixture.changeRequestKey()
+        let issue = ThreadKey.githubIssueComment(changeRequest: key, commentID: "991")
+        #expect(issue.remoteID == "ic:991")
+        #expect(issue.kind == .conversation)
+        #expect(issue.id == "v1/github/github.com/u:123/r:456/cr:789/th:conversation:ic%3A991")
+        let review = ThreadKey.githubReviewSummary(changeRequest: key, reviewID: "991")
+        #expect(review.remoteID == ThreadKey.githubReviewSummaryPrefix + "991")
+        #expect(review.kind == .reviewSummary)
+        #expect(issue != review)
+    }
+
+    /// An issue comment and a diff review comment with the same numeric id and version on one PR must yield two
+    /// distinct events.
+    @Test func namespacedObjectIDsKeepEventsApart() {
+        let key = Fixture.changeRequestKey()
+        let issueThread = ThreadKey.githubIssueComment(changeRequest: key, commentID: "1001")
+        let diffThread = ThreadKey(changeRequest: key, remoteID: "PRRT_kw", kind: .diffThread)
+        let objectIDs = [
+            ChangeEvent.commentObjectID(thread: issueThread, commentID: "1001"),
+            ChangeEvent.commentObjectID(thread: diffThread, commentID: "1001"),
+            ChangeEvent.reviewObjectID("1001"),
+            ChangeEvent.headObjectID(sha: "1001"),
+            ChangeEvent.checkObjectID(CheckKey(changeRequest: key, source: .githubCheckRun, remoteID: "1001")),
+            ChangeEvent.checkObjectID(CheckKey(changeRequest: key, source: .githubStatus, remoteID: "1001")),
+        ]
+        #expect(Set(objectIDs).count == objectIDs.count)
+        let eventIDs = objectIDs.map {
+            ChangeEvent.makeID(account: key.account, changeRequest: key, type: .reviewComment, objectID: $0, objectVersion: "2026-01-01T00:00:00Z")
+        }
+        #expect(Set(eventIDs).count == eventIDs.count)
+        #expect(ChangeEvent.commentObjectID(thread: diffThread, commentID: "a/b") == diffThread.id + "/c:a%2Fb")
+    }
+
+    @Test func ipv6InstanceHostKeepsBrackets() {
+        let instance = ProviderInstance(kind: .gitlab, webURL: URL(string: "https://[::1]:8443")!, apiURL: URL(string: "https://[::1]:8443/api/v4")!)
+        #expect(instance.host == "[::1]:8443")
+        let defaultPort = ProviderInstance(kind: .gitlab, webURL: URL(string: "https://[fd00::2]")!, apiURL: URL(string: "https://[fd00::2]/api/v4")!)
+        #expect(defaultPort.host == "[fd00::2]")
+        #expect(AccountKey(instance: instance, remoteUserID: "1").host == "[::1]:8443")
     }
 
     @Test(arguments: ["cr_0123456789", "cr_abcdefabcd"])

@@ -110,6 +110,11 @@ public struct ApprovalRecord: Codable, Sendable, Hashable {
 }
 
 /// Kind of an append-only task activity entry.
+///
+/// Transition activities: `claimed` (claim), `resultSubmitted` (submitResult), `failed` (fail), `blocked`
+/// (agentBlocked / block), `stale` (leaseExpired), `approved` (approveAction), `rejected` (rejectResult),
+/// `actionSucceeded` / `actionBlocked` / `actionFailed` (outcome of an approved action), `completed` (markDone →
+/// done, by the user or after the final action), `cancelled`, `dismissed`, `retried`, `reopened`, `unblocked`.
 public enum ActivityKind: String, Codable, Sendable, CaseIterable {
     case created, claimed, progress, heartbeat
     case changesReported = "changes_reported"
@@ -118,8 +123,15 @@ public enum ActivityKind: String, Codable, Sendable, CaseIterable {
     case failed, blocked, stale, approved, rejected
     case actionAttempted = "action_attempted"
     case actionSucceeded = "action_succeeded"
+    /// The engine refused an approved action because fresh remote state changed (SHA moved, thread resolved…).
+    case actionBlocked = "action_blocked"
     case actionFailed = "action_failed"
-    case cancelled, dismissed, retried, reopened, note
+    /// The task reached `done`.
+    case completed
+    case cancelled, dismissed, retried, reopened
+    /// `blocked` → `waiting_for_agent` (user unblock).
+    case unblocked
+    case note
     case rejectedCall = "rejected_call"
 }
 

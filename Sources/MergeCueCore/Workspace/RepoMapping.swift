@@ -17,7 +17,10 @@ public struct RepoMapping: Codable, Sendable, Hashable, Identifiable {
     public var repoFullPath: String
     public var checkoutPath: String
     public var confidence: MappingConfidence
-    public var matchedRemote: String?
+    /// The remote URL that matched, sanitized with `CanonicalRemote.sanitizedURL` (never holds credentials).
+    public var matchedRemote: String? {
+        didSet { matchedRemote = matchedRemote.map(CanonicalRemote.sanitizedURL) }
+    }
     /// Set when the user confirmed the mapping.
     public var confirmedAt: Date?
     public var createdAt: Date
@@ -37,7 +40,7 @@ public struct RepoMapping: Codable, Sendable, Hashable, Identifiable {
         self.repoFullPath = repoFullPath
         self.checkoutPath = checkoutPath
         self.confidence = confidence
-        self.matchedRemote = matchedRemote
+        self.matchedRemote = matchedRemote.map(CanonicalRemote.sanitizedURL)
         self.confirmedAt = confirmedAt
         self.createdAt = createdAt
     }
@@ -49,13 +52,16 @@ public struct RepoMapping: Codable, Sendable, Hashable, Identifiable {
 public struct MappingSuggestion: Codable, Sendable, Hashable {
     public var checkoutPath: String
     public var confidence: MappingConfidence
-    public var matchedRemote: String?
+    /// The remote URL that matched, sanitized with `CanonicalRemote.sanitizedURL` (never holds credentials).
+    public var matchedRemote: String? {
+        didSet { matchedRemote = matchedRemote.map(CanonicalRemote.sanitizedURL) }
+    }
     public var reason: String
 
     public init(checkoutPath: String, confidence: MappingConfidence, matchedRemote: String? = nil, reason: String) {
         self.checkoutPath = checkoutPath
         self.confidence = confidence
-        self.matchedRemote = matchedRemote
+        self.matchedRemote = matchedRemote.map(CanonicalRemote.sanitizedURL)
         self.reason = reason
     }
 }

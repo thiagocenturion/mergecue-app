@@ -83,6 +83,27 @@ public enum AccountSyncState: Codable, Sendable, Hashable {
     }
 }
 
+extension AccountSyncState {
+    /// The shared mapping of a provider failure to an account's sync state: `unauthorized` → `authExpired`,
+    /// `forbidden` → `permissionDenied`, `rateLimited` → `rateLimited(until: retryDate(now:))`, `offline`/`timeout`
+    /// → `offline`, anything else → `error` (redacted description).
+    public init(providerError: ProviderError, now: Date) {
+        switch providerError {
+        case .unauthorized:
+            self = .authExpired
+        case .forbidden(let scope, let message):
+            let detail = scope.map { "missing scope \($0)" } ?? message
+            self = .permissionDenied(SecretRedactor.redact(detail.isEmpty ? "Permission denied" : detail))
+        case .rateLimited:
+            self = .rateLimited(until: providerError.retryDate(now: now))
+        case .offline, .timeout:
+            self = .offline
+        case .notFound, .server, .decoding, .unsupported, .conflict, .invalidRequest:
+            self = .error(providerError.errorDescription ?? providerError.code)
+        }
+    }
+}
+
 /// Sync status of one account.
 public struct AccountSyncStatus: Codable, Sendable, Hashable {
     public var account: AccountKey

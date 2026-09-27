@@ -34,17 +34,31 @@ public enum ChangeEventType: String, Codable, Sendable, CaseIterable, CodingKeyR
 }
 
 /// A detected change on a change request. Identity (`id`) is the dedupe key across polls and relaunches.
+///
+/// `account`, `providerKind` and `number` are always derived from `changeRequest` (also when it is reassigned),
+/// so an event can never mix providers or accounts.
 public struct ChangeEvent: Codable, Sendable, Hashable, Identifiable {
     /// `ChangeEvent.makeID(account:changeRequest:type:objectID:objectVersion:)`.
     public var id: String
     public var type: ChangeEventType
-    public var account: AccountKey
-    public var changeRequest: ChangeRequestKey
-    public var providerKind: ProviderKind
+    /// Derived: `changeRequest.account`.
+    public private(set) var account: AccountKey
+    public var changeRequest: ChangeRequestKey {
+        didSet {
+            account = changeRequest.account
+            providerKind = changeRequest.kind
+            number = changeRequest.number
+        }
+    }
+    /// Derived: `changeRequest.kind`.
+    public private(set) var providerKind: ProviderKind
     public var repoFullPath: String
-    public var number: Int
+    /// Derived: `changeRequest.number`.
+    public private(set) var number: Int
     public var title: String
-    /// Id of the object that changed (comment id, check id, review id, head SHA, …).
+    /// Id of the object that changed, **namespaced by object kind** so ids from different provider id spaces
+    /// cannot collide (GitHub issue comments vs review comments): build it with `commentObjectID(thread:commentID:)`,
+    /// `checkObjectID(_:)`, `reviewObjectID(_:)` or `headObjectID(sha:)`.
     public var objectID: String
     /// Version of that object (updated_at, status, attempt, …) so a genuinely new state yields a new event.
     public var objectVersion: String
@@ -66,11 +80,8 @@ public struct ChangeEvent: Codable, Sendable, Hashable, Identifiable {
     public init(
         id: String? = nil,
         type: ChangeEventType,
-        account: AccountKey,
         changeRequest: ChangeRequestKey,
-        providerKind: ProviderKind? = nil,
         repoFullPath: String,
-        number: Int? = nil,
         title: String,
         objectID: String,
         objectVersion: String,
@@ -87,14 +98,14 @@ public struct ChangeEvent: Codable, Sendable, Hashable, Identifiable {
         nativeRefs: [String: String] = [:]
     ) {
         self.id = id ?? Self.makeID(
-            account: account, changeRequest: changeRequest, type: type, objectID: objectID, objectVersion: objectVersion
+            account: changeRequest.account, changeRequest: changeRequest, type: type, objectID: objectID, objectVersion: objectVersion
         )
         self.type = type
-        self.account = account
+        self.account = changeRequest.account
         self.changeRequest = changeRequest
-        self.providerKind = providerKind ?? changeRequest.kind
+        self.providerKind = changeRequest.kind
         self.repoFullPath = repoFullPath
-        self.number = number ?? changeRequest.number
+        self.number = changeRequest.number
         self.title = title
         self.objectID = objectID
         self.objectVersion = objectVersion
@@ -133,5 +144,28 @@ public struct ChangeEvent: Codable, Sendable, Hashable, Identifiable {
     /// Provider-qualified reference, e.g. `gitlab:gitlab.com/acme/api!42`.
     public var changeRequestRef: ChangeRequestRef {
         ChangeRequestRef(kind: providerKind, host: account.host, repoFullPath: repoFullPath, number: number)
+    }
+
+    // MARK: Namespaced object ids (shared by Sync's EventDeriver, fixtures and tests)
+
+    /// `objectID` for a comment: the thread's stable id + `/c:` + the encoded comment id. Two comments with the same
+    /// numeric id in different threads (or thread kinds) never share an event id.
+    public static func commentObjectID(thread: ThreadKey, commentID: String) -> String {
+        "\(thread.id)/c:\(StableID.encode(commentID))"
+    }
+
+    /// `objectID` for a CI check (its stable key id; the check's status/attempt goes into `objectVersion`).
+    public static func checkObjectID(_ check: CheckKey) -> String {
+        check.id
+    }
+
+    /// `objectID` for a submitted review (approval / changes requested).
+    public static func reviewObjectID(_ reviewID: String) -> String {
+        "rv/\(StableID.encode(reviewID))"
+    }
+
+    /// `objectID` for a head change (new commits / force push).
+    public static func headObjectID(sha: String) -> String {
+        "head/\(StableID.encode(sha))"
     }
 }

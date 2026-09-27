@@ -4,8 +4,10 @@ import Testing
 
 @Suite("Change request model")
 struct ModelTests {
-    private func check(_ status: CheckStatus, name: String = "build", id: String = UUID().uuidString) -> CheckRun {
-        CheckRun(key: CheckKey(changeRequest: Fixture.changeRequestKey(), source: .githubCheckRun, remoteID: id), name: name, status: status)
+    /// Deterministic ids: one per (name, status) pair.
+    private func check(_ status: CheckStatus, name: String = "build", id: String? = nil) -> CheckRun {
+        let remoteID = id ?? "\(name)-\(status.rawValue)"
+        return CheckRun(key: CheckKey(changeRequest: Fixture.changeRequestKey(), source: .githubCheckRun, remoteID: remoteID), name: name, status: status)
     }
 
     @Test func checkStatusFlags() {
@@ -133,7 +135,47 @@ struct ModelTests {
         let text = UntrustedText.bounded(source: UntrustedText.Source.ciLog, text: "token=supersecretvalue " + String(repeating: "x", count: 500), maxBytes: 64)
         #expect(!text.text.contains("supersecretvalue"))
         #expect(text.text.hasSuffix("[… truncated by MergeCue]"))
+        #expect(text.text.utf8.count <= 64)
         #expect(text.source == "ci_log")
+    }
+
+    /// The marker is reserved inside the budget: the result never exceeds `maxBytes` (IPC limits such as
+    /// `report_tests.output ≤ 16 KiB` are enforced from it).
+    @Test func untrustedTextNeverExceedsItsBudget() {
+        let body = "résumé 🚀 " + String(repeating: "line of log output\n", count: 20)
+        let markerBytes = UntrustedText.truncationMarker.utf8.count
+        for budget in [-1, 0, 1, 5, markerBytes - 1, markerBytes, markerBytes + 1, 40, 64, 100, body.utf8.count - 1, body.utf8.count, body.utf8.count + 10] {
+            let bounded = UntrustedText.bounded(source: UntrustedText.Source.reviewComment, text: body, maxBytes: budget)
+            #expect(bounded.text.utf8.count <= max(0, budget), "budget \(budget)")
+            if budget >= body.utf8.count {
+                #expect(bounded.text == body)
+            } else if budget >= markerBytes {
+                #expect(bounded.text.hasSuffix(UntrustedText.truncationMarker), "budget \(budget)")
+            }
+        }
+    }
+
+    @Test func attentionPriorityNamesForTheWire() throws {
+        #expect(AttentionPriority.allCases.map(\.name) == ["low", "normal", "high", "urgent"])
+        for priority in AttentionPriority.allCases {
+            #expect(AttentionPriority(name: priority.name) == priority)
+        }
+        #expect(AttentionPriority(name: "2") == nil)
+        #expect(AttentionPriority(name: "HIGH") == nil)
+        // Storage keeps the ordered Int raw value.
+        #expect(try Fixture.json(AttentionPriority.high) == "2")
+    }
+
+    @Test func failTriggerRequiresRetryable() throws {
+        #expect(throws: DecodingError.self) { try Fixture.decode(TaskTrigger.self, from: #"{"type":"fail"}"#) }
+        #expect(try Fixture.decode(TaskTrigger.self, from: #"{"type":"fail","retryable":false}"#) == .fail(retryable: false))
+    }
+
+    @Test func activityKindsCoverEveryTransition() {
+        #expect(ActivityKind.actionBlocked.rawValue == "action_blocked")
+        #expect(ActivityKind.completed.rawValue == "completed")
+        #expect(ActivityKind.unblocked.rawValue == "unblocked")
+        #expect(Set(ActivityKind.allCases.map(\.rawValue)).count == ActivityKind.allCases.count)
     }
 
     @Test func deepLinkTargetsExposeTheirChangeRequest() {

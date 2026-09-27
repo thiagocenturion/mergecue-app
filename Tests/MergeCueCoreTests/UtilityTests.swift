@@ -128,7 +128,6 @@ struct UtilityTests {
             createdAt: Fixture.date,
             origin: TaskOrigin(
                 attentionItemID: "att_0123456789",
-                account: Fixture.githubAccount,
                 changeRequest: key,
                 changeRequestRef: Fixture.summary(key).ref,
                 title: "Add retries",

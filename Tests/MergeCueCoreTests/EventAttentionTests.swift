@@ -32,6 +32,43 @@ struct EventAttentionTests {
         #expect(try Fixture.roundTrip(event) == event)
     }
 
+    /// Account, provider kind and number are derived from the change request key and follow it when it changes,
+    /// so a GitLab key can never be labelled as a GitHub event (or vice versa).
+    @Test func derivedIdentityFieldsFollowTheChangeRequest() throws {
+        var event = Fixture.event(account: Fixture.githubAccount)
+        let gitlabKey = Fixture.changeRequestKey(Fixture.gitlabAccount, number: 7)
+        event.changeRequest = gitlabKey
+        #expect(event.account == Fixture.gitlabAccount)
+        #expect(event.providerKind == .gitlab)
+        #expect(event.number == 7)
+        #expect(event.changeRequestRef.string == "gitlab:gitlab.com/acme/payments-api!7")
+
+        var item = AttentionItem(
+            dedupeKey: "att:reason/x", changeRequest: Fixture.changeRequestKey(), repoFullPath: "acme/payments-api",
+            title: "t", reason: .readyToMerge, summary: "s", createdAt: Fixture.date, updatedAt: Fixture.date
+        )
+        #expect(item.providerKind == .github)
+        item.changeRequest = Fixture.changeRequestKey(Fixture.bitbucketAccount, number: 9)
+        #expect(item.account == Fixture.bitbucketAccount)
+        #expect(item.providerKind == .bitbucketCloud)
+        #expect(item.number == 9)
+        #expect(try Fixture.roundTrip(item) == item)
+
+        // TaskOrigin takes only the repository path from the supplied ref.
+        let mismatched = try #require(ChangeRequestRef(string: "github:github.com/acme/payments-api#1"))
+        var origin = TaskOrigin(
+            changeRequest: gitlabKey, changeRequestRef: mismatched, title: "t",
+            webURL: URL(string: "https://gitlab.com/acme/payments-api/-/merge_requests/7")!
+        )
+        #expect(origin.account == Fixture.gitlabAccount)
+        #expect(origin.providerKind == .gitlab)
+        #expect(origin.changeRequestRef.string == "gitlab:gitlab.com/acme/payments-api!7")
+        origin.changeRequest = Fixture.changeRequestKey(Fixture.githubAccount, number: 3)
+        #expect(origin.changeRequestRef.string == "github:github.com/acme/payments-api#3")
+        #expect(origin.providerKind == .github)
+        #expect(try Fixture.roundTrip(origin) == origin)
+    }
+
     @Test func sameNumberOnDifferentProvidersProducesDifferentEvents() {
         let ids = [Fixture.githubAccount, Fixture.gitlabAccount, Fixture.bitbucketAccount].map { Fixture.event(account: $0).id }
         #expect(Set(ids).count == 3)
@@ -74,7 +111,6 @@ struct EventAttentionTests {
         let dedupe = AttentionItem.dedupeKey(thread: thread)
         let item = AttentionItem(
             dedupeKey: dedupe,
-            account: Fixture.githubAccount,
             changeRequest: key,
             repoFullPath: "acme/payments-api",
             title: "Add retries",

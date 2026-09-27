@@ -79,10 +79,17 @@ struct MergeCuePathsTests {
         #expect(paths.root.path(percentEncoded: false).hasPrefix(NSHomeDirectory()))
     }
 
+    /// Hermetic: the socket lives inside the temporary directory (`MERGECUE_SOCKET`), so the real shared
+    /// `/tmp/mergecue-<uid>` directory a running app uses is never created or chmod-ed by tests.
     @Test func ensureDirectoriesCreatesPrivateDirectories() throws {
         let home = try Fixture.temporaryDirectory("ensure")
         defer { try? FileManager.default.removeItem(at: home) }
-        let paths = MergeCuePaths(environment: ["MERGECUE_HOME": home.appending(path: "data").path(percentEncoded: false)])
+        let paths = MergeCuePaths(environment: [
+            "MERGECUE_HOME": home.appending(path: "data").path(percentEncoded: false),
+            "MERGECUE_SOCKET": home.appending(path: "data/ipc/mc.sock").path(percentEncoded: false),
+        ])
+        #expect(!paths.usesFallbackSocket)
+        #expect(paths.socketPath.hasPrefix(MergeCuePaths.fileSystemPath(home.standardizedFileURL)))
         try paths.ensureDirectories()
         for directory in [paths.root, paths.ipcDirectory, paths.worktrees, paths.handoff, paths.logs] {
             let attributes = try FileManager.default.attributesOfItem(atPath: directory.path(percentEncoded: false))
@@ -95,6 +102,38 @@ struct MergeCuePathsTests {
         try paths.ensureDirectories()
         let attributes = try FileManager.default.attributesOfItem(atPath: paths.ipcDirectory.path(percentEncoded: false))
         #expect((attributes[.posixPermissions] as? NSNumber)?.int16Value == 0o700)
+    }
+
+    /// The `/tmp` fallback branch, exercised against an injected parent directory.
+    @Test func fallbackSocketDirectoryIsCreatedPrivateAndOwned() throws {
+        let home = try Fixture.temporaryDirectory("fallback")
+        defer { try? FileManager.default.removeItem(at: home) }
+        let longRoot = home.appending(path: String(repeating: "r", count: 110), directoryHint: .isDirectory)
+        let paths = MergeCuePaths(
+            environment: ["MERGECUE_HOME": longRoot.path(percentEncoded: false)],
+            fallbackSocketParent: home
+        )
+        #expect(paths.usesFallbackSocket)
+        let expectedDirectory = MergeCuePaths.fileSystemPath(home.standardizedFileURL) + "/mergecue-\(getuid())"
+        #expect(MergeCuePaths.fileSystemPath(paths.socketDirectory) == expectedDirectory)
+        #expect(paths.socketPath == expectedDirectory + "/mergecue.sock")
+
+        try paths.ensureDirectories()
+        let attributes = try FileManager.default.attributesOfItem(atPath: expectedDirectory)
+        #expect((attributes[.posixPermissions] as? NSNumber)?.int16Value == 0o700)
+        #expect((attributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid())
+
+        // A symlink planted in place of the directory is refused.
+        try FileManager.default.removeItem(atPath: expectedDirectory)
+        let elsewhere = home.appending(path: "elsewhere", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(atPath: expectedDirectory, withDestinationPath: elsewhere.path(percentEncoded: false))
+        #expect(throws: MergeCuePathsError.self) { try paths.ensureDirectories() }
+    }
+
+    @Test func defaultFallbackParentIsTmp() {
+        #expect(MergeCuePaths.fallbackSocketDirectory.path(percentEncoded: false).hasPrefix("/tmp/mergecue-\(getuid())"))
+        #expect(MergeCuePaths(root: URL(filePath: "/tmp/" + String(repeating: "z", count: 100))).socketPath == "/tmp/mergecue-\(getuid())/mergecue.sock")
     }
 
     @Test func ensureDirectoriesRejectsFileInTheWay() throws {

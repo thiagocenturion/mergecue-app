@@ -4,8 +4,22 @@ import os
 /// Injectable wall clock + sleeping, so schedulers and leases are testable without real time.
 public protocol MCClock: Sendable {
     var now: Date { get }
-    /// Suspends for `seconds` (≤ 0 returns immediately). Throws `CancellationError` when the task is cancelled.
+    /// Suspends for `seconds` (≤ 0 or NaN returns immediately; +∞ and huge values are clamped to
+    /// `MCClockLimits.maxSleep`). Throws `CancellationError` when the task is cancelled.
     func sleep(for seconds: TimeInterval) async throws
+}
+
+/// Shared sanitizing of sleep durations. Delays often come from provider data (`Retry-After`, rate-limit resets,
+/// backoff arithmetic), so non-finite or huge values must never reach `Duration` conversion, which traps.
+public enum MCClockLimits {
+    /// Longest single sleep: 7 days.
+    public static let maxSleep: TimeInterval = 7 * 86_400
+
+    /// `seconds` clamped to `0...maxSleep`; NaN and negative values become 0, +∞ becomes `maxSleep`.
+    public static func sanitizedSleep(_ seconds: TimeInterval) -> TimeInterval {
+        guard !seconds.isNaN, seconds > 0 else { return 0 }
+        return min(seconds, maxSleep)
+    }
 }
 
 /// The real clock.
@@ -15,11 +29,12 @@ public struct SystemClock: MCClock {
     public var now: Date { Date() }
 
     public func sleep(for seconds: TimeInterval) async throws {
-        guard seconds > 0 else {
+        let duration = MCClockLimits.sanitizedSleep(seconds)
+        guard duration > 0 else {
             try Task.checkCancellation()
             return
         }
-        try await Task.sleep(for: .seconds(seconds))
+        try await Task.sleep(for: .seconds(duration))
     }
 }
 
@@ -43,6 +58,9 @@ public final class TestClock: MCClock {
         var now: Date
         var nextID: UInt64 = 0
         var sleepers: [UInt64: Sleeper] = [:]
+        /// Sleep calls that have not reached registration yet (between id allocation and the continuation).
+        var unregistered: Set<UInt64> = []
+        /// Unregistered sleep calls whose task was cancelled; they throw as soon as they register.
         var cancelledBeforeRegistration: Set<UInt64> = []
         var waiters: [Waiter] = []
 
@@ -76,6 +94,11 @@ public final class TestClock: MCClock {
         state.withLock { $0.sleepers.count }
     }
 
+    /// Bookkeeping entries for sleep calls that have not registered yet (0 when idle; exposed for leak tests).
+    public var pendingRegistrationCount: Int {
+        state.withLock { $0.unregistered.count + $0.cancelledBeforeRegistration.count }
+    }
+
     /// Deadlines of suspended sleepers, earliest first.
     public var pendingDeadlines: [Date] {
         state.withLock { $0.sleepers.values.map(\.deadline).sorted() }
@@ -83,16 +106,19 @@ public final class TestClock: MCClock {
 
     public func sleep(for seconds: TimeInterval) async throws {
         try Task.checkCancellation()
+        let duration = MCClockLimits.sanitizedSleep(seconds)
         let id = state.withLock { state -> UInt64 in
             state.nextID += 1
+            state.unregistered.insert(state.nextID)
             return state.nextID
         }
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
                 let registration = state.withLock { state -> Registration in
+                    state.unregistered.remove(id)
                     if state.cancelledBeforeRegistration.remove(id) != nil { return .cancelled }
-                    let deadline = state.now.addingTimeInterval(seconds)
-                    if seconds <= 0 || deadline <= state.now { return .resumeNow }
+                    let deadline = state.now.addingTimeInterval(duration)
+                    if duration <= 0 || deadline <= state.now { return .resumeNow }
                     state.sleepers[id] = Sleeper(deadline: deadline, sequence: id, continuation: continuation)
                     return .suspended(state.takeSatisfiedWaiters())
                 }
@@ -108,7 +134,9 @@ public final class TestClock: MCClock {
         } onCancel: {
             let continuation = state.withLock { state -> CheckedContinuation<Void, any Error>? in
                 if let sleeper = state.sleepers.removeValue(forKey: id) { return sleeper.continuation }
-                state.cancelledBeforeRegistration.insert(id)
+                // Only remember the cancellation if the call has not registered yet; once it registered (and was
+                // resumed by `advance` or the immediate path) there is nothing left to cancel.
+                if state.unregistered.contains(id) { state.cancelledBeforeRegistration.insert(id) }
                 return nil
             }
             continuation?.resume(throwing: CancellationError())

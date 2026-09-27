@@ -120,19 +120,14 @@ public enum JSONValue: Codable, Sendable, Hashable {
         try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
     }
 
-    /// ISO-8601 dates, sorted keys.
+    /// The wire coder (`MergeCueCoding.wireEncoder()`): ISO-8601 dates with millisecond precision, sorted keys.
     public static func defaultEncoder() -> JSONEncoder {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        return encoder
+        MergeCueCoding.wireEncoder()
     }
 
-    /// ISO-8601 dates.
+    /// The wire decoder (`MergeCueCoding.wireDecoder()`): ISO-8601 dates with or without fractional seconds.
     public static func defaultDecoder() -> JSONDecoder {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return decoder
+        MergeCueCoding.wireDecoder()
     }
 }
 

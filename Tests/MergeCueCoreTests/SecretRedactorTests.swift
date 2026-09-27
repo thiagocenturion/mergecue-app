@@ -47,6 +47,27 @@ struct SecretRedactorTests {
         done
         """, "MIIEpAIBAAKCAQEA7bq1", "done"),
         ("-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAA (truncated log", "b3BlbnNzaC1rZXktdjEAAAA", "[REDACTED PRIVATE KEY]"),
+        ("-----BEGIN PGP PRIVATE KEY BLOCK-----\nlQOYBGXyz0123\n-----END PGP PRIVATE KEY BLOCK-----\nok", "lQOYBGXyz0123", "ok"),
+        // Colon / YAML / log style pairs.
+        ("password: hunter2", "hunter2", "password: "),
+        ("client_secret: s3cr3tValue next", "s3cr3tValue", "next"),
+        ("api_key: sk_live_abcdef0123456789", "sk_live_abcdef0123456789", "api_key: "),
+        ("X-Vault-Token: hvs.CAESIJ0123456789abcdef", "hvs.CAESIJ0123456789abcdef", "X-Vault-Token: "),
+        ("Cookie: session=abc123def; theme=dark", "abc123def", "Cookie: "),
+        // Language literals.
+        ("{'password': 'hunter2'}", "hunter2", "{'password': '"),
+        (":password => \"hunter2\"", "hunter2", ":password => "),
+        (#"{"password": 12345678}"#, "12345678", #"{"password": "#),
+        (#"{"token": "a\"b-secret"}"#, "b-secret", #"{"token": "#),
+        // CLI flags with a separate value.
+        ("mytool --password hunter2 --verbose", "hunter2", "--verbose"),
+        ("gh auth --token abc123def", "abc123def", "--token "),
+        // Distinctive prefixes after a word character or a percent-escape.
+        ("MY_ghp_1234567890abcdefghijABCDEF", "1234567890abcdefghij", "MY_ghp_"),
+        ("state=abc%3Aghs_16C7e42F292c6912E7710c838347Ae178B4a", "16C7e42F292c6912E7710c838347Ae178B4a", "state=abc%3Aghs_"),
+        // URL userinfo: passwords containing "@", bare tokens as the user name.
+        ("https://user:p@ss@github.com/acme/api", "ss@github", "@github.com/acme/api"),
+        ("https://x9f8Z2kLmQ7vR4tY1uW3@bitbucket.org/acme/api.git", "x9f8Z2kLmQ7vR4tY1uW3", "@bitbucket.org/acme/api.git"),
     ]
 
     @Test(arguments: positives)
@@ -84,6 +105,12 @@ struct SecretRedactorTests {
         "Merged !42 into main; see gitlab.com/group/sub/project!42",
         "",
         "résumé naïve café — ✅ 🚀 日本語",
+        "authorization: required",
+        "max_token=128 min_tokens: 1 num_token=3",
+        "https://mona@bitbucket.org/ws/repo.git",
+        "passwords: 3 failed attempts",
+        "- the token field is optional",
+        "use --token-file ./path to read it",
     ]
 
     @Test(arguments: negatives)
@@ -112,6 +139,72 @@ struct SecretRedactorTests {
         #expect(output.contains("Error: Process completed with exit code 1."))
         #expect(output.contains("Run actions/checkout@v4"))
         #expect(output.contains("github.com/acme/api"))
+    }
+
+    @Test func masksUserInfoPasswordWithoutLeakingItsTail() {
+        #expect(SecretRedactor.redact("https://user:p@ss@github.com/acme/api") == "https://user:[REDACTED]@github.com/acme/api")
+        #expect(SecretRedactor.redact("git clone https://x-access-token:ghs_16C7e42F292c6912E7710c838347Ae178B4a@github.com/acme/api")
+            == "git clone https://x-access-token:[REDACTED]@github.com/acme/api")
+    }
+
+    /// Separators never swallow the next line (which may hold the error the log excerpt needs).
+    @Test func pairsDoNotCrossLineBreaks() {
+        #expect(SecretRedactor.redact("GITHUB_TOKEN=\nHOME=/Users/mona") == "GITHUB_TOKEN=\nHOME=/Users/mona")
+        #expect(SecretRedactor.redact("Authorization:\nERROR build failed") == "Authorization:\nERROR build failed")
+        #expect(SecretRedactor.redact("Bearer\nAbCdEf0123456789") == "Bearer\nAbCdEf0123456789")
+        #expect(SecretRedactor.redact("password:\n  - item") == "password:\n  - item")
+    }
+
+    /// Hostile inputs (long runs with many word boundaries, minified code, base64 blobs) must redact in linear
+    /// time. The old `\b`-anchored rules took ~40 s for 16 KB of `a-a-a…`.
+    /// Arguments are names only (64 KB inputs would flood the test log); `adversarialInput(_:)` builds them.
+    @Test(arguments: SecretRedactorTests.adversarialNames)
+    func adversarialInputStaysFast(_ name: String) throws {
+        let input = try #require(Self.adversarialInput(name))
+        let clock = ContinuousClock()
+        let elapsed = clock.measure { _ = SecretRedactor.redact(input) }
+        // ~1 ms each today; the old `\b`-anchored rules needed minutes for 64 KB of "a-".
+        #expect(elapsed < .milliseconds(250), "\(name): \(elapsed) for \(input.utf8.count) bytes")
+    }
+
+    static let adversarialNames = [
+        "a-", "x.", "base64url", "eyJ-", "eyJ.", "a:", "scheme", "userinfo", "userinfoBare", "keys", "quotes", "flags",
+        "bearer", "basic", "ghp", "glpat", "percent", "pem", "minified", "cookie", "xHeader", "authorization",
+    ]
+
+    static func adversarialInput(_ name: String) -> String? {
+        let size = 64 * 1024
+        func repeated(_ unit: String) -> String {
+            String(repeating: unit, count: size / unit.utf8.count)
+        }
+        switch name {
+        case "a-": return repeated("a-")
+        case "x.": return repeated("x.")
+        case "base64url":
+            var generator = SplitMix64(state: 7)
+            let alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_".utf8)
+            return String(decoding: (0..<size).map { _ in alphabet[Int(generator.next() % 64)] }, as: UTF8.self)
+        case "eyJ-": return repeated("eyJ-")
+        case "eyJ.": return repeated("eyJa.")
+        case "a:": return repeated("a:")
+        case "scheme": return repeated("a://x:")
+        case "userinfo": return "https://u:" + repeated("x@")
+        case "userinfoBare": return "https://" + repeated("Ab1")
+        case "keys": return repeated("password_")
+        case "quotes": return repeated("'a")
+        case "flags": return repeated("--token-")
+        case "bearer": return repeated("Bearer ")
+        case "basic": return repeated("Basic QUJD")
+        case "ghp": return repeated("ghp_")
+        case "glpat": return repeated("-glpat")
+        case "percent": return repeated("%3A")
+        case "pem": return repeated("-----BEGIN PRIVATE KEY-----")
+        case "minified": return repeated("a.b(c,d);e=f[g]||h;")
+        case "cookie": return repeated("cookie:")
+        case "xHeader": return repeated("x-a-")
+        case "authorization": return repeated("authorization:")
+        default: return nil
+        }
     }
 
     @Test func largeInputStaysLinear() {

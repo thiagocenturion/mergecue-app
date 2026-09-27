@@ -33,8 +33,15 @@ public struct CanonicalRemote: Codable, Sendable, Hashable, CustomStringConverti
     private static let allowedSchemes: Set<String> = ["https", "http", "ssh", "git", "git+ssh", "ssh+git"]
 
     /// Parses https/http, `ssh://` (with optional user and port), `git://` and scp-like `[user@]host:path` remotes.
-    /// Returns nil for local paths, `file://` URLs and anything without at least `owner/name`.
+    /// Returns nil for local paths (including `C:/…` drive paths), `file://` URLs, malformed userinfo (an `@` in
+    /// the path) and anything without at least `owner/name`.
     public static func parse(_ url: String) -> CanonicalRemote? {
+        parse(url, resolvingHost: { _ in nil })
+    }
+
+    /// Like `parse(_:)`, but first maps the remote's host through `resolvingHost` — e.g. an `~/.ssh/config` alias
+    /// (`github-work` → `github.com`, as reported by `ssh -G <alias>`). Return nil to keep the host as written.
+    public static func parse(_ url: String, resolvingHost: (String) -> String?) -> CanonicalRemote? {
         let raw = url.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty, !raw.contains(where: { $0.isWhitespace || $0 == "\\" }) else { return nil }
 
@@ -54,19 +61,24 @@ public struct CanonicalRemote: Codable, Sendable, Hashable, CustomStringConverti
             let authority = raw[..<colon]
             guard !authority.contains("/") else { return nil }
             hostPart = stripUserInfo(authority)
+            // "C:/Users/…" is a Windows drive path, not host "c".
+            guard !(hostPart.count == 1 && authority.count == 1) else { return nil }
             pathPart = raw[raw.index(after: colon)...]
         }
 
         if let cut = pathPart.firstIndex(where: { $0 == "?" || $0 == "#" }) {
             pathPart = pathPart[..<cut]
         }
+        // An "@" in the path means malformed userinfo (e.g. a password containing "/"); never guess.
+        guard !pathPart.contains("@") else { return nil }
         // GitLab web URLs: "/group/project/-/tree/main" → "/group/project".
         if let dash = pathPart.range(of: "/-/") {
             pathPart = pathPart[..<dash.lowerBound]
         }
         let decodedPath = String(pathPart).removingPercentEncoding ?? String(pathPart)
 
-        let host = normalizeHost(String(hostPart))
+        let writtenHost = String(hostPart)
+        let host = normalizeHost(resolvingHost(writtenHost) ?? resolvingHost(writtenHost.lowercased()) ?? writtenHost)
         guard isValidHost(host) else { return nil }
         let path = normalizePath(Substring(decodedPath))
         let segments = path.split(separator: "/", omittingEmptySubsequences: false)
@@ -74,6 +86,38 @@ public struct CanonicalRemote: Codable, Sendable, Hashable, CustomStringConverti
               segments.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." })
         else { return nil }
         return CanonicalRemote(uncheckedHost: host, path: path)
+    }
+
+    /// `url` with credentials removed, safe to display and persist (`GitRemote`, `RepoMapping.matchedRemote`).
+    ///
+    /// - `http(s)://` and other non-SSH URLs: the whole userinfo is dropped (`https://user:TOKEN@host/…` and
+    ///   `https://TOKEN@host/…` → `https://host/…`).
+    /// - `ssh://` / `git+ssh://`: only the password is dropped; a plain user name is kept (`ssh://git@host/…`).
+    /// - scp-like `git@host:path` has no password field and is kept.
+    ///
+    /// The userinfo ends at the **last** `@` before any `?`/`#`, so passwords containing `@` or `/` cannot leak
+    /// their tail. The result is finally passed through `SecretRedactor` (tokens in query strings etc.).
+    public static func sanitizedURL(_ url: String) -> String {
+        let raw = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let schemeRange = raw.range(of: "://") else {
+            return SecretRedactor.redact(raw)
+        }
+        let scheme = raw[..<schemeRange.lowerBound]
+        let rest = raw[schemeRange.upperBound...]
+        let authorityRegionEnd = rest.firstIndex(where: { $0 == "?" || $0 == "#" }) ?? rest.endIndex
+        guard let at = rest[..<authorityRegionEnd].lastIndex(of: "@") else {
+            return SecretRedactor.redact(raw)
+        }
+        let userInfo = rest[..<at]
+        let afterUserInfo = rest[rest.index(after: at)...]
+        var kept = ""
+        if ["ssh", "git+ssh", "ssh+git"].contains(scheme.lowercased()) {
+            let user = userInfo.prefix { $0 != ":" }
+            if !user.isEmpty, !user.contains("/"), !user.contains("@") {
+                kept = String(user) + "@"
+            }
+        }
+        return SecretRedactor.redact("\(scheme)://\(kept)\(afterUserInfo)")
     }
 
     /// All canonical locations of `repository` (web URL + clone URLs).
@@ -126,7 +170,8 @@ public struct CanonicalRemote: Codable, Sendable, Hashable, CustomStringConverti
         guard !host.isEmpty else { return false }
         if host.hasPrefix("[") { return host.hasSuffix("]") && host.count > 2 }
         guard host.first != "-", host.first != "." else { return false }
-        return host.allSatisfy { $0.isASCIIAlphanumeric || $0 == "." || $0 == "-" }
+        // "_" is common in ~/.ssh/config aliases (git@github_work:…) and internal hosts.
+        return host.allSatisfy { $0.isASCIIAlphanumeric || $0 == "." || $0 == "-" || $0 == "_" }
     }
 
     private static func normalizePath(_ raw: Substring) -> String {

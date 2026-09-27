@@ -1,6 +1,7 @@
 import Foundation
 
-/// UTF-8 byte-bounded text helpers. Cuts never split a Unicode scalar.
+/// UTF-8 byte-bounded text helpers. Cuts never split a Unicode scalar and, where possible, never split a
+/// grapheme cluster (flags, ZWJ emoji sequences, combining marks).
 public enum BoundedText {
     /// Result of bounding a text.
     public struct Truncation: Sendable, Hashable {
@@ -17,7 +18,9 @@ public enum BoundedText {
     }
 
     /// Keeps at most `maxBytes` UTF-8 bytes of `text` — the head, or the tail when `keepTail` is true — backing
-    /// off to the nearest scalar boundary. No marker is added (callers decide how to present truncation).
+    /// off to the nearest scalar boundary, and further to the nearest grapheme-cluster boundary unless that
+    /// would drop more than `maxGraphemeBackoffScalars` scalars (pathological combining runs). No marker is
+    /// added (callers decide how to present truncation).
     public static func truncate(_ text: String, maxBytes: Int, keepTail: Bool = false) -> Truncation {
         let utf8 = text.utf8
         let total = utf8.count
@@ -32,14 +35,20 @@ public enum BoundedText {
             while start < utf8.endIndex, isContinuation(utf8[start]) {
                 start = utf8.index(after: start)
             }
+            start = roundedUpToCharacter(start, in: text)
+            // Decode the byte range (String subscripts would round to Character boundaries on their own).
             return Truncation(text: String(decoding: utf8[start...], as: UTF8.self), isTruncated: true, originalByteCount: total)
         }
         var end = utf8.index(utf8.startIndex, offsetBy: maxBytes)
         while end > utf8.startIndex, isContinuation(utf8[end]) {
             end = utf8.index(before: end)
         }
+        end = roundedDownToCharacter(end, in: text)
         return Truncation(text: String(decoding: utf8[..<end], as: UTF8.self), isTruncated: true, originalByteCount: total)
     }
+
+    /// Maximum number of scalars `truncate` gives up to avoid splitting a grapheme cluster.
+    public static let maxGraphemeBackoffScalars = 32
 
     /// Bounds a CI log to `maxBytes`, preferring lines around `error|fail|panic|exception` (2 before, 3 after)
     /// plus the tail of the log. Omitted ranges are marked with `… [N lines omitted] …` lines. The result never
@@ -53,9 +62,7 @@ public enum BoundedText {
             return truncate(log, maxBytes: maxBytes, keepTail: true)
         }
 
-        let lines = log.split(separator: "\n", omittingEmptySubsequences: false).map { line -> Substring in
-            line.hasSuffix("\r") ? line.dropLast() : line
-        }
+        let lines = splitLines(log)
         let errorLines = lines.indices.filter { isErrorLine(lines[$0]) }
 
         var contextBudget = errorLines.isEmpty ? 0 : maxBytes * 45 / 100
@@ -80,6 +87,41 @@ public enum BoundedText {
 
     private static func isContinuation(_ byte: UInt8) -> Bool {
         byte & 0xC0 == 0x80
+    }
+
+    /// Splits on `\n` bytes (so `\r\n`, a single `Character` in Swift, is split too) and drops a trailing `\r`.
+    static func splitLines(_ text: String) -> [Substring] {
+        let newline = UInt8(ascii: "\n")
+        let carriageReturn = UInt8(ascii: "\r")
+        return text.utf8.split(separator: newline, omittingEmptySubsequences: false).map { bytes in
+            let trimmed = bytes.last == carriageReturn ? bytes.dropLast() : bytes
+            // Cuts at ASCII bytes are always scalar boundaries.
+            return Substring(trimmed)
+        }
+    }
+
+    /// `index` (a scalar boundary) moved back to the start of the grapheme cluster containing it.
+    private static func roundedDownToCharacter(_ index: String.Index, in text: String) -> String.Index {
+        guard index.samePosition(in: text) == nil else { return index }
+        var candidate = index
+        for _ in 0..<maxGraphemeBackoffScalars {
+            guard candidate > text.startIndex else { return candidate }
+            candidate = text.unicodeScalars.index(before: candidate)
+            if candidate.samePosition(in: text) != nil { return candidate }
+        }
+        return index
+    }
+
+    /// `index` (a scalar boundary) moved forward to the start of the next grapheme cluster.
+    private static func roundedUpToCharacter(_ index: String.Index, in text: String) -> String.Index {
+        guard index.samePosition(in: text) == nil else { return index }
+        var candidate = index
+        for _ in 0..<maxGraphemeBackoffScalars {
+            guard candidate < text.endIndex else { return candidate }
+            candidate = text.unicodeScalars.index(after: candidate)
+            if candidate.samePosition(in: text) != nil { return candidate }
+        }
+        return index
     }
 
     private static func isErrorLine(_ line: Substring) -> Bool {

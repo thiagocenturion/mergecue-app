@@ -2,7 +2,8 @@ import Foundation
 
 /// Opaque task identifier: `mc_` + 6 characters from `[a-z0-9]` (e.g. `mc_7f3k2a`).
 ///
-/// The space is ~2.2 billion ids; callers that persist tasks must still check uniqueness on insert.
+/// The space is ~2.2 billion ids, so collisions are likely long before it is exhausted (~1 % by ~6 600 tasks).
+/// Use `generate(avoiding:)` with the known ids, and still retry on a unique-constraint violation at insert.
 public struct TaskID: Codable, Sendable, Hashable, Comparable, RawRepresentable, CustomStringConvertible {
     public static let prefix = "mc_"
     public static let suffixLength = 6
@@ -42,6 +43,20 @@ public struct TaskID: Codable, Sendable, Hashable, Comparable, RawRepresentable,
             bytes.append(alphabet[Int(generator.next(upperBound: UInt64(alphabet.count)))])
         }
         return TaskID(validated: String(decoding: bytes, as: UTF8.self))
+    }
+
+    /// A new random id that is not in `taken`.
+    public static func generate(avoiding taken: Set<TaskID>) -> TaskID {
+        var generator = SystemRandomNumberGenerator()
+        return generate(avoiding: taken, using: &generator)
+    }
+
+    /// A new id from `generator` that is not in `taken` (redraws on collision).
+    public static func generate<G: RandomNumberGenerator>(avoiding taken: Set<TaskID>, using generator: inout G) -> TaskID {
+        while true {
+            let candidate = generate(using: &generator)
+            if !taken.contains(candidate) { return candidate }
+        }
     }
 
     public var description: String { rawValue }

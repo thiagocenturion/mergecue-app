@@ -73,7 +73,9 @@ public struct RepoKey: Codable, Sendable, Hashable, CustomStringConvertible {
 /// Identity of a pull/merge request.
 ///
 /// `remoteID`: GitHub PR id, GitLab MR global id, Bitbucket PR id. `number`: GitHub number, GitLab iid,
-/// Bitbucket id. Only `remoteID` participates in `id`; `number` is the human-facing value.
+/// Bitbucket id. Only `remoteID` participates in `id`; `number` is the human-facing value. Equality and hashing
+/// follow `id` — (`repo`, `remoteID`) — so a key rebuilt with a stale or placeholder `number` still finds the
+/// same row, `Set` element or snapshot thread/check.
 public struct ChangeRequestKey: Codable, Sendable, Hashable, CustomStringConvertible {
     public let repo: RepoKey
     public let remoteID: String
@@ -98,6 +100,15 @@ public struct ChangeRequestKey: Codable, Sendable, Hashable, CustomStringConvert
     public var account: AccountKey { repo.account }
     public var kind: ProviderKind { repo.account.kind }
     public var description: String { id }
+
+    public static func == (lhs: ChangeRequestKey, rhs: ChangeRequestKey) -> Bool {
+        lhs.repo == rhs.repo && lhs.remoteID == rhs.remoteID
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(repo)
+        hasher.combine(remoteID)
+    }
 }
 
 /// How a review thread is anchored on the provider.
@@ -113,8 +124,14 @@ public enum ThreadKind: String, Codable, Sendable, CaseIterable {
 /// Identity of a review thread.
 ///
 /// GitHub: review thread node id (`PRRT_…`) for diff threads, `ic:<issue comment id>` for issue-level comments,
-/// `rv:<review id>` for review bodies. GitLab: discussion id. Bitbucket: root comment id.
+/// `rv:<review id>` for review bodies (build those with `githubIssueComment` / `githubReviewSummary`).
+/// GitLab: discussion id. Bitbucket: root comment id.
 public struct ThreadKey: Codable, Sendable, Hashable, CustomStringConvertible {
+    /// `remoteID` prefix of a GitHub issue-level comment thread.
+    public static let githubIssueCommentPrefix = "ic:"
+    /// `remoteID` prefix of a GitHub review body thread.
+    public static let githubReviewSummaryPrefix = "rv:"
+
     public let changeRequest: ChangeRequestKey
     public let remoteID: String
     public let kind: ThreadKind
@@ -136,6 +153,16 @@ public struct ThreadKey: Codable, Sendable, Hashable, CustomStringConvertible {
     }
 
     public var description: String { id }
+
+    /// GitHub issue-level comment (a `.conversation` thread keyed `ic:<comment id>`).
+    public static func githubIssueComment(changeRequest: ChangeRequestKey, commentID: String) -> ThreadKey {
+        ThreadKey(changeRequest: changeRequest, remoteID: githubIssueCommentPrefix + commentID, kind: .conversation)
+    }
+
+    /// GitHub review body (a `.reviewSummary` thread keyed `rv:<review id>`).
+    public static func githubReviewSummary(changeRequest: ChangeRequestKey, reviewID: String) -> ThreadKey {
+        ThreadKey(changeRequest: changeRequest, remoteID: githubReviewSummaryPrefix + reviewID, kind: .reviewSummary)
+    }
 }
 
 /// Where a CI check came from on the provider.

@@ -35,6 +35,31 @@ struct RuleTests {
         #expect(!quiet.contains(date(23, 0, in: "UTC")))
     }
 
+    /// DST transitions in America/New_York (2026-03-08 springs forward 02:00→03:00; 2026-11-01 falls back
+    /// 02:00→01:00). Windows are evaluated on local wall-clock minutes.
+    @Test func quietHoursAcrossDaylightSavingTransitions() {
+        let zone = TimeZone(identifier: "America/New_York")!
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        func utc(_ iso: String) -> Date { ISO8601DateFormatter().date(from: iso)! }
+
+        // Window starting inside the skipped hour (02:30 does not exist on 2026-03-08).
+        let skipped = QuietHours(startMinute: 2 * 60 + 30, endMinute: 5 * 60, timeZoneID: zone.identifier)
+        #expect(skipped.contains(utc("2026-03-08T07:10:00Z")), "03:10 EDT")
+        #expect(skipped.contains(utc("2026-03-08T08:59:00Z")), "04:59 EDT")
+        #expect(!skipped.contains(utc("2026-03-08T09:00:00Z")), "05:00 EDT")
+        #expect(!skipped.contains(utc("2026-03-08T06:59:00Z")), "01:59 EST")
+
+        // Overnight window over the fall-back night: both 01:30s are inside, 07:00 local is outside.
+        let overnight = QuietHours(startMinute: 22 * 60, endMinute: 7 * 60, timeZoneID: zone.identifier)
+        #expect(overnight.contains(utc("2026-11-01T05:30:00Z")), "01:30 EDT")
+        #expect(overnight.contains(utc("2026-11-01T06:30:00Z")), "01:30 EST")
+        #expect(overnight.contains(utc("2026-11-01T11:30:00Z")), "06:30 EST")
+        #expect(!overnight.contains(utc("2026-11-01T12:00:00Z")), "07:00 EST")
+        #expect(overnight.contains(utc("2026-11-01T02:00:00Z")), "22:00 EDT the evening before")
+        #expect(calendar.component(.hour, from: utc("2026-11-01T11:30:00Z")) == 6)
+    }
+
     @Test func emptyAndInvalidWindows() {
         let empty = QuietHours(startMinute: 600, endMinute: 600, timeZoneID: "UTC")
         #expect(!empty.contains(date(10, 0, in: "UTC")))
@@ -71,6 +96,18 @@ struct RuleTests {
         ("", "acme/api", false),
         ("acme/*-api", "acme/-api", true),
         ("acme/*.*", "acme/payments.api", true),
+        // "**" inside a segment is a plain globstar: it never swallows the following "/".
+        ("ac**/x", "acx", false),
+        ("ac**/x", "ac/x", true),
+        ("ac**/x", "acme/team/x", true),
+        ("a/**b", "a/b", true),
+        ("a/**b", "a/x/yb", true),
+        // Leading/trailing slashes (copied from URLs) are ignored on both sides.
+        ("/acme/*", "acme/api", true),
+        ("acme/*/", "acme/api", true),
+        ("acme/api", "/acme/api/", true),
+        ("/", "", true),
+        ("**/", "acme/api", true),
     ])
     func glob(pattern: String, candidate: String, expected: Bool) {
         #expect(RuleEvaluator.glob(pattern, matches: candidate) == expected)
@@ -110,8 +147,15 @@ struct RuleTests {
         #expect(RuleEvaluator.matches(rule(), event: Fixture.event(), involvement: []))
     }
 
-    @Test func eventsFromTheCurrentUserNeverMatch() {
-        #expect(!RuleEvaluator.matches(rule(), event: Fixture.event(isFromCurrentUser: true), involvement: [.authored]))
+    @Test func eventsFromTheCurrentUserOnlyMatchWhenTheRuleOptsIn() throws {
+        let own = Fixture.event(isFromCurrentUser: true)
+        #expect(!RuleEvaluator.matches(rule(), event: own, involvement: [.authored]))
+        var optedIn = rule()
+        optedIn.includeOwnEvents = true
+        #expect(RuleEvaluator.matches(optedIn, event: own, involvement: [.authored]))
+        #expect(RuleEvaluator.decide(optedIn, event: own, involvement: [], now: Fixture.date, firesInLastHour: 0) == .fire)
+        #expect(RuleTemplates.all.allSatisfy { !$0.includeOwnEvents })
+        #expect(try Fixture.roundTrip(optedIn).includeOwnEvents)
     }
 
     @Test func providerAndAccountFilters() {
@@ -249,5 +293,6 @@ struct RuleTests {
         #expect(decoded.origin == .agentProposal)
         #expect(decoded.eventTypes.isEmpty && decoded.commentKinds.isEmpty && decoded.repoInclude.isEmpty)
         #expect(decoded.quietHours == nil)
+        #expect(!decoded.includeOwnEvents)
     }
 }

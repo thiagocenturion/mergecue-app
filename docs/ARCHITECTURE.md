@@ -39,8 +39,11 @@ Rules: Sync and Engine never import adapters, WorkspaceInspector or each other �
 
 ### 2.1 Identity (§3 "Data model and ownership")
 Remote objects are keyed by provider kind + instance host + account + immutable repo ID + remote CR ID.
-Every key has a stable string `id` (used as DB primary key) built from percent-encoded components, and a
-`shortID` (prefix + first 10 hex chars of SHA-256 of `id`) used in UI/MCP.
+Every key has a stable string `id` (used as DB primary key) built from NFC-normalized, percent-encoded components,
+and a `shortID` (prefix + first 10 hex chars of SHA-256 of `id`) used in UI/MCP. Key equality and hashing agree
+with `id`: `ChangeRequestKey` compares (`repo`, `remoteID`) only — `number` is display data, so a key rebuilt with
+a stale/placeholder number still finds the same row, `Set` element or snapshot thread/check (and so do the
+`ThreadKey`/`CheckKey`s derived from it).
 
 ```swift
 public enum ProviderKind: String, Codable, Sendable, CaseIterable, Hashable {
@@ -52,7 +55,7 @@ public enum ProviderKind: String, Codable, Sendable, CaseIterable, Hashable {
 }
 public struct ProviderInstance: Codable, Sendable, Hashable {
     let kind: ProviderKind; let webURL: URL; let apiURL: URL
-    var host: String                   // lowercased webURL host — part of identity
+    var host: String                   // lowercased webURL host (+ ":port" if non-default; IPv6 as "[::1]:8443") — part of identity
     static let githubCom      // web https://github.com,    api https://api.github.com
     static let gitlabCom      // web https://gitlab.com,    api https://gitlab.com/api/v4
     static let bitbucketCloud // web https://bitbucket.org, api https://api.bitbucket.org/2.0
@@ -63,15 +66,28 @@ public struct RepoKey: Codable, Sendable, Hashable { let account: AccountKey; le
 public struct ChangeRequestKey: Codable, Sendable, Hashable { let repo: RepoKey; let remoteID: String; let number: Int; var id: String; var shortID: String /* "cr_…" */ }
 // remoteID: GitHub PR id, GitLab MR global id, Bitbucket PR id. number: GitHub number / GitLab iid / Bitbucket id.
 public enum ThreadKind: String, Codable, Sendable { case diffThread = "diff", conversation, reviewSummary = "review_summary" }
-public struct ThreadKey: Codable, Sendable, Hashable { let changeRequest: ChangeRequestKey; let remoteID: String; let kind: ThreadKind; var id: String; var shortID: String /* "thr_…" */ }
+public struct ThreadKey: Codable, Sendable, Hashable { let changeRequest: ChangeRequestKey; let remoteID: String; let kind: ThreadKind; var id: String; var shortID: String /* "thr_…" */
+    static let githubIssueCommentPrefix /* "ic:" */, githubReviewSummaryPrefix /* "rv:" */
+    static func githubIssueComment(changeRequest:commentID:) -> ThreadKey   // .conversation, "ic:<id>"
+    static func githubReviewSummary(changeRequest:reviewID:) -> ThreadKey   // .reviewSummary, "rv:<id>"
+}
 // GitHub: review thread node id (PRRT_…) for diff threads, "ic:<issue comment id>" for issue-level comments,
-// "rv:<review id>" for review bodies. GitLab: discussion id. Bitbucket: root comment id.
+// "rv:<review id>" for review bodies (always build these with the helpers). GitLab: discussion id. Bitbucket: root comment id.
 public enum CheckSource: String, Codable, Sendable { case githubCheckRun, githubStatus, githubActionsJob, gitlabPipeline, gitlabJob, bitbucketStatus, bitbucketPipelineStep }
 public struct CheckKey: Codable, Sendable, Hashable { let changeRequest: ChangeRequestKey; let source: CheckSource; let remoteID: String; var id: String; var shortID: String /* "chk_…" */ }
 public struct ChangeRequestRef: Codable, Sendable, Hashable  // human, provider-qualified: "github:github.com/acme/api#42", "gitlab:gitlab.com/acme/api!42", "bitbucket_cloud:bitbucket.org/acme/api#42"
-    { let kind: ProviderKind; let host: String; let repoFullPath: String; let number: Int; var string: String; init?(string:) }
+    { let kind: ProviderKind; let host: String; let repoFullPath: String; let number: Int; var string: String; init?(string:)
+      static func validated(kind:host:repoFullPath:number:) -> ChangeRequestRef?; var isValid: Bool   // round-trips through `string`
+      func matches(_ other: ChangeRequestRef) -> Bool; var normalizedKey: String }                 // repo path case-insensitive
 public enum ShortID { static func make(prefix: String, from id: String) -> String }
 ```
+`ChangeRequestRef` grammar (encode and decode accept exactly the same set; encoding an invalid ref throws
+`EncodingError` instead of writing a row that cannot be read back): host = DNS-like name (letters, digits, `.`,
+`-`, `_`) or bracketed IPv6 literal, optional `:port`; repo path ≥ 2 segments without `/`, `#`, `!`, whitespace or
+control characters; number 1…18 digits. `==` is exact; **ref resolution** (`get_change_context`, `get_diff`,
+`cross_scope_reference` checks) uses `matches` (kind, host, number exact; repo path case-insensitive) — scoped to the
+task's account when a task is in scope; without a task, several matching accounts is an `invalid_params`
+("ambiguous change_ref") error, never a guess.
 
 ### 2.2 Accounts & credentials
 ```swift
@@ -192,7 +208,9 @@ public enum ProviderError: Error, Sendable, Equatable, LocalizedError {
     case unsupported(Capability, reason: String)
     case conflict(String)                        // remote state changed (head SHA, thread already resolved…)
     case invalidRequest(String)
-    var isRetryable: Bool
+    var isRetryable: Bool; var code: String /* snake_case */; func retryDate(now: Date) -> Date? /* clamped 0…1 day */
+    var errorDescription: String? /* provider messages redacted with SecretRedactor */
+    static func classify(_ error: any Error) -> ProviderError?   // shared by Sync, Engine and UI
 }
 
 public protocol ReviewProvider: Sendable {
@@ -221,6 +239,12 @@ public protocol ProviderFactory: Sendable {
     func capabilities(for kind: ProviderKind) -> CapabilityManifest
 }
 ```
+`ProviderError.classify`: `ProviderError` passes through; `CancellationError` / `URLError.cancelled` → **nil** (not a
+failure: record nothing, no backoff); `URLError.timedOut` → `timeout`; connectivity `URLError`s → `offline`; other
+`URLError`s and unknown errors → `server(status: 0, …)` (redacted); `DecodingError` → `decoding`. Networking's
+`mapTransportError` must agree with it. Mappings from a `ProviderError`: `AccountSyncState(providerError:now:)`
+(§2.9) and `TaskErrorInfo(providerError:at:)` (§2.6).
+
 Adapters return `ProviderError.unsupported` for unavailable capabilities — never silently drop data. Adapters must
 record the *current user* comparison inputs (`Person.remoteID`) faithfully; "is it me" is decided by Sync using
 `Account.id.remoteUserID`.
@@ -235,22 +259,29 @@ public enum ChangeEventType: String, Codable, Sendable, CaseIterable {
 }
 public struct ChangeEvent: Codable, Sendable, Hashable, Identifiable {
     var id: String          // stable event identity = hash(account, CR, type, objectID, objectVersion) → dedupe key
-    var type: ChangeEventType; var account: AccountKey; var changeRequest: ChangeRequestKey
-    var providerKind: ProviderKind; var repoFullPath: String; var number: Int; var title: String
-    var objectID: String; var objectVersion: String
+    var type: ChangeEventType; private(set) var account: AccountKey; var changeRequest: ChangeRequestKey
+    private(set) var providerKind: ProviderKind; var repoFullPath: String; private(set) var number: Int; var title: String
+    // account / providerKind / number are DERIVED from changeRequest (the init has no parameters for them, and
+    // reassigning changeRequest updates them), so an event can never mix providers or accounts.
+    var objectID: String    // NAMESPACED by object kind — build with the helpers below, never a bare provider id
+    var objectVersion: String
     var occurredAt: Date; var detectedAt: Date; var actor: Person?; var isFromCurrentUser: Bool; var isBaseline: Bool
     var thread: ThreadKey?; var commentID: String?; var check: CheckKey?
     var summary: String /* short, may quote untrusted text – display only */; var nativeRefs: [String: String]
     static func makeID(account:changeRequest:type:objectID:objectVersion:) -> String
+    var commentKind: CommentKind? /* D16 */
+    static func commentObjectID(thread: ThreadKey, commentID: String) -> String  // "<thread id>/c:<id>": issue vs review comments never collide
+    static func checkObjectID(_ key: CheckKey) -> String; static func reviewObjectID(_ id: String) -> String; static func headObjectID(sha: String) -> String
 }
 public enum AttentionReason: String, Codable, Sendable { case reviewComment = "review_comment", changesRequested = "changes_requested", reviewerQuestion = "reviewer_question", codeSuggestion = "code_suggestion", reply, ciFailed = "ci_failed", reviewRequested = "review_requested", readyToMerge = "ready_to_merge", mergeConflict = "merge_conflict" }
-public enum AttentionPriority: Int, Codable, Sendable, Comparable { case low, normal, high, urgent }
+public enum AttentionPriority: Int, Codable, Sendable, Comparable { case low, normal, high, urgent
+    var name: String /* "low"… — the IPC/MCP form */; init?(name:) }   // Int raw value = ordering + indexed column only
 public enum AttentionDisposition: Codable, Sendable, Hashable { case open, acknowledged, snoozed(until: Date), resolved /*condition cleared*/, dismissed }
 public enum AttentionAction: String, Codable, Sendable { case fixWithAI = "fix_with_ai", investigateWithAI = "investigate_with_ai", draftReply = "draft_reply", addressWithAI = "address_with_ai", openInProvider = "open_in_provider", acknowledge, snooze, markRead = "mark_read" }
 public struct AttentionItem: Codable, Sendable, Hashable, Identifiable {
     var id: String /* "att_…" = ShortID of dedupeKey */; var dedupeKey: String /* one item per CR+thread / CR+check name / CR+reason */
-    var account: AccountKey; var providerKind: ProviderKind; var changeRequest: ChangeRequestKey
-    var repoFullPath: String; var number: Int; var title: String
+    private(set) var account: AccountKey; private(set) var providerKind: ProviderKind; var changeRequest: ChangeRequestKey  // derived, as ChangeEvent
+    var repoFullPath: String; private(set) var number: Int; var title: String
     var reason: AttentionReason; var priority: AttentionPriority; var summary: String
     var thread: ThreadKey?; var check: CheckKey?; var eventIDs: [String]
     var createdAt: Date; var updatedAt: Date; var isUnread: Bool; var disposition: AttentionDisposition
@@ -261,7 +292,8 @@ public struct AttentionItem: Codable, Sendable, Hashable, Identifiable {
 
 ### 2.6 Tasks and the state machine (§3 "Task state machine")
 ```swift
-public struct TaskID: Codable, Sendable, Hashable, RawRepresentable, CustomStringConvertible { /* "mc_" + 6 [a-z0-9] */ static func generate() -> TaskID; init?(rawValue:) validates }
+public struct TaskID: Codable, Sendable, Hashable, RawRepresentable, CustomStringConvertible { /* "mc_" + 6 [a-z0-9] */ static func generate() -> TaskID; init?(rawValue:) validates
+    static func generate(avoiding: Set<TaskID>) -> TaskID }  // ~1 % collision chance by ~6.6k tasks: also retry on unique-constraint violation
 public enum TaskType: String, Codable, Sendable, CaseIterable { case fixReview = "fix_review", addressSuggestion = "address_suggestion", draftReply = "draft_reply", investigateCI = "investigate_ci" }
 public enum TaskState: String, Codable, Sendable, CaseIterable {
     case waitingForAgent = "waiting_for_agent", working, readyForReview = "ready_for_review", approvedAction = "approved_action",
@@ -280,6 +312,7 @@ public enum TaskStateMachine {
     /// Pure transition table. Throws TaskTransitionError for illegal (state, trigger, actor) combos.
     static func next(from: TaskState, on: TaskTrigger, by: TransitionActor) throws -> TaskState
     static func allowedTriggers(from: TaskState, by: TransitionActor) -> [TaskTrigger]
+    static func triggerAfterSuccessfulAction(moreActionsRemain: Bool) -> TaskTrigger  // .actionSucceeded / .markDone
 }
 ```
 Required table (anything not listed is illegal):
@@ -296,7 +329,8 @@ Required table (anything not listed is illegal):
 | ready_for_review | approveAction(kind) (user) | approved_action |
 | ready_for_review | rejectResult (user) | waiting_for_agent ("Discard and retry") |
 | ready_for_review | markDone (user) | done (no remote action) |
-| approved_action | actionSucceeded (system) | done — or ready_for_review if more actions remain (engine decides by passing markDone vs. staying) |
+| approved_action | actionSucceeded (system) | ready_for_review (the approved action succeeded and **more approved actions remain**) |
+| approved_action | markDone (system) | done (the **final** approved action succeeded) |
 | approved_action | actionBlocked (system) | blocked (fresh SHA / thread state changed, conflict) |
 | approved_action | actionFailed (system) | ready_for_review (error recorded, user may retry the action) |
 | waiting_for_agent, working, ready_for_review, approved_action, blocked, failed, stale | cancel (user) | cancelled (lease released) |
@@ -305,6 +339,12 @@ Required table (anything not listed is illegal):
 | cancelled, dismissed, done | reopen (user) | waiting_for_agent (**user only**; agents can never resurrect terminal states) |
 | waiting_for_agent, working | block (system/user) | blocked; blocked → unblock (user) → waiting_for_agent |
 
+After a successful approved action the engine **must** pass
+`TaskStateMachine.triggerAfterSuccessfulAction(moreActionsRemain:)` (by `.system`): `.markDone` → `done` for the
+last action, `.actionSucceeded` → `ready_for_review` otherwise (DECISIONS D13). Passing `.actionSucceeded` after the
+final action would bounce the task back to review forever. The table above, `TaskStateMachine` and
+`TaskStateMachineTests` are the single source of truth.
+
 ```swift
 public struct AgentLease: Codable, Sendable, Hashable { var agentName: String; var runID: String?; var leaseID: String; var claimedAt: Date; var heartbeatAt: Date; var expiresAt: Date }
 public enum CheckoutPolicy: String, Codable, Sendable { case isolatedWorktree = "isolated_worktree", readOnly = "read_only", blocked }
@@ -312,11 +352,14 @@ public struct TaskCheckout: Codable, Sendable, Hashable {
     var policy: CheckoutPolicy; var mappedCheckoutPath: String?; var worktreePath: String?; var baseSHA: String?
     var sourceBranch: String; var targetBranch: String; var isGitButlerManaged: Bool; var blockedReason: String?
 }
-public struct UntrustedText: Codable, Sendable, Hashable { var source: String /* "review_comment", "ci_log", "pr_description" */; var author: String?; var createdAt: Date?; var text: String }
+public struct UntrustedText: Codable, Sendable, Hashable { var source: String /* "review_comment", "ci_log", "pr_description" */; var author: String?; var createdAt: Date?; var text: String
+    static func bounded(source:author:createdAt:text:maxBytes:) -> UntrustedText  // redacts, then bounds; text.utf8.count <= maxBytes INCLUDING the truncation marker
+}
 public struct TaskOrigin: Codable, Sendable, Hashable {
-    var attentionItemID: String?; var ruleID: String?; var account: AccountKey; var providerKind: ProviderKind
-    var changeRequest: ChangeRequestKey; var changeRequestRef: ChangeRequestRef; var title: String; var webURL: URL
+    var attentionItemID: String?; var ruleID: String?; private(set) var account: AccountKey; private(set) var providerKind: ProviderKind
+    var changeRequest: ChangeRequestKey; private(set) var changeRequestRef: ChangeRequestRef; var title: String; var webURL: URL
     var thread: ThreadKey?; var check: CheckKey?
+    // account, providerKind and the ref's kind/host/number are derived from changeRequest; only the ref's repo path is taken from the init argument
 }
 public struct TaskTriggerSnapshot: Codable, Sendable, Hashable { var eventType: ChangeEventType?; var capturedAt: Date; var headSHA: String?; var sourceBranch: String; var targetBranch: String; var quoted: [UntrustedText] /* exact initial comment(s)/log excerpt, bounded */; var anchor: DiffAnchor? }
 public enum ArtifactKind: String, Codable, Sendable { case diff, testRun = "test_run", proposedReply = "proposed_reply", summary, logExcerpt = "log_excerpt" }
@@ -324,14 +367,19 @@ public struct Artifact: Codable, Sendable, Hashable, Identifiable { var id: Stri
 public enum RemoteActionKind: String, Codable, Sendable, CaseIterable { case applyPatch = "apply_patch", postReply = "post_reply", resolveThread = "resolve_thread", requestChanges = "request_changes", commitAndPush = "commit_and_push", merge }
 public enum ApprovalDecision: String, Codable, Sendable { case approved, rejected }
 public struct ApprovalRecord: Codable, Sendable, Hashable { var id: String; var taskID: TaskID; var action: RemoteActionKind; var decision: ApprovalDecision; var decidedAt: Date; var previewFingerprint: String; var note: String? }
-public struct TaskErrorInfo: Codable, Sendable, Hashable { var code: String; var message: String; var retryable: Bool; var at: Date }
+public struct TaskErrorInfo: Codable, Sendable, Hashable { var code: String; var message: String; var retryable: Bool; var at: Date
+    init(providerError: ProviderError, at: Date) /* code = ProviderError.code, message = redacted description, retryable = isRetryable */ }
 public struct MCTask: Codable, Sendable, Hashable, Identifiable {
     var id: TaskID; var type: TaskType; var state: TaskState; var version: Int; var createdAt: Date; var updatedAt: Date
     var origin: TaskOrigin; var trigger: TaskTriggerSnapshot; var checkout: TaskCheckout?; var lease: AgentLease?
     var agentLabel: String?; var agentSessionID: String?; var artifactIDs: [String]; var approvals: [ApprovalRecord]
     var lastError: TaskErrorInfo?; var resultSummary: String?; var proposedReply: String?; var knownRisks: [String]
 }
-public enum ActivityKind: String, Codable, Sendable { case created, claimed, progress, heartbeat, changesReported = "changes_reported", testsReported = "tests_reported", resultSubmitted = "result_submitted", failed, blocked, stale, approved, rejected, actionAttempted = "action_attempted", actionSucceeded = "action_succeeded", actionFailed = "action_failed", cancelled, dismissed, retried, reopened, note, rejectedCall = "rejected_call" }
+public enum ActivityKind: String, Codable, Sendable { case created, claimed, progress, heartbeat, changesReported = "changes_reported", testsReported = "tests_reported", resultSubmitted = "result_submitted", failed, blocked, stale, approved, rejected, actionAttempted = "action_attempted", actionSucceeded = "action_succeeded", actionBlocked = "action_blocked", actionFailed = "action_failed", completed, cancelled, dismissed, retried, reopened, unblocked, note, rejectedCall = "rejected_call" }
+// Transition → activity: claim→claimed, submitResult→result_submitted, fail→failed, agentBlocked/block→blocked, leaseExpired→stale,
+// approveAction→approved, rejectResult→rejected, actionSucceeded→action_succeeded, actionBlocked→action_blocked,
+// actionFailed→action_failed, markDone (user or system) → completed, cancel→cancelled, dismiss→dismissed, retry→retried,
+// reopen→reopened, unblock→unblocked. Never overload `note` for a transition.
 public struct TaskActivity: Codable, Sendable, Hashable, Identifiable { var id: String; var taskID: TaskID; var at: Date; var actor: TransitionActor; var actorName: String?; var kind: ActivityKind; var message: String; var fromState: TaskState?; var toState: TaskState?; var data: [String: String] }
 ```
 
@@ -344,20 +392,29 @@ public struct Rule: Codable, Sendable, Hashable, Identifiable {
     var id: String; var name: String; var isActive: Bool /* only a user activation sets true */; var origin: RuleOrigin
     var providerKinds: Set<ProviderKind> /* empty = any */; var accounts: Set<AccountKey>; var eventTypes: Set<ChangeEventType>
     var repoInclude: [String] /* glob on fullPath, empty = any */; var repoExclude: [String]; var involvement: Set<Involvement>
-    var excludeAuthors: [String]; var action: RuleAction; var maxFiresPerHour: Int; var quietHours: QuietHours?
+    var excludeAuthors: [String]; var commentKinds: Set<CommentKind> /* D16 */; var includeOwnEvents: Bool /* default false */
+    var action: RuleAction; var maxFiresPerHour: Int; var quietHours: QuietHours?
     var createdAt: Date; var updatedAt: Date
+    // Set fields encode as SORTED arrays (deterministic bytes across launches → stable fingerprints)
 }
 public enum RuleTemplates { static let all: [Rule] /* failed CI on my PR/MR, new requested change, reviewer question, change request ready for review */ }
 public enum RuleEvaluator { static func matches(_ rule: Rule, event: ChangeEvent, involvement: Set<Involvement>) -> Bool; static func glob(_ pattern: String, matches: String) -> Bool }
 ```
+Own events (`isFromCurrentUser`) never match unless the rule sets `includeOwnEvents` (PLAN §5.7 "unless a rule
+opts in"). Globs are case-insensitive; `*` stays within a segment, `**` crosses `/`, `**/` (at the start or after a
+`/`) = zero or more whole segments; leading/trailing `/` are ignored on both pattern and path.
 
 ### 2.8 Repo mapping & workspace protocol (§6)
 ```swift
 public struct CanonicalRemote: Codable, Sendable, Hashable { var host: String; var path: String /* lowercased, no ".git", no leading "/" */
-    static func parse(_ url: String) -> CanonicalRemote?  /* https, ssh://, scp-like git@host:path, with/without .git, ports, user@ */ }
+    static func parse(_ url: String) -> CanonicalRemote?  /* https, ssh://, scp-like git@host:path, with/without .git, ports, user@; nil for C:/ drive paths and "@" in the path */
+    static func parse(_ url: String, resolvingHost: (String) -> String?) -> CanonicalRemote?  /* ~/.ssh/config aliases (ssh -G) */
+    static func sanitizedURL(_ url: String) -> String /* http(s): drop all userinfo; ssh: drop password, keep user; then SecretRedactor */ }
 public enum MappingConfidence: String, Codable, Sendable { case exact, probable, mismatch }
 public struct RepoMapping: Codable, Sendable, Hashable, Identifiable { var id: String; var repo: RepoKey; var repoFullPath: String; var checkoutPath: String; var confidence: MappingConfidence; var matchedRemote: String?; var confirmedAt: Date?; var createdAt: Date }
-public struct GitRemote: Codable, Sendable, Hashable { var name: String; var fetchURL: String; var pushURL: String?; var canonical: CanonicalRemote? }
+public struct GitRemote: Codable, Sendable, Hashable { var name: String; private(set) var fetchURL: String; private(set) var pushURL: String?; var canonical: CanonicalRemote? }
+// fetchURL/pushURL are stored sanitized (init and decode); RepoMapping.matchedRemote / MappingSuggestion.matchedRemote
+// always hold sanitized URLs — a remote like https://user:TOKEN@host/… never reaches SQLite, logs or MCP.
 public struct GitButlerStatus: Codable, Sendable, Hashable { var isManaged: Bool; var workspaceBranch: String?; var evidence: [String] }
 public enum CheckoutSafety: String, Codable, Sendable { case safe, dirty, gitButlerWorkspace = "gitbutler_workspace", detached, notARepository = "not_a_repository", missing }
 public struct CheckoutInfo: Codable, Sendable, Hashable { var path: String; var isRepository: Bool; var topLevel: String?; var remotes: [GitRemote]; var currentBranch: String?; var headSHA: String?; var isDirty: Bool; var dirtyPaths: [String]; var worktrees: [String]; var gitButler: GitButlerStatus; var safety: CheckoutSafety }
@@ -383,7 +440,8 @@ public protocol WorkspaceInspecting: Sendable {
 
 ### 2.9 Sync, notifications, runtime protocols
 ```swift
-public enum AccountSyncState: Codable, Sendable, Hashable { case idle, syncing, ok, offline, authExpired, rateLimited(until: Date?), permissionDenied(String), error(String), paused }
+public enum AccountSyncState: Codable, Sendable, Hashable { case idle, syncing, ok, offline, authExpired, rateLimited(until: Date?), permissionDenied(String), error(String), paused
+    init(providerError: ProviderError, now: Date) }  // unauthorized→authExpired, forbidden→permissionDenied, rateLimited→rateLimited(until: retryDate(now:)), offline/timeout→offline, else→error
 public struct AccountSyncStatus: Codable, Sendable, Hashable { var account: AccountKey; var state: AccountSyncState; var lastAttemptAt: Date?; var lastSuccessAt: Date?; var nextRunAt: Date?; var consecutiveFailures: Int; var message: String? }
 public protocol SyncControlling: Sendable {
     func start() async; func stop() async
@@ -397,18 +455,28 @@ public struct GroupedNotification: Codable, Sendable, Hashable { var id: String;
 public protocol NotificationDelivering: Sendable { func deliver(_ notification: GroupedNotification) async }
 public protocol MCClock: Sendable { var now: Date { get }; func sleep(for seconds: TimeInterval) async throws }
 public struct SystemClock: MCClock; public final class TestClock: MCClock (manually advanced, thread-safe)
+public enum MCClockLimits { static let maxSleep /* 7 days */; static func sanitizedSleep(_:) -> TimeInterval }
+// Both clocks sanitize: NaN/≤0 → return immediately (after a cancellation check); +∞/huge → maxSleep. Never trap on provider-derived delays.
 public enum EngineChange: Sendable, Hashable { case accounts, syncStatus, attention, changeRequests, tasks(TaskID?), rules, mappings, audit }
 ```
 
 ### 2.10 Utilities
-- `JSONValue` (Codable enum: null, bool, number(Double), string, array, object) + helpers.
-- `SecretRedactor.redact(_:)` — masks GitHub (`ghp_`, `gho_`, `ghu_`, `ghs_`, `github_pat_`), GitLab (`glpat-`, `gloas-`, `glrt-`), Atlassian (`ATATT…`, `ATCTT…`), Slack `xox?-`, AWS `AKIA…`, JWTs, `Authorization:`/`Bearer`/`Basic` values, `password=`/`token=`/`secret=` pairs, PEM private keys, URL userinfo credentials.
-- `BoundedText.truncate(_:maxBytes:keepTail:)` (UTF-8 safe), `BoundedText.logExcerpt(_:maxBytes:)` (prefers lines around `error|fail|panic|exception` and the tail).
+- `MergeCueCoding` — the shared JSON coders (every module uses these, never ad-hoc `JSONEncoder()`s):
+  `storageEncoder()`/`storageDecoder()` for SQLite blobs and settings (sorted keys, dates as the exact
+  `timeIntervalSinceReferenceDate` → lossless, values stay `==` after persistence); `wireEncoder()`/`wireDecoder()`
+  for IPC/MCP DTOs (sorted keys, RFC 3339 UTC with millisecond precision, fraction omitted when zero; decoding
+  accepts any fraction length and offsets); `digest(_:)` = SHA-256 of the storage encoding for fingerprints.
+  `Set` properties of Core types encode as sorted arrays, so equal values give identical bytes across launches.
+- `JSONValue` (Codable enum: null, bool, number(Double), string, array, object) + helpers; its
+  `defaultEncoder()`/`defaultDecoder()` are the wire coders.
+- `SecretRedactor.redact(_:)` — masks GitHub (`ghp_`, `gho_`, `ghu_`, `ghs_`, `github_pat_`), GitLab (`glpat-`, `gloas-`, `glrt-`), Atlassian (`ATATT…`, `ATCTT…`), Slack `xox?-`, AWS `AKIA…`, JWTs, `Authorization:`/`Bearer`/`Basic` values, secret headers (`PRIVATE-TOKEN`, `X-…-Token`, `Cookie`), `password=` / `token: …` / `"secret": 123` / `:api_key => …` pairs, `--password value` flags, PEM/PGP private keys, URL userinfo credentials (passwords, and bare ≥ 16-char tokens as the user). Runs in **linear time** on hostile input (no `\b`-anchored lazy prefixes); separators never cross a line break.
+- `BoundedText.truncate(_:maxBytes:keepTail:)` (UTF-8 safe, never splits a scalar and backs off to a grapheme-cluster boundary), `BoundedText.logExcerpt(_:maxBytes:)` (prefers lines around `error|fail|panic|exception` and the tail; splits on `\n` bytes so CRLF logs work).
 - `MergeCuePaths` (all paths derive from `MERGECUE_HOME` env or `~/Library/Application Support/MergeCue`):
   `root`, `database` (`mergecue.sqlite`), `ipcDirectory` (`ipc/`, 0700), `socket` (`ipc/mergecue.sock`; if the
   path exceeds 100 bytes, fall back to `/tmp/mergecue-<uid>/mergecue.sock` with a 0700 dir), `ipcToken`
   (`ipc/token`, 0600), `worktrees` (`worktrees/`), `handoff` (`handoff/`), `logs` (`~/Library/Logs/MergeCue`,
-  or `<root>/logs` under `MERGECUE_HOME`). `MERGECUE_SOCKET` overrides the socket path.
+  or `<root>/logs` under `MERGECUE_HOME`). `MERGECUE_SOCKET` overrides the socket path. The fallback parent is
+  injectable (`fallbackSocketParent:`, default `/tmp`) so tests never touch the shared production directory.
 - `MCLog` — thin `os.Logger` wrapper (subsystem `dev.mergecue`) that redacts.
 - `IDGenerator` (`artifactID()`, `activityID()`, `leaseID()`, `ruleID()`, `previewID()`).
 
@@ -417,7 +485,9 @@ public enum EngineChange: Sendable, Hashable { case accounts, syncStatus, attent
 ## 3. MergeCueStore
 `public actor MergeCueDatabase` over one SQLite connection (WAL, foreign keys ON, busy timeout), file mode 0600.
 Schema versioned in `schema_migrations`; migrations are forward-only, each in a transaction. Complex values are
-stored as JSON blobs alongside indexed columns. **No credentials in SQLite.**
+stored as JSON blobs alongside indexed columns, encoded with `MergeCueCoding.storageEncoder()` and read with
+`storageDecoder()` (lossless dates: a snapshot/task/lease is `==` to itself after a round trip, so `updatedAt`
+comparisons in Sync never see phantom changes). **No credentials in SQLite** (remote URLs arrive sanitized, §2.8).
 
 ```swift
 public init(path: String) throws; public static func inMemory() throws -> MergeCueDatabase
@@ -515,7 +585,9 @@ public actor IPCClient { init(paths: MergeCuePaths, clientInfo: IPCClientInfo, t
     // Missing socket / ECONNREFUSED / missing token → IPCError(code: .appUnavailable, "MergeCue app is not running…", retryable: true)
 }
 ```
-DTOs use `snake_case` JSON keys (explicit `CodingKeys`), ISO-8601 dates, and are shared verbatim by the MCP tools.
+DTOs use `snake_case` JSON keys (explicit `CodingKeys`), ISO-8601 dates via `MergeCueCoding.wireEncoder()` /
+`wireDecoder()` (millisecond precision), enums as snake_case strings — `priority` is `AttentionPriority.name`
+(`low|normal|high|urgent`), never the Int raw value — and are shared verbatim by the MCP tools.
 IDs exposed are short IDs (`mc_…`, `thr_…`, `chk_…`, `art_…`, `att_…`) and `change_ref` strings.
 
 | Method | Params DTO | Result DTO |
@@ -592,6 +664,10 @@ Provider specifics (see §5.2–5.4 and each provider's current REST docs):
   suppressed for baseline, own actions, paused/quiet hours) → event handler (rules).
 - `EventDeriver.derive(previous:current:currentUserID:isBaseline:now:) -> [ChangeEvent]` is pure and exhaustively
   unit tested. Own comments/reviews produce events flagged `isFromCurrentUser` (no attention, no notification).
+  `objectID`s are always built with `ChangeEvent.commentObjectID(thread:commentID:)` / `checkObjectID` /
+  `reviewObjectID` / `headObjectID` (a GitHub issue comment and a review comment may share a numeric id).
+  Failures are classified with `ProviderError.classify` → `AccountSyncState(providerError:now:)`; a nil result
+  (cancellation) is not a failure.
   Re-runs that stay green produce nothing; failure→success produces `ci_recovered` which resolves the CI item.
 - `AttentionDeriver.apply(events:snapshot:existing:account:now:) -> [AttentionItem]` — one item per dedupe key
   (CR+thread, CR+check name, CR+reason); new activity on an existing thread updates the item (unread again) instead
@@ -627,6 +703,14 @@ Public API groups (UI contract, exact names chosen by the implementer and docume
   verified (`Task ready to start`, never `AI working` without a claim);
 - data: export database, reset, prune;
 - `handle(method:params:client:)` implements every IPC method in §5 with the guarantees listed there.
+
+Engine rules that come from Core (do not re-derive them): after an approved action succeeds pass
+`TaskStateMachine.triggerAfterSuccessfulAction(moreActionsRemain:)` (§2.6); record one `ActivityKind` per transition
+(`completed`, `unblocked`, `action_blocked`, …); resolve `change_ref` params with `ChangeRequestRef.matches` scoped to
+the task's account (§2.1); classify provider failures with `ProviderError.classify` and store them with
+`TaskErrorInfo(providerError:at:)` / `AccountSyncState(providerError:now:)` (cancellation is not an error); build
+approval `previewFingerprint`s with `MergeCueCoding.digest`; create ids with `TaskID.generate(avoiding:)` and retry on
+unique-constraint violations.
 
 ---
 
