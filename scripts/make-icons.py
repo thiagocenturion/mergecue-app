@@ -42,7 +42,8 @@ Verification (per output; results in docs/evidence/icon-verification.json and De
     Negative control (Design/README.md): a naive per-channel LANCZOS resize with a black or white matte scores
     fringe max 70..141 at 64..512 px and fails; this pipeline scores max <= 23.
     Visual evidence: docs/evidence/icon-contact-sheet.png (all sizes on light and dark, magnified small sizes,
-    edge zooms). The menu bar template glyph is built by scripts/menubar_glyph.py (invoked from here).
+    edge zooms). scripts/menubar_glyph.py (invoked from here) renders the reference SVG glyph preview and verifies the
+    owner-supplied menu bar icons (Design/menubar/ -> MenuBarIcon*.imageset, UI resources) without overwriting them.
 """
 import sys
 
@@ -533,7 +534,7 @@ def print_report(report):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--check", action="store_true", help="verify committed outputs without rewriting them")
-    parser.add_argument("--skip-glyph", action="store_true", help="do not (re)build the menu bar glyph")
+    parser.add_argument("--skip-glyph", action="store_true", help="skip the menu bar glyph preview and owner icon checks")
     args = parser.parse_args()
     report = build(args.check)
     ok = print_report(report)

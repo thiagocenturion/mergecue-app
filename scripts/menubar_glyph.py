@@ -17,12 +17,15 @@ Supported SVG subset
     a mask the colour's luminance is used), stroke-width, stroke-linecap="round", stroke-linejoin="round",
     fill-rule nonzero|evenodd. No transforms, opacity, dashes or curves.
 
-Outputs (all black RGB, alpha = coverage, i.e. template images)
-    App/Assets.xcassets/MenuBarIcon.imageset/MenuBarIcon{,@2x}.png            (18 px / 36 px)
-    App/Assets.xcassets/MenuBarIconAlert.imageset/MenuBarIconAlert{,@2x}.png
-    Contents.json of both sets with "template-rendering-intent": "template"
-    Sources/MergeCueUI/Resources/ copies of the four PNGs (loadable via Bundle.module; set isTemplate = true)
-    docs/evidence/menubar-glyph-preview.png (actual size on light/dark menu-bar-like strips + magnified)
+Outputs
+    docs/evidence/menubar-glyph-preview.png only (the SVG glyph at actual size on light/dark strips + magnified).
+    The SVG glyph is a design reference and is NOT shipped any more.
+
+Shipped menu bar icons (owner-supplied, never generated or overwritten here)
+    Design/menubar/MenuBar-{light,dark}[-dot][@2x].png are the source of truth. They are copied verbatim into
+    App/Assets.xcassets/MenuBarIcon{,Alert}.imageset/ and Sources/MergeCueUI/Resources/. This script only
+    VERIFIES those copies (byte-identical to Design/menubar/, referenced by each imageset's Contents.json); in
+    build mode it copies a file only when the copy is missing, and it never rewrites an imageset's Contents.json.
 """
 import sys
 
@@ -346,23 +349,50 @@ def render_svg(svg_path, px):
 # Outputs, verification and preview
 # ----------------------------------------------------------------------------------------------------------------
 
-def write_imageset(name, images):
-    folder = XCASSETS / f"{name}.imageset"
-    folder.mkdir(parents=True, exist_ok=True)
-    for scale, img in images.items():
-        img.save(folder / f"{name}{'' if scale == 1 else '@2x'}.png", optimize=True)
-    contents = {
-        "images": [{"filename": f"{name}{'' if s == 1 else '@2x'}.png", "idiom": "universal", "scale": f"{s}x"}
-                   for s in sorted(images)],
-        "info": {"author": "xcode", "version": 1},
-        "properties": {"template-rendering-intent": "template"},
-    }
-    text = json.dumps(contents, indent=2, sort_keys=True, separators=(",", " : ")) + "\n"
-    (folder / "Contents.json").write_text(text, encoding="utf-8")
-    UI_RESOURCES.mkdir(parents=True, exist_ok=True)
-    for scale in images:
-        fname = f"{name}{'' if scale == 1 else '@2x'}.png"
-        shutil.copyfile(folder / fname, UI_RESOURCES / fname)
+OWNER_MENUBAR = DESIGN / "menubar"
+OWNER_IMAGESETS = {  # owner file stem suffix -> imageset that ships it
+    "": "MenuBarIcon",
+    "-dot": "MenuBarIconAlert",
+}
+
+
+def verify_owner_menubar(check_only):
+    """Checks (and, when not check_only, restores missing) copies of the owner-supplied menu bar icons.
+
+    Existing files are never overwritten: a copy that differs from Design/menubar/ is reported as FAIL so the
+    owner decides which one is right.
+    """
+    ok = True
+    sources = sorted(OWNER_MENUBAR.glob("MenuBar-*.png"))
+    if not sources:
+        print(f"FAIL no owner menu bar icons in {OWNER_MENUBAR.relative_to(ROOT)}")
+        return False
+    referenced = {}
+    for name in OWNER_IMAGESETS.values():
+        contents = XCASSETS / f"{name}.imageset" / "Contents.json"
+        try:
+            data = json.loads(contents.read_text(encoding="utf-8"))
+            referenced[name] = {img.get("filename") for img in data.get("images", [])}
+        except (OSError, ValueError) as error:
+            print(f"FAIL {contents.relative_to(ROOT)} unreadable: {error}")
+            referenced[name] = set()
+            ok = False
+    for source in sources:
+        stem = source.stem.replace("@2x", "")
+        imageset = OWNER_IMAGESETS["-dot" if stem.endswith("-dot") else ""]
+        for folder in (XCASSETS / f"{imageset}.imageset", UI_RESOURCES):
+            target = folder / source.name
+            if not target.exists() and not check_only:
+                folder.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
+                print(f"COPY {source.relative_to(ROOT)} -> {target.relative_to(ROOT)} (was missing)")
+            same = target.exists() and target.read_bytes() == source.read_bytes()
+            ok &= same
+            print(f"{'PASS' if same else 'FAIL'} {target.relative_to(ROOT)} identical to {source.relative_to(ROOT)}")
+        listed = source.name in referenced.get(imageset, set())
+        ok &= listed
+        print(f"{'PASS' if listed else 'FAIL'} {imageset}.imageset/Contents.json references {source.name}")
+    return ok
 
 
 def verify_glyph(name, scale, img, ink, expected):
@@ -459,27 +489,13 @@ def main(check_only=False):
     ok = True
     renders = {}
     for name, svg in GLYPHS.items():
-        images = {}
         for scale in (1, 2):
             img, ink = render_svg(svg, POINT_SIZE * scale)
-            images[scale] = img
             renders[(name, scale)] = img
-            renders[(name, scale, "ink")] = ink
-        if not check_only:
-            write_imageset(name, images)
-        for scale, expected in images.items():
-            fname = f"{name}{'' if scale == 1 else '@2x'}.png"
-            for location in (XCASSETS / f"{name}.imageset" / fname, UI_RESOURCES / fname):
-                on_disk = Image.open(location)
-                on_disk.load()
-                result = verify_glyph(name, scale, on_disk.convert("RGBA"), renders[(name, scale, "ink")], expected)
-                result["template_intent"] = json.loads(
-                    (XCASSETS / f"{name}.imageset" / "Contents.json").read_text(encoding="utf-8")
-                ).get("properties", {}).get("template-rendering-intent") == "template"
-                result["pass"] = result["pass"] and result["template_intent"] and on_disk.mode == "RGBA"
-                ok &= result["pass"]
-                print(f"{'PASS' if result['pass'] else 'FAIL'} {location.relative_to(ROOT)} "
-                      f"{on_disk.size[0]}px ink={result['ink_bbox_pt']} opaque={result['opaque_pixels']}")
+            result = verify_glyph(name, scale, img, ink, img)
+            ok &= result["pass"]
+            print(f"{'PASS' if result['pass'] else 'FAIL'} SVG glyph {name} {scale}x (reference only, not shipped) "
+                  f"ink={result['ink_bbox_pt']} opaque={result['opaque_pixels']}")
     # The two states must differ only around the signal dot.
     for scale in (1, 2):
         diff = ImageChops.difference(renders[("MenuBarIcon", scale)], renders[("MenuBarIconAlert", scale)]).getbbox()
@@ -489,7 +505,9 @@ def main(check_only=False):
         ok &= within
         print(f"{'PASS' if within else 'FAIL'} states differ only near the dot at {scale}x: diff bbox {diff}")
     if not check_only:
-        preview({k: v for k, v in renders.items() if len(k) == 2}, EVIDENCE / "menubar-glyph-preview.png")
+        preview(renders, EVIDENCE / "menubar-glyph-preview.png")
+    # The shipped icons are the owner's PNGs: verify them, never regenerate them.
+    ok &= verify_owner_menubar(check_only)
     return ok
 
 
