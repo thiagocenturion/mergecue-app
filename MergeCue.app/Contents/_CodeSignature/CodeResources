@@ -14,7 +14,7 @@
 		</data>
 		<key>Resources/MergeCue_MergeCueFixtures.bundle/Contents/Info.plist</key>
 		<data>
-		OUQnK2YV4vWtUnxZIGHVEa8g9gA=
+		lthiYB2jufquOwyZG+MZR6iJwKM=
 		</data>
 		<key>Resources/MergeCue_MergeCueFixtures.bundle/Contents/Resources/Resources/bitbucket/README.txt</key>
 		<data>
@@ -570,7 +570,7 @@
 		</data>
 		<key>Resources/MergeCue_MergeCueUI.bundle/Contents/Info.plist</key>
 		<data>
-		s+0Vi8c8MENV2qA7DFn0yV0KDZ4=
+		kPWBUuwvCvRlMpty9Dp/Xrvg4+s=
 		</data>
 		<key>Resources/MergeCue_MergeCueUI.bundle/Contents/Resources/AppMark.png</key>
 		<data>
@@ -623,7 +623,7 @@
 		<dict>
 			<key>cdhash</key>
 			<data>
-			xT0/h/3/ZxUbOzf782Y8Bmyhx+E=
+			bbxa1w+xGirkSvJzcYXnLA9sKr8=
 			</data>
 			<key>requirement</key>
 			<string>identifier "com.thiagocenturion.MergeCue.mcp" and anchor apple generic and certificate leaf[subject.CN] = "Apple Development: Thiago R. Centurion (A9VB7Q9R38)" and certificate 1[field.1.2.840.113635.100.6.2.1] /* exists */</string>
@@ -646,7 +646,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			mJMxvxtoSxsh1Btn43ybWqrChE5nIOif4OkWmr63h1k=
+			ZFXTfEp3XfcVcqNcePVitkuMk0c76+BsPrwlNQHSbHQ=
 			</data>
 		</dict>
 		<key>Resources/MergeCue_MergeCueFixtures.bundle/Contents/Resources/Resources/bitbucket/README.txt</key>
@@ -1619,7 +1619,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			RTuFYDzHZm8cTbZYNiO0oURBO7vjIHk0tKQlocnYZaw=
+			9S3mzL1zrH3dol1DjhfgCYsGMVxQZGFHC/FwTL4EV8U=
 			</data>
 		</dict>
 		<key>Resources/MergeCue_MergeCueUI.bundle/Contents/Resources/AppMark.png</key>
