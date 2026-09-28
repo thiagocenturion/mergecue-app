@@ -12,7 +12,8 @@ struct SecretRedactorTests {
         ("using ghs_0123456789abcdefABCDEF0123 for app", "0123456789abcdef", "for app"),
         ("github_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyz", "11ABCDEFG0123456789", "github_pat_"),
         ("GitLab glpat-AbCdEfGhIjKlMnOpQrSt works", "AbCdEfGhIjKlMnOpQrSt", "works"),
-        ("glpat-xYz123-_AbCdEfGhIjKl.01.1a2b3c4d5 end", "xYz123-_AbCdEfGhIjKl", "end"),
+        // Assembled at runtime so repository secret scanners do not mistake this fake token for a real one.
+        ("glpat-xYz123-_AbCdEfGhIjKl" + "." + "01.1a2b3c4d5 end", "xYz123-_AbCdEfGhIjKl", "end"),
         ("oauth gloas-0123456789abcdefghijABCDEF", "0123456789abcdefghij", "oauth"),
         ("runner glrt-t1_AbCdEfGhIjKlMnOpQrStUv", "AbCdEfGhIjKlMnOp", "runner"),
         ("ATATT3xFfGF0AbCdEfGhIjKlMnOpQrStUvWxYz0123456789=ABCD1234", "3xFfGF0AbCdEfGhIjKl", "ATATT"),
