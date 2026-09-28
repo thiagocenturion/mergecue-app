@@ -173,6 +173,12 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
     // MARK: Checkouts
     /// Local checkouts whose remotes match a repository (with confidence).
     case findCheckouts(RepoKey)
+    /// Lists every repository of an account through the provider (cached; `forceRefresh` asks again). Runs in the
+    /// background; progress and the result arrive in `AppState.repositoryLists`.
+    case loadRepositories(AccountKey, forceRefresh: Bool)
+    /// Searches the default folders for checkouts of these (unmapped) repositories, in order, bounded; exact remote
+    /// matches are mapped automatically. Runs in the background; progress is in `AppState.checkoutScan`.
+    case scanCheckouts([RepoKey])
 
     // MARK: App and data
     case setLaunchAtLogin(Bool)
@@ -224,6 +230,8 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
         case .applyAgentRegistration(let plan, _): "applyAgentRegistration(\(plan.agent.rawValue), \(plan.action.rawValue))"
         case .verifyAgent(let kind): "verifyAgent(\(kind.rawValue))"
         case .findCheckouts: "findCheckouts"
+        case .loadRepositories(_, let force): "loadRepositories(force: \(force))"
+        case .scanCheckouts(let repos): "scanCheckouts(\(repos.count))"
         case .setLaunchAtLogin(let enabled): "setLaunchAtLogin(\(enabled))"
         case .requestNotificationPermission: "requestNotificationPermission"
         case .exportDatabase: "exportDatabase"

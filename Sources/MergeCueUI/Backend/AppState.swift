@@ -164,6 +164,10 @@ public nonisolated struct AppState: Sendable, Hashable {
     public var lastMaintenance: MaintenanceReport?
     /// Worktrees of finished tasks listed in Settings ▸ Data (removed only when the owner clicks Clean up).
     public var worktreeCleanupCandidates: [WorktreeCleanupCandidate]
+    /// Every repository of each account (`.loadRepositories`), for mapping repositories without open PRs/MRs.
+    public var repositoryLists: [AccountKey: RepositoryListState]
+    /// The local checkout scan (`.scanCheckouts`).
+    public var checkoutScan: CheckoutScanState
 
     public init(
         accounts: [AccountState] = [],
@@ -180,8 +184,12 @@ public nonisolated struct AppState: Sendable, Hashable {
         notificationPreferences: NotificationPreferences = .allEnabled,
         lastRefreshAt: Date? = nil,
         lastMaintenance: MaintenanceReport? = nil,
-        worktreeCleanupCandidates: [WorktreeCleanupCandidate] = []
+        worktreeCleanupCandidates: [WorktreeCleanupCandidate] = [],
+        repositoryLists: [AccountKey: RepositoryListState] = [:],
+        checkoutScan: CheckoutScanState = .idle
     ) {
+        self.repositoryLists = repositoryLists
+        self.checkoutScan = checkoutScan
         self.accounts = accounts
         self.attention = attention
         self.tasks = tasks

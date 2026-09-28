@@ -131,6 +131,11 @@ extension EngineBackend {
             let suggestions = try await engine.mappingSuggestions(for: repo)
             return AppCommandResult(message: suggestions.isEmpty ? "No matching checkout found in the usual folders. Choose one yourself." : nil,
                                     mappingSuggestions: suggestions)
+        case .loadRepositories(let key, let force):
+            startRepositoryListing(key, forceRefresh: force)
+            return .none
+        case .scanCheckouts(let repos):
+            return startCheckoutScan(repos) ? .none : AppCommandResult(message: "A checkout search is already running.")
 
         // MARK: Handoff and links
         case .copyHandoffCommand(let id, let agent):

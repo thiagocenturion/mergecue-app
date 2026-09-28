@@ -112,6 +112,9 @@ final class FakeWorld: @unchecked Sendable {
         var writes: [Write] = []
         var capabilityOverrides: [ProviderKind: [Capability: CapabilitySupport]] = [:]
         var fetchable = true
+        var repositories: [Repository] = []
+        var repositoryError: ProviderError?
+        var repositoryCalls: [String?] = []                 // namespace paths asked for (nil = all)
         var nextCommentID = 1
     }
 
@@ -160,7 +163,14 @@ struct FakeProvider: ReviewProvider {
         [Namespace(id: "acme", path: "acme", displayName: "Acme", kind: .organization)]
     }
 
-    func listRepositories(namespace: Namespace?) async throws -> [Repository] { [] }
+    func listRepositories(namespace: Namespace?) async throws -> [Repository] {
+        try world.state.update { state in
+            state.repositoryCalls.append(namespace?.path)
+            if let error = state.repositoryError { throw error }
+            guard let namespace else { return state.repositories }
+            return state.repositories.filter { $0.namespacePath == namespace.path }
+        }
+    }
     func listChangeRequests(_ query: ChangeRequestQuery) async throws -> ChangeRequestPage { .unchanged }
 
     func hydrate(_ summary: ChangeRequestSummary) async throws -> ChangeRequestSnapshot {
@@ -252,6 +262,7 @@ final class FakeWorkspace: WorkspaceInspecting, @unchecked Sendable {
     struct State: Sendable {
         var checkouts: [String: CheckoutInfo] = [:]
         var matchConfidence: MappingConfidence = .exact
+        var suggestionConfidence: MappingConfidence = .probable
         var prepareError: WorkspaceError?
         var baseSHA = "head111"
         var worktreeRoot = "/tmp/mergecue-tests/worktrees"
@@ -295,7 +306,7 @@ final class FakeWorkspace: WorkspaceInspecting, @unchecked Sendable {
     }
 
     func suggestMappings(for repo: Repository, searchRoots: [String]) async -> [MappingSuggestion] {
-        searchRoots.map { MappingSuggestion(checkoutPath: $0 + "/" + repo.name, confidence: .probable, reason: "name match") }
+        searchRoots.map { MappingSuggestion(checkoutPath: $0 + "/" + repo.name, confidence: state.get().suggestionConfidence, reason: "name match") }
     }
 
     func match(repo: Repository, checkoutPath: String) async -> MappingSuggestion {

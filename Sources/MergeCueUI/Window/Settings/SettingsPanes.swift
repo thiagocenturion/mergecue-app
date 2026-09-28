@@ -9,8 +9,6 @@ struct RepositoriesSettings: View {
     let model: AppModel
 
     var body: some View {
-        let mapped = Set(model.state.mappings.map(\.repo))
-        let unmapped = model.knownRepositories.filter { !mapped.contains($0.key) }
         VStack(alignment: .leading, spacing: 14) {
             Text("Map repositories from any provider to local checkouts. Agents work in an isolated worktree created from the mapped checkout; MergeCue never edits a GitButler workspace or a dirty checkout directly.")
                 .font(.callout)
@@ -27,16 +25,11 @@ struct RepositoriesSettings: View {
                     }
                 }
             }
-            Card("Not mapped", systemImage: "folder.badge.questionmark") {
-                if unmapped.isEmpty {
-                    Text("Every repository with open PRs/MRs is mapped.").font(.callout).foregroundStyle(.secondary)
-                }
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(unmapped.enumerated()), id: \.element.key) { index, repo in
-                        if index > 0 { Divider().padding(.vertical, 8) }
-                        UnmappedRepositoryRow(model: model, repo: repo)
-                    }
-                }
+            if model.state.accounts.isEmpty {
+                Text("Connect an account in Settings › Accounts to list its repositories.")
+                    .font(.callout).foregroundStyle(.secondary)
+            } else {
+                AccountRepositoriesSection(model: model)
             }
         }
     }
@@ -46,8 +39,14 @@ struct RepositoriesSettings: View {
 struct UnmappedRepositoryRow: View {
     let model: AppModel
     let repo: Repository
-    @State private var suggestions: [MappingSuggestion]?
+    var hasOpenPRs = false
+    @State private var found: [MappingSuggestion]?
     @State private var searching = false
+
+    /// Own search results, else candidates from the background checkout scan.
+    private var suggestions: [MappingSuggestion]? {
+        found ?? model.state.checkoutScan.suggestions[repo.key]
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -55,6 +54,9 @@ struct UnmappedRepositoryRow: View {
                 ProviderGlyph(kind: repo.providerKind, size: 16)
                 Text(repo.fullPath).font(.callout)
                 Text(repo.providerKind.displayName).font(.caption).foregroundStyle(.secondary)
+                if hasOpenPRs {
+                    Chip(text: "has open \(repo.providerKind.changeRequestAbbreviation)s", symbol: "arrow.triangle.pull", tone: .neutral)
+                }
                 Spacer()
                 if searching { ProgressView().controlSize(.small) }
                 Button("Find Checkouts") { find() }
@@ -92,7 +94,7 @@ struct UnmappedRepositoryRow: View {
     private func find() {
         searching = true
         Task {
-            suggestions = await model.send(.findCheckouts(repo.key))?.mappingSuggestions ?? []
+            found = await model.send(.findCheckouts(repo.key))?.mappingSuggestions ?? []
             searching = false
         }
     }
