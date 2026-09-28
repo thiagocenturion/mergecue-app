@@ -20,19 +20,29 @@ public actor EngineBackend: AppBackend {
         public var instructionFileNames: [String]
 
         public init(
-            detectAgents: @escaping @Sendable (MergeCueRuntime) async -> [DetectedAgent] = { await $0.detectAgents() },
-            registrationStatus: @escaping @Sendable (MergeCueRuntime, DetectedAgent) async -> AgentRegistrationStatus = {
-                await $0.registrationStatus(for: $1)
-            },
-            requestNotificationAuthorization: @escaping @Sendable () async -> Bool = {
-                await UserNotificationDeliverer(isDemo: false).requestAuthorization()
-            },
+            detectAgents: @escaping @Sendable (MergeCueRuntime) async -> [DetectedAgent] = Options.detectInstalledAgents,
+            registrationStatus: @escaping @Sendable (MergeCueRuntime, DetectedAgent) async -> AgentRegistrationStatus = Options.queryRegistration,
+            requestNotificationAuthorization: @escaping @Sendable () async -> Bool = Options.askForNotifications,
             instructionFileNames: [String] = ["AGENTS.md", "CLAUDE.md"]
         ) {
             self.detectAgents = detectAgents
             self.registrationStatus = registrationStatus
             self.requestNotificationAuthorization = requestNotificationAuthorization
             self.instructionFileNames = instructionFileNames
+        }
+
+        // Defaults are plain nonisolated functions (not closures written in this MainActor-default module), so no
+        // actor isolation is inferred for them.
+        @Sendable public static func detectInstalledAgents(_ runtime: MergeCueRuntime) async -> [DetectedAgent] {
+            await runtime.detectAgents()
+        }
+
+        @Sendable public static func queryRegistration(_ runtime: MergeCueRuntime, _ agent: DetectedAgent) async -> AgentRegistrationStatus {
+            await runtime.registrationStatus(for: agent)
+        }
+
+        @Sendable public static func askForNotifications() async -> Bool {
+            await UserNotificationDeliverer(isDemo: false).requestAuthorization()
         }
     }
 
@@ -144,7 +154,7 @@ public actor EngineBackend: AppBackend {
     }
 
     /// Detects installed agents and queries each one's `mergecue` registration (read-only).
-    func reloadAgents() async {
+    public func reloadAgents() async {
         let detected = await options.detectAgents(runtime)
         var statuses: [AgentKind: AgentRegistrationStatus] = [:]
         for agent in detected {

@@ -35,7 +35,12 @@ enum OnboardingStep: Int, CaseIterable, Identifiable {
 /// accounts, map repositories, set up a coding agent, notifications permission, done.
 struct OnboardingView: View {
     @Bindable var model: AppModel
-    @State private var step: OnboardingStep = .welcome
+    @State private var step: OnboardingStep
+
+    init(model: AppModel, initialStep: OnboardingStep = .welcome) {
+        self.model = model
+        _step = State(initialValue: initialStep)
+    }
 
     var body: some View {
         HStack(spacing: 0) {

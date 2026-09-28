@@ -5,8 +5,11 @@
 //   swift run mergecue-snapshots --only popover  Render scenes whose name contains "popover"
 //   swift run mergecue-snapshots --app [variant] Run the app interactively with preview data
 //                                                (variants: standard, authExpired, allCaughtUp, noAccounts)
+//   swift run mergecue-snapshots --no-engine-demo  Skip the engine-demo-* set
 //
-// Everything rendered here is labeled "Preview data"; nothing is fetched from providers.
+// Preview scenes are labeled "Preview data". The engine-demo-* scenes run the real engine and adapters over the
+// bundled demo fixtures (MergeCueRuntime.makeDemo in a temporary MERGECUE_HOME, no IPC server) and are labeled
+// "Demo data". Nothing is fetched from providers.
 //
 // Window scenes render the real `MainWindowView` at the window size and composite the title bar controls of a titled
 // window configured exactly like the app's (full-size content, transparent title bar), so the traffic lights are in
@@ -14,7 +17,9 @@
 // mockups in Design/mockups/.
 
 import AppKit
+import Darwin
 import MergeCueCore
+import MergeCueRuntime
 import MergeCueUI
 import SwiftUI
 
@@ -332,7 +337,114 @@ do {
 }
 
 var written: [String] = []
-for scene in scenes where filter.map({ scene.name.contains($0) }) ?? true {
+
+// MARK: - Engine demo scenes
+
+/// Runs `operation` on the main actor while spinning the run loop (top-level code cannot `await` UI work here).
+func runBlocking<T>(_ operation: @escaping @MainActor () async throws -> T) -> Result<T, any Error> {
+    var result: Result<T, any Error>?
+    Task { @MainActor in
+        do { result = .success(try await operation()) } catch { result = .failure(error) }
+    }
+    while result == nil { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+    return result ?? .failure(CancellationError())
+}
+
+struct EngineScene {
+    var name: String
+    var size: NSSize?
+    var configure: (AppModel) -> Void = { _ in }
+    /// nil = the main window.
+    var view: ((AppModel) -> AnyView)?
+}
+
+func renderEngineDemo() -> [String] {
+    var template = Array("/tmp/mcsnap-XXXXXX".utf8CString)
+    guard let created = mkdtemp(&template) else { return [] }
+    let root = URL(filePath: String(cString: created), directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let paths = MergeCuePaths(root: root, fallbackSocketParent: root)
+    let launched = runBlocking { () async throws -> (EngineBackend, AppState, TaskID?) in
+        let backend = try await EngineBackend.launch(
+            mode: .demo, paths: paths, appVersion: "0.1.0",
+            runtimeOptions: RuntimeOptions(startsIPCServer: false, mappingSearchRoots: [])
+        )
+        await backend.reloadAgents()
+        // A real task from GitHub #42's requested change (Waiting for agent: no claim is faked).
+        let state = await backend.loadState()
+        var taskID: TaskID?
+        if let item = state.attention.first(where: { $0.providerKind == .github && $0.number == 42 && $0.thread != nil }) {
+            taskID = try await backend.perform(.createTask(attentionID: item.id, type: .fixReview)).createdTaskID
+        }
+        return (backend, await backend.loadState(), taskID)
+    }
+    guard case .success(let (backend, state, taskID)) = launched else {
+        if case .failure(let error) = launched {
+            FileHandle.standardError.write(Data("mergecue-snapshots: demo runtime failed: \(error)\n".utf8))
+        }
+        return []
+    }
+    defer { _ = runBlocking { await backend.shutdown() } }
+    let engineScenes: [EngineScene] = [
+        EngineScene(name: "engine-demo-inbox", size: windowSize, configure: { model in
+            model.screen = .inbox
+            model.selectedAttentionID = model.state.attention.first { $0.providerKind == .github && $0.number == 42 }?.id
+        }),
+        EngineScene(name: "engine-demo-popover", view: { AnyView(PopoverView(model: $0)) }),
+        EngineScene(name: "engine-demo-pr-detail", size: windowSize, configure: { model in
+            model.screen = .changeRequests
+            model.selectedChangeRequestID = model.state.changeRequests.first { $0.summary.providerKind == .gitlab }?.id
+        }),
+        EngineScene(name: "engine-demo-inbox-bitbucket", size: windowSize, configure: { model in
+            model.screen = .inbox
+            model.selectedAttentionID = model.state.attention.first { $0.providerKind == .bitbucketCloud }?.id
+        }),
+        EngineScene(name: "engine-demo-task-handoff", size: windowSize, configure: { model in
+            model.screen = .tasks
+            model.selectedTaskID = taskID
+        }),
+        EngineScene(name: "engine-demo-tasks", size: windowSize, configure: { $0.screen = .tasks }),
+        EngineScene(name: "engine-demo-settings-accounts", size: windowSize, configure: { $0.screen = .settings; $0.settingsTab = .accounts }),
+        EngineScene(name: "engine-demo-settings-repositories", size: windowSize, configure: { $0.screen = .settings; $0.settingsTab = .repositories }),
+        EngineScene(name: "engine-demo-settings-agents", size: windowSize, configure: { $0.screen = .settings; $0.settingsTab = .agents }),
+        EngineScene(name: "engine-demo-settings-general", size: windowSize, configure: { $0.screen = .settings; $0.settingsTab = .general }),
+        EngineScene(name: "engine-demo-settings-data", size: windowSize, configure: { $0.screen = .settings; $0.settingsTab = .data }),
+        EngineScene(name: "engine-demo-onboarding-welcome", size: NSSize(width: 900, height: 640),
+                    view: { AnyView(MergeCuePreview.onboarding(model: $0, step: 0)) }),
+        EngineScene(name: "engine-demo-onboarding-accounts", size: NSSize(width: 900, height: 640),
+                    view: { AnyView(MergeCuePreview.onboarding(model: $0, step: 1)) }),
+        EngineScene(name: "engine-demo-onboarding-agents", size: NSSize(width: 900, height: 640),
+                    view: { AnyView(MergeCuePreview.onboarding(model: $0, step: 3)) }),
+        EngineScene(name: "engine-demo-connect-github", view: { model in
+            AnyView(MergeCuePreview.connectAccountSheet(model: model, kind: .github).background(Color(nsColor: .windowBackgroundColor)))
+        }),
+    ]
+    var names: [String] = []
+    let now = Date()
+    for scene in engineScenes where filter.map({ scene.name.contains($0) }) ?? true {
+        for (suffix, appearance) in [("dark", NSAppearance.Name.darkAqua), ("light", NSAppearance.Name.aqua)] {
+            let model = AppModel(backend: backend, initialState: state, environment: .fixed(now: now, userFullName: NSFullUserName()))
+            scene.configure(model)
+            let url = outputDirectory.appending(path: "\(scene.name)-\(suffix).png")
+            let ok = if let make = scene.view {
+                renderView(make(model), size: scene.size, appearance: appearance, to: url)
+            } else {
+                renderWindow(model: model, size: scene.size ?? windowSize, appearance: appearance, to: url)
+            }
+            if ok { names.append(url.lastPathComponent) }
+        }
+    }
+    return names
+}
+
+// Rendered first: the engine runtime starts while no snapshot windows exist yet (leftover offscreen hosting views
+// keep the main run loop busy with layout and starve the start-up task).
+// `--only engine…` renders only engine scenes; other filters only preview scenes.
+if !arguments.contains("--no-engine-demo"), filter.map({ $0.hasPrefix("engine") }) ?? true {
+    written += renderEngineDemo()
+}
+
+for scene in scenes where filter.map({ !$0.hasPrefix("engine") && scene.name.contains($0) }) ?? true {
     for (suffix, appearance) in [("dark", NSAppearance.Name.darkAqua), ("light", NSAppearance.Name.aqua)] {
         let model = MergeCuePreview.makeModel(variant: scene.variant, now: now)
         scene.configure(model)

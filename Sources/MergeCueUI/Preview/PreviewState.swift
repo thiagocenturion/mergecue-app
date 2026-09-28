@@ -251,7 +251,7 @@ nonisolated extension PreviewWorld {
 
     /// Instruction files "found" in the preview's mapped checkouts.
     func makeInstructionFiles() -> [String: [String]] {
-        ["~/Developer/acme/payments-api": ["AGENTS.md", "CLAUDE.md"], "~/Developer/ledger-service": ["AGENTS.md"]]
+        ["~/Developer/acme/payments-api": ["AGENTS.md", "CLAUDE.md"], "~/Developer/ledger-service": ["AGENTS.md"], "~/Developer/checkout-web": []]
     }
 
 }
