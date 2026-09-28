@@ -1,0 +1,28 @@
+{
+  "id": 88007,
+  "iid": 7,
+  "project_id": 278990,
+  "title": "Move checkout routes behind feature flag",
+  "description": "",
+  "state": "opened",
+  "created_at": "2026-09-18T14:00:00.000Z",
+  "updated_at": "2026-09-20T10:00:00.000Z",
+  "merge_status": "can_be_merged",
+  "approvals_required": 1,
+  "approvals_left": 0,
+  "approved": true,
+  "approved_by": [
+    {
+      "user": {
+        "id": 7004,
+        "username": "rev-bob",
+        "name": "Bob Reviewer",
+        "state": "active",
+        "locked": false,
+        "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/7004/avatar.png",
+        "web_url": "https://gitlab.com/rev-bob"
+      },
+      "approved_at": "2026-09-19T15:08:00.000Z"
+    }
+  ]
+}

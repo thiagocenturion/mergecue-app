@@ -1,0 +1,91 @@
+[
+  {
+    "id": 99012,
+    "iid": 12,
+    "project_id": 278964,
+    "title": "Fix currency rounding for JPY",
+    "description": "Rounds zero-decimal currencies correctly.",
+    "state": "opened",
+    "created_at": "2026-09-20T15:30:00.000Z",
+    "updated_at": "2026-09-20T16:05:00.000Z",
+    "merged_by": null,
+    "merge_user": null,
+    "merged_at": null,
+    "closed_by": null,
+    "closed_at": null,
+    "target_branch": "main",
+    "source_branch": "fix/currency-rounding",
+    "user_notes_count": 0,
+    "upvotes": 0,
+    "downvotes": 0,
+    "author": {
+      "id": 7001,
+      "username": "mona-dev",
+      "name": "Mona Dev",
+      "state": "active",
+      "locked": false,
+      "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/7001/avatar.png",
+      "web_url": "https://gitlab.com/mona-dev"
+    },
+    "assignees": [
+      {
+        "id": 7001,
+        "username": "mona-dev",
+        "name": "Mona Dev",
+        "state": "active",
+        "locked": false,
+        "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/7001/avatar.png",
+        "web_url": "https://gitlab.com/mona-dev"
+      }
+    ],
+    "assignee": {
+      "id": 7001,
+      "username": "mona-dev",
+      "name": "Mona Dev",
+      "state": "active",
+      "locked": false,
+      "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/7001/avatar.png",
+      "web_url": "https://gitlab.com/mona-dev"
+    },
+    "reviewers": [],
+    "source_project_id": 311000,
+    "target_project_id": 278964,
+    "labels": [
+      "backend"
+    ],
+    "draft": false,
+    "work_in_progress": false,
+    "milestone": null,
+    "merge_when_pipeline_succeeds": false,
+    "merge_status": "can_be_merged",
+    "detailed_merge_status": "ci_still_running",
+    "sha": "185441ce12ce92bc802525c9ecf17b4d761df3c3",
+    "merge_commit_sha": null,
+    "squash_commit_sha": null,
+    "discussion_locked": null,
+    "should_remove_source_branch": null,
+    "force_remove_source_branch": true,
+    "prepared_at": "2026-09-20T15:30:00.000Z",
+    "reference": "!12",
+    "references": {
+      "short": "!12",
+      "relative": "!12",
+      "full": "acme/payments-api!12"
+    },
+    "web_url": "https://gitlab.com/acme/payments-api/-/merge_requests/12",
+    "time_stats": {
+      "time_estimate": 0,
+      "total_time_spent": 0,
+      "human_time_estimate": null,
+      "human_total_time_spent": null
+    },
+    "squash": false,
+    "squash_on_merge": false,
+    "task_completion_status": {
+      "count": 0,
+      "completed_count": 0
+    },
+    "has_conflicts": false,
+    "blocking_discussions_resolved": true
+  }
+]

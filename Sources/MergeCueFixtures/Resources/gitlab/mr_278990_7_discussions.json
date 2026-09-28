@@ -1,0 +1,36 @@
+[
+  {
+    "id": "44db555d61430d6a356a1088bb593deb9fdd36d5",
+    "individual_note": true,
+    "notes": [
+      {
+        "id": 2001,
+        "type": null,
+        "body": "@mona-dev could you review the routing changes?",
+        "attachment": null,
+        "author": {
+          "id": 7002,
+          "username": "octo-lead",
+          "name": "Octo Lead",
+          "state": "active",
+          "locked": false,
+          "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/7002/avatar.png",
+          "web_url": "https://gitlab.com/octo-lead"
+        },
+        "created_at": "2026-09-19T14:05:00.000Z",
+        "updated_at": "2026-09-19T14:05:00.000Z",
+        "system": false,
+        "noteable_id": 88007,
+        "noteable_type": "MergeRequest",
+        "project_id": 278990,
+        "noteable_iid": 7,
+        "commit_id": null,
+        "resolvable": false,
+        "confidential": false,
+        "internal": false,
+        "imported": false,
+        "imported_from": "none"
+      }
+    ]
+  }
+]

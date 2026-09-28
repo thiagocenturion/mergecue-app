@@ -1,0 +1,15 @@
+[
+  {
+    "old_path": "lib/money.rb",
+    "new_path": "lib/money.rb",
+    "a_mode": "100644",
+    "b_mode": "100644",
+    "diff": "@@ -5,3 +5,3 @@ class Money\n-    (amount * 100).round\n+    amount.round(currency.decimals)\n   end\n",
+    "collapsed": false,
+    "too_large": false,
+    "new_file": false,
+    "renamed_file": false,
+    "deleted_file": false,
+    "generated_file": false
+  }
+]

@@ -1,0 +1,41 @@
+[
+  {
+    "old_path": "src/payments/charge.rb",
+    "new_path": "src/payments/charge.rb",
+    "a_mode": "100644",
+    "b_mode": "100644",
+    "diff": "@@ -38,8 +38,14 @@ module Payments\n       attempts = 0\n       begin\n-        gateway.charge(amount)\n+        attempts += 1\n+        gateway.charge(amount)\n       rescue Gateway::Timeout\n-        retry\n+        raise if attempts >= MAX_ATTEMPTS\n+        sleep(backoff(attempts))\n+        retry\n       end\n+      amount_cents = params[:amount_cents].to_i\n+      log_charge(amount_cents)\n     end\n",
+    "collapsed": false,
+    "too_large": false,
+    "new_file": false,
+    "renamed_file": false,
+    "deleted_file": false,
+    "generated_file": false
+  },
+  {
+    "old_path": "src/payments/refund.rb",
+    "new_path": "src/payments/refund.rb",
+    "a_mode": "0",
+    "b_mode": "100644",
+    "diff": "@@ -0,0 +1,14 @@\n+module Payments\n+  class Refund\n+    def initialize(gateway)\n+      @gateway = gateway\n+    end\n+\n+    def call(charge_id, amount)\n+      @gateway.refund(charge_id, amount)\n+    end\n+  end\n+end\n+\n+# TODO: ledger\n+\n",
+    "collapsed": false,
+    "too_large": false,
+    "new_file": true,
+    "renamed_file": false,
+    "deleted_file": false,
+    "generated_file": false
+  },
+  {
+    "old_path": "config/app.yml",
+    "new_path": "config/application.yml",
+    "a_mode": "100644",
+    "b_mode": "100644",
+    "diff": "@@ -1,4 +1,4 @@\n payments:\n-  timout: 30\n+  timeout: 30\n   currency: USD\n   retries: 5\n",
+    "collapsed": false,
+    "too_large": false,
+    "new_file": false,
+    "renamed_file": true,
+    "deleted_file": false,
+    "generated_file": false
+  }
+]
