@@ -269,6 +269,13 @@ struct LifecycleTests {
         let context = try await h.ok(GetTaskParams(taskID: task.id))
         #expect(context.checkout?.policy == .blocked)
         #expect(context.instructions.contains { $0.contains("Blocked: map a safe checkout") })
+        // S6: the (possibly git-stderr-derived) reason travels in checkout.blocked_reason, never in trusted text.
+        let reasonDetail = try #require(checkout.blockedReason?.replacingOccurrences(of: "Blocked: map a safe checkout", with: ""))
+        if reasonDetail.count > 8 {
+            #expect(!context.instructions.joined(separator: "\n").contains(reasonDetail))
+        }
+        #expect(context.checkout?.blockedReason != nil)
+        #expect(context.untrustedFields?.contains("checkout.blocked_reason") == true)
         let claim = try await h.ok(ClaimTaskParams(taskID: task.id, agentName: "codex", expectedVersion: context.version))
         let edit = await h.call(ReportChangesParams(
             taskID: task.id, leaseID: claim.leaseID, expectedVersion: claim.version, worktreePath: Fixture.checkoutPath,

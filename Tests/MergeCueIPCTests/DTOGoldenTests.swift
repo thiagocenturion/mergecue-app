@@ -72,6 +72,7 @@ struct DTOGoldenTests {
             "check_id": "chk_abcdef0123",
             "task_id": "mc_abc123",
             "updated_at": "2026-01-01T00:00:00.123Z",
+            "untrusted_fields": ["title", "summary"],
         ]
         #expect(try json(dto) == expected)
         #expect(try decode(AttentionItemDTO.self, expected) == dto)
@@ -190,10 +191,29 @@ struct DTOGoldenTests {
             "artifacts": [["artifact_id": "art_0000000001", "kind": "diff", "title": "Worktree diff"]],
             "next_steps": ["Call submit_result when done."],
             "is_demo": false,
+            "untrusted_fields": [
+                "source.title", "checkout.source_branch", "checkout.target_branch", "checkout.blocked_reason",
+                "trigger.anchor.path", "trigger.untrusted_content", "artifacts[].title",
+            ],
         ]
         #expect(try json(dto) == expected)
         #expect(try decode(TaskContextDTO.self, expected) == dto)
         #expect(dto.trigger.untrustedContent == task.trigger.quoted)
+    }
+
+    /// S6: third-party plain-string fields are cleaned (terminal controls stripped, secrets redacted) when a Core
+    /// value becomes a DTO, and listed in untrusted_fields.
+    @Test func untrustedPlainFieldsAreCleanedAndListed() throws {
+        var task = CoreSamples.task()
+        task.origin.title = "Fix \u{1B}]52;c;ZXZpbA==\u{07}retries ghp_1234567890abcdefghijABCDEFGHIJ1234"
+        task.checkout = TaskCheckout(policy: .blocked, sourceBranch: "feat/\u{1B}[31mx", targetBranch: "main",
+                                     blockedReason: "fatal: token=supersecretvalue denied")
+        let dto = TaskContextDTO(task, account: "a", instructions: [], nextSteps: [], artifacts: [], isDemo: true)
+        #expect(dto.source.title == "Fix retries ghp_[REDACTED]")
+        #expect(dto.checkout?.sourceBranch == "feat/x")
+        #expect(dto.checkout?.blockedReason == "fatal: token=[REDACTED] denied")
+        #expect(dto.untrustedFields?.contains("checkout.blocked_reason") == true)
+        #expect(TaskSummaryDTO(task, account: "a").title == "Fix retries ghp_[REDACTED]")
     }
 
     @Test func taskContextNeverExposesLeaseID() throws {

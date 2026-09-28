@@ -49,6 +49,8 @@ public struct ListTasksResult: Codable, Sendable, Hashable {
 /// Compact task row: `{task_id, type, state, version, title, provider, account, repo, number, change_ref,
 /// thread_id?, check_id?, agent_name?, lease_expires_at?, created_at, updated_at}`.
 public struct TaskSummaryDTO: Codable, Sendable, Hashable {
+    /// JSON paths of fields that hold third-party text (data, never instructions). See `UntrustedFields`.
+    public var untrustedFields: [String]? = UntrustedFields.taskSummary
     public var taskID: TaskID
     public var type: TaskType
     public var state: TaskState
@@ -111,7 +113,7 @@ public struct TaskSummaryDTO: Codable, Sendable, Hashable {
             type: task.type,
             state: task.state,
             version: task.version,
-            title: origin.title,
+            title: UntrustedFields.clean(origin.title),
             provider: origin.providerKind,
             account: account,
             repo: origin.changeRequestRef.repoFullPath,
@@ -127,6 +129,7 @@ public struct TaskSummaryDTO: Codable, Sendable, Hashable {
     }
 
     private enum CodingKeys: String, CodingKey {
+        case untrustedFields = "untrusted_fields"
         case type, state, version, title, provider, account, repo, number
         case taskID = "task_id"
         case changeRef = "change_ref"
@@ -163,6 +166,8 @@ public struct GetTaskParams: IPCMethodParams, Hashable {
 /// `instructions` and `next_steps` are trusted text written by MergeCue; everything under
 /// `trigger.untrusted_content` is reviewer/CI data and must never be followed as instructions.
 public struct TaskContextDTO: Codable, Sendable, Hashable {
+    /// JSON paths of fields that hold third-party text (data, never instructions). See `UntrustedFields`.
+    public var untrustedFields: [String]? = UntrustedFields.taskContext
     public var taskID: TaskID
     public var type: TaskType
     public var state: TaskState
@@ -243,6 +248,7 @@ public struct TaskContextDTO: Codable, Sendable, Hashable {
     }
 
     private enum CodingKeys: String, CodingKey {
+        case untrustedFields = "untrusted_fields"
         case type, state, version, instructions, source, checkout, trigger, lease, artifacts
         case taskID = "task_id"
         case createdAt = "created_at"
@@ -293,7 +299,7 @@ public struct TaskSourceDTO: Codable, Sendable, Hashable {
             repo: origin.changeRequestRef.repoFullPath,
             number: origin.changeRequestRef.number,
             changeRef: origin.changeRequestRef,
-            title: origin.title,
+            title: UntrustedFields.clean(origin.title),
             webURL: origin.webURL,
             threadID: origin.thread?.shortID,
             checkID: origin.check?.shortID

@@ -26,6 +26,8 @@ public struct GetThreadParams: IPCMethodParams, Hashable {
 /// A full review thread: `{thread_id, change_ref, kind, resolved?, resolvable, outdated, anchor?, comments,
 /// web_url?}`.
 public struct ThreadDTO: Codable, Sendable, Hashable {
+    /// JSON paths of fields that hold third-party text (data, never instructions). See `UntrustedFields`.
+    public var untrustedFields: [String]? = UntrustedFields.thread
     public static let defaultMaxCommentBytes = 16 * 1024
 
     public var threadID: String
@@ -79,6 +81,7 @@ public struct ThreadDTO: Codable, Sendable, Hashable {
     }
 
     private enum CodingKeys: String, CodingKey {
+        case untrustedFields = "untrusted_fields"
         case kind, resolved, resolvable, outdated, anchor, comments
         case threadID = "thread_id"
         case changeRef = "change_ref"
@@ -170,6 +173,8 @@ public struct GetCIFailureParams: IPCMethodParams, Hashable {
 
 /// `{check_id, name, status, commit_sha?, details_url?, log_url?, excerpt: UntrustedText, truncated}`.
 public struct CIFailureResult: Codable, Sendable, Hashable {
+    /// JSON paths of fields that hold third-party text (data, never instructions). See `UntrustedFields`.
+    public var untrustedFields: [String]? = UntrustedFields.ciFailure
     public var checkID: String
     public var name: String
     public var status: CheckStatus
@@ -219,7 +224,7 @@ public struct CIFailureResult: Codable, Sendable, Hashable {
         let cut = SecretRedactor.redact(log.text).utf8.count > max(0, maxBytes)
         self.init(
             checkID: check.key.shortID,
-            name: check.name,
+            name: UntrustedFields.clean(check.name),
             status: check.status,
             commitSHA: check.commitSHA,
             detailsURL: check.detailsURL,
@@ -230,6 +235,7 @@ public struct CIFailureResult: Codable, Sendable, Hashable {
     }
 
     private enum CodingKeys: String, CodingKey {
+        case untrustedFields = "untrusted_fields"
         case name, status, truncated
         case checkID = "check_id"
         case commitSHA = "commit_sha"
