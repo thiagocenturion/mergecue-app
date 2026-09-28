@@ -11,6 +11,10 @@ extension BitbucketCloudProvider {
     ///   `query.repositories`; when none are given, over the most recently updated member repositories of the
     ///   selected workspaces (bounded by `limits.maxReviewerRepositories`).
     ///
+    /// - `.involved`: the same per-repository iteration (same bound) with BBQL
+    ///   `participants.user.uuid="{uuid}" AND state="OPEN"` — pull requests of others the user reviewed, approved
+    ///   or commented on; the user's own pull requests are left to the authored listing.
+    ///
     /// `updatedSince` filters client-side on `updated_on`. The result is complete (never `notModified`).
     public func listChangeRequests(_ query: ChangeRequestQuery) async throws -> ChangeRequestPage {
         let user = try await me()
@@ -41,8 +45,11 @@ extension BitbucketCloudProvider {
                 )
                 try add(prs, repository: nil)
             }
-        case .reviewRequested:
-            let bbql = BitbucketIdentifiers.reviewerQuery(userUUID: user.remoteID)
+        case .reviewRequested, .involved:
+            let involved = query.scope == .involved
+            let bbql = involved
+                ? BitbucketIdentifiers.participantQuery(userUUID: user.remoteID)
+                : BitbucketIdentifiers.reviewerQuery(userUUID: user.remoteID)
             for repository in try await reviewerRepositories(query) {
                 guard let path = BitbucketRepoPath(fullName: repository.fullPath) else { continue }
                 directory.remember(repository)
@@ -51,7 +58,7 @@ extension BitbucketCloudProvider {
                     query: [URLQueryItem(name: "q", value: bbql), URLQueryItem(name: "pagelen", value: "50")],
                     limit: limits.maxPullRequestsPerListing
                 )
-                try add(prs, repository: repository)
+                try add(involved ? prs.filter { !BitbucketIdentifiers.sameUUID($0.author?.uuid, user.remoteID) } : prs, repository: repository)
             }
         }
         summaries.sort { ($0.updatedAt, $0.key.id) > ($1.updatedAt, $1.key.id) }

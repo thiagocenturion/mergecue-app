@@ -46,6 +46,12 @@ public enum BitbucketIdentifiers {
         "reviewers.uuid=\(bbqlString(normalizedUUID(userUUID) ?? userUUID)) AND state=\"OPEN\""
     }
 
+    /// BBQL for open pull requests the user takes part in (reviewed, approved, commented — Bitbucket's
+    /// `participants`).
+    public static func participantQuery(userUUID: String) -> String {
+        "participants.user.uuid=\(bbqlString(normalizedUUID(userUUID) ?? userUUID)) AND state=\"OPEN\""
+    }
+
     /// One encoded path segment (`acme`, `%7B…%7D`).
     static func segment(_ value: String) -> String {
         RequestURLBuilder.encodePathSegment(value)

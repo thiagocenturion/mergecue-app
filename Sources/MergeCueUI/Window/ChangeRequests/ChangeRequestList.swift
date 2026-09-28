@@ -212,6 +212,9 @@ struct ChangeRequestRow: View {
                     Chip(text: "Reviewing", symbol: "eye", tone: .progress)
                 } else if summary.involvement.contains(.authored) {
                     Chip(text: "Mine", symbol: "person")
+                } else if summary.involvement.contains(.participated) {
+                    Chip(text: "Reviewed", symbol: "bubble.left.and.bubble.right")
+                        .help("You reviewed or commented on this — MergeCue keeps following replies to your comments.")
                 }
                 if summary.isDraft { Chip(text: "Draft") }
                 if summary.state != .open { Chip(text: summary.state == .merged ? "Merged" : "Closed", tone: summary.state == .merged ? .success : .neutral) }

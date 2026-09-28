@@ -4,6 +4,9 @@ import Foundation
 public enum Capability: String, Codable, Sendable, CaseIterable, CodingKeyRepresentable {
     case listAuthored, listReviewRequested, readThreads, resolveThread, readChecks, readFailureLog
     case requestChanges, createReply, merge, fetchHead, deepLink
+    /// Open change requests of others the user reviewed or commented on (`ChangeRequestScope.involved`). Additive:
+    /// providers without it are simply not asked.
+    case listInvolved
 
     /// Whether the capability writes to the provider (requires `Account.writesEnabled` + approval).
     public var isWrite: Bool {
@@ -26,6 +29,7 @@ public enum Capability: String, Codable, Sendable, CaseIterable, CodingKeyRepres
         case .merge: "Merge"
         case .fetchHead: "Fetch head for local checkout"
         case .deepLink: "Deep links"
+        case .listInvolved: "List change requests you reviewed or commented on"
         }
     }
 }

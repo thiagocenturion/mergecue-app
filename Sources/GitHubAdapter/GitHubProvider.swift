@@ -21,6 +21,9 @@ public struct GitHubProvider: ReviewProvider {
         entries: [
             .listAuthored: .supported,
             .listReviewRequested: .supported,
+            .listInvolved: .partial(
+                note: "Search `involves:@me -author:@me` (reviewed, commented or mentioned), updated within the sync window, at most two result pages"
+            ),
             .readThreads: .supported,
             .readChecks: .supported,
             .readFailureLog: .partial(
@@ -70,6 +73,8 @@ public struct GitHubProvider: ReviewProvider {
 
     /// Maximum pages followed for any one connection/listing (a runaway cursor must not loop forever).
     static let maxPages = 20
+    /// Upper bound of the involved (`involves:@me`) listing: pages of `GitHubQuery.searchPageSize`.
+    static let maxInvolvedPages = 2
 
     /// - Parameters:
     ///   - grantedScopes: The account's known classic scopes; when given, `capabilities` reflects them

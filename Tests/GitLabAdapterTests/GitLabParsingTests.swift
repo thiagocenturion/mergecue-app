@@ -115,6 +115,28 @@ struct GitLabParsingTests {
         #expect(request.queryItems.contains(URLQueryItem(name: "scope", value: "all")))
     }
 
+    @Test func involvedListingUsesOwnCommentEventsThenProjectIIDs() async throws {
+        let harness = GitLabHarness()
+        let since = Date(timeIntervalSince1970: 1_790_000_000) // 2026-09-21
+        let page = try await harness.provider.listChangeRequests(ChangeRequestQuery(scope: .involved, updatedSince: since))
+        // MR !7 (commented, someone else's). The issue note is ignored and the user's own !42 is left to "authored".
+        #expect(page.items.map(\.key) == [GitLabFixtures.mr7Key])
+        #expect(page.items.first?.involvement.contains(.participated) == true)
+        let events = try #require(harness.transport.requests(path: "/events").first)
+        #expect(events.queryItems.contains(URLQueryItem(name: "action", value: "commented")))
+        #expect(events.queryItems.contains(URLQueryItem(name: "target_type", value: "note")))
+        #expect(events.queryItems.contains(URLQueryItem(name: "after", value: "2026-09-20")))
+        let web = try #require(harness.transport.requests(path: "/projects/278990/merge_requests").first)
+        #expect(web.queryItems.contains(URLQueryItem(name: "iids[]", value: "7")))
+        #expect(web.queryItems.contains(URLQueryItem(name: "state", value: "opened")))
+        #expect(harness.transport.requests(path: "/projects/278964/merge_requests").count == 1)
+        guard case .partial(let note) = GitLabProvider.capabilityManifest.support(for: .listInvolved) else {
+            Issue.record("listInvolved should be partial")
+            return
+        }
+        #expect(note.contains("Reviewers stay"))
+    }
+
     @Test func namespaceFilterMatchesNestedGroups() async throws {
         let harness = GitLabHarness()
         let platform = try await harness.provider.listChangeRequests(ChangeRequestQuery(scope: .reviewRequested, namespaces: ["acme/platform"]))

@@ -14,6 +14,10 @@ extension BitbucketCloudProvider {
                 note: "Bitbucket has no cross-repository reviewer search; MergeCue queries each selected repository "
                     + "(or up to 30 recently updated repositories of the selected workspaces)."
             ),
+            .listInvolved: .partial(
+                note: "Per-repository BBQL on participants (reviewed, approved or commented), over the same repositories "
+                    + "as review requests (selected, or up to 30 recently updated ones)."
+            ),
             .readThreads: .partial(
                 note: "Outdated inline comments are detected from the comment's anchor commit; Bitbucket does not "
                     + "always report them explicitly."

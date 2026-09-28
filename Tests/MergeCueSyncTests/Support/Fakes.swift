@@ -16,6 +16,10 @@ final class FakeRemote: Sendable {
         var hydrateCalls: [ChangeRequestKey: Int] = [:]
         var inFlightHydrations = 0
         var maxInFlightHydrations = 0
+        /// Declares `Capability.listInvolved` (off by default, like a provider without it).
+        var supportsInvolved = false
+        var involvedError: ProviderError?
+        var involvedQueries: [ChangeRequestQuery] = []
     }
 
     private let state = OSAllocatedUnfairLock(initialState: State())
@@ -53,6 +57,18 @@ final class FakeRemote: Sendable {
         state.withLock { $0.hydrateErrors[key] = error }
     }
 
+    var supportsInvolved: Bool {
+        get { state.withLock { $0.supportsInvolved } }
+        set { state.withLock { $0.supportsInvolved = newValue } }
+    }
+
+    var involvedError: ProviderError? {
+        get { state.withLock { $0.involvedError } }
+        set { state.withLock { $0.involvedError = newValue } }
+    }
+
+    var involvedQueries: [ChangeRequestQuery] { state.withLock { $0.involvedQueries } }
+
     var listCalls: Int { state.withLock { $0.listCalls } }
     var maxInFlightHydrations: Int { state.withLock { $0.maxInFlightHydrations } }
     func hydrateCalls(_ key: ChangeRequestKey) -> Int { state.withLock { $0.hydrateCalls[key] ?? 0 } }
@@ -62,6 +78,10 @@ final class FakeRemote: Sendable {
         try state.withLock { state in
             state.listCalls += 1
             if let error = state.listError { throw error }
+            if query.scope == .involved {
+                state.involvedQueries.append(query)
+                if let error = state.involvedError { throw error }
+            }
             let items = state.order.compactMap { state.changeRequests[$0] }
                 .filter { $0.summary.state == .open && $0.summary.involvement.contains(query.scope.involvement) }
                 .map(\.summary)
@@ -90,7 +110,9 @@ struct FakeProvider: ReviewProvider {
     static let protocolVersion = ReviewProviderContract.currentVersion
     let instance: ProviderInstance
     let remote: FakeRemote
-    var capabilities: CapabilityManifest { CapabilityManifest(provider: instance.kind, entries: [:]) }
+    var capabilities: CapabilityManifest {
+        CapabilityManifest(provider: instance.kind, entries: remote.supportsInvolved ? [.listInvolved: .supported] : [:])
+    }
 
     func currentUser() async throws -> ProviderUser { ProviderUser(remoteID: SyncFixture.me, username: "mona-dev") }
     func listNamespaces() async throws -> [Namespace] { [] }

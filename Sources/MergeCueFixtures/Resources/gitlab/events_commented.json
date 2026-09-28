@@ -1,0 +1,62 @@
+[
+  {
+    "id": 91001,
+    "project_id": 278990,
+    "action_name": "commented on",
+    "target_id": 880017,
+    "target_iid": 880017,
+    "target_type": "DiffNote",
+    "target_title": "Lazy-load the settings panel",
+    "author_id": 7001,
+    "author_username": "mona-dev",
+    "created_at": "2026-09-18T09:12:00.000Z",
+    "note": {
+      "id": 880017,
+      "type": "DiffNote",
+      "body": "Demo fixture: could this reuse the existing loader?",
+      "noteable_id": 4401007,
+      "noteable_type": "MergeRequest",
+      "noteable_iid": 7
+    }
+  },
+  {
+    "id": 91002,
+    "project_id": 278964,
+    "action_name": "commented on",
+    "target_id": 880018,
+    "target_iid": 880018,
+    "target_type": "Note",
+    "target_title": "Flaky refund test",
+    "author_id": 7001,
+    "author_username": "mona-dev",
+    "created_at": "2026-09-18T10:00:00.000Z",
+    "note": {
+      "id": 880018,
+      "type": null,
+      "body": "Demo fixture: an issue note (not a merge request).",
+      "noteable_id": 55501,
+      "noteable_type": "Issue",
+      "noteable_iid": 3
+    }
+  },
+  {
+    "id": 91003,
+    "project_id": 278964,
+    "action_name": "commented on",
+    "target_id": 880019,
+    "target_iid": 880019,
+    "target_type": "DiscussionNote",
+    "target_title": "Add retry backoff and refund path to payments",
+    "author_id": 7001,
+    "author_username": "mona-dev",
+    "created_at": "2026-09-18T11:00:00.000Z",
+    "note": {
+      "id": 880019,
+      "type": "DiscussionNote",
+      "body": "Demo fixture: my reply on my own merge request.",
+      "noteable_id": 4401042,
+      "noteable_type": "MergeRequest",
+      "noteable_iid": 42
+    }
+  }
+]

@@ -30,6 +30,9 @@ public struct SyncConfiguration: Sendable, Hashable {
     public var disabledAccounts: Set<AccountKey>
     /// Event types that produce a notification on the user's own change requests without an attention item.
     public var informationalNotificationTypes: Set<ChangeEventType>
+    /// The involved listing (`ChangeRequestScope.involved`, CRs of others the user reviewed or commented on) only
+    /// asks for CRs updated within this window (30 days); nil = no involved listing at all.
+    public var involvedWindow: TimeInterval?
 
     public init(
         defaultInterval: TimeInterval = 90,
@@ -44,7 +47,8 @@ public struct SyncConfiguration: Sendable, Hashable {
         fullRefreshInterval: TimeInterval = 10 * 60,
         quietHours: QuietHours? = nil,
         disabledAccounts: Set<AccountKey> = [],
-        informationalNotificationTypes: Set<ChangeEventType> = [.approval]
+        informationalNotificationTypes: Set<ChangeEventType> = [.approval],
+        involvedWindow: TimeInterval? = 30 * 86_400
     ) {
         self.defaultInterval = defaultInterval
         self.hotInterval = hotInterval
@@ -59,6 +63,7 @@ public struct SyncConfiguration: Sendable, Hashable {
         self.quietHours = quietHours
         self.disabledAccounts = disabledAccounts
         self.informationalNotificationTypes = informationalNotificationTypes
+        self.involvedWindow = involvedWindow
     }
 
     public static let `default` = SyncConfiguration()

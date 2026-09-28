@@ -19,7 +19,7 @@ public nonisolated enum InboxScope: String, Sendable, Hashable, CaseIterable, Id
         switch self {
         case .all: true
         case .mine: involvement?.contains(.authored) ?? false
-        case .reviewing: involvement?.contains(.reviewRequested) ?? false
+        case .reviewing: !(involvement ?? []).isDisjoint(with: [.reviewRequested, .participated])
         }
     }
 }

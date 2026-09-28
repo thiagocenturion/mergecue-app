@@ -68,8 +68,10 @@ extension GitHubProvider {
 
     // MARK: Change requests
 
-    /// One GraphQL `search(type: ISSUE)` per scope (`author:@me` / `review-requested:@me`, open, non-archived),
-    /// cursor-paginated. Namespace restrictions are applied as `user:` qualifiers when the query stays within the
+    /// One GraphQL `search(type: ISSUE)` per scope (`author:@me` / `review-requested:@me` /
+    /// `involves:@me -author:@me` — PRs of others you reviewed, commented on or were mentioned in, which GitHub
+    /// keeps listing after it drops the review request; open, non-archived), cursor-paginated. The involved scope is
+    /// bounded by `query.updatedSince` (Sync passes its involvement window) and `maxInvolvedPages`. Namespace restrictions are applied as `user:` qualifiers when the query stays within the
     /// search length limit, and always re-checked client-side.
     public func listChangeRequests(_ query: ChangeRequestQuery) async throws -> ChangeRequestPage {
         let searchQuery = Self.searchQuery(query)
@@ -102,14 +104,18 @@ extension GitHubProvider {
             }
             pages += 1
             cursor = data.search.pageInfo?.hasNextPage == true ? data.search.pageInfo?.endCursor : nil
-        } while cursor != nil && pages < Self.maxPages
+        } while cursor != nil && pages < (query.scope == .involved ? Self.maxInvolvedPages : Self.maxPages)
         return ChangeRequestPage(items: items)
     }
 
     /// GitHub search string for a listing query (max 256 characters).
     static func searchQuery(_ query: ChangeRequestQuery) -> String {
         var parts = ["is:pr", "is:open", "archived:false"]
-        parts.append(query.scope == .authored ? "author:@me" : "review-requested:@me")
+        switch query.scope {
+        case .authored: parts.append("author:@me")
+        case .reviewRequested: parts.append("review-requested:@me")
+        case .involved: parts += ["involves:@me", "-author:@me"]
+        }
         if let since = query.updatedSince, let stamp = MergeCueCoding.formatWireDate(since) {
             // Search accepts ISO-8601 without fractional seconds.
             let whole = stamp.split(separator: ".").first.map(String.init) ?? stamp

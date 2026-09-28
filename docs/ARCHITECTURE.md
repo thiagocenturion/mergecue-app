@@ -185,13 +185,15 @@ public struct FetchHeadSpec: Codable, Sendable, Hashable {
 }
 public enum DeepLinkTarget: Sendable, Hashable { case changeRequest(ChangeRequestKey), thread(ThreadKey), comment(ThreadKey, commentID: String), check(CheckKey) }
 public struct ChangeRequestPage: Sendable { var items: [ChangeRequestSummary]; var notModified: Bool }
-public enum ChangeRequestScope: String, Codable, Sendable { case authored, reviewRequested = "review_requested" }
+public enum ChangeRequestScope: String, Codable, Sendable { case authored, reviewRequested = "review_requested", involved /* additive */
+    var involvement: Involvement /* involved → .participated */; var capability: Capability /* involved → .listInvolved */ }
 public struct ChangeRequestQuery: Sendable, Hashable { var scope: ChangeRequestScope; var namespaces: [String]; var repositories: [Repository]; var updatedSince: Date? }
 ```
 
 ### 2.4 Capabilities and the `ReviewProvider` protocol (§3, §5)
 ```swift
-public enum Capability: String, Codable, Sendable, CaseIterable { case listAuthored, listReviewRequested, readThreads, resolveThread, readChecks, readFailureLog, requestChanges, createReply, merge, fetchHead, deepLink }
+public enum Capability: String, Codable, Sendable, CaseIterable { case listAuthored, listReviewRequested, readThreads, resolveThread, readChecks, readFailureLog, requestChanges, createReply, merge, fetchHead, deepLink,
+    listInvolved /* additive: open CRs of others the user reviewed/commented on; providers without it are not asked */ }
 public enum CapabilitySupport: Codable, Sendable, Hashable { case supported; case requiresWriteAccess(scope: String); case partial(note: String); case unsupported(reason: String)
     var isUsable: Bool /* supported, partial */; var userFacingDescription: String }
 public struct CapabilityManifest: Codable, Sendable, Hashable { var provider: ProviderKind; var manifestVersion: Int; var entries: [Capability: CapabilitySupport]
@@ -754,18 +756,23 @@ diff anchor, a failing and a passing check, and a reviewer comment containing a 
 
 Provider specifics (see §5.2–5.4 and each provider's current REST docs):
 - **GitHub.com** — REST v3 + GraphQL (review threads with `isResolved`, `isOutdated`, `resolveReviewThread`).
-  Listing via search (`is:pr is:open author:@me` / `review-requested:@me`, `archived:false`). Distinguish review
+  Listing via search (`is:pr is:open author:@me` / `review-requested:@me`, `archived:false`; involved:
+  `involves:@me -author:@me` + `updated:>=` window, ≤ 2 pages — GitHub drops the review request once the review is
+  submitted, so this keeps reviewed PRs tracked). Distinguish review
   threads (`ThreadKind.diffThread`), issue comments (`.conversation`, key `ic:<id>`) and review bodies
   (`.reviewSummary`, key `rv:<id>`). Checks = check-runs + commit statuses (+ Actions job id for logs via
   `/actions/jobs/{id}/logs`). `fetchHeadSpec` → `refs/pull/<n>/head` on the base repo. Rate limit headers
   `x-ratelimit-*`; secondary limits via 403 + `retry-after`.
 - **GitLab.com** — REST v4. Use project `id` + MR `iid` everywhere; `/merge_requests?scope=created_by_me&state=opened`
-  and `?reviewer_id=<me>&state=opened`; discussions (+ notes, `resolvable`, `resolved`, `position`), approvals
+  and `?reviewer_id=<me>&state=opened` (reviewers stay on an MR after reviewing, so reviewed MRs remain listed);
+  involved = the user's own `/events?action=commented&target_type=note&after=<day>` (1 page) → per project (≤ 20)
+  `/projects/:id/merge_requests?iids[]=…&state=opened`, own MRs excluded; discussions (+ notes, `resolvable`, `resolved`, `position`), approvals
   (`/approvals`), `/versions` for diff versions, pipelines + jobs + `/jobs/:id/trace`. Draft via `draft`.
   `fetchHeadSpec` → `refs/merge-requests/<iid>/head` on the target project (works for cross-project MRs).
   Rate limit headers `RateLimit-*`.
 - **Bitbucket Cloud** — REST 2.0. Authored PRs per workspace (`/workspaces/{ws}/pullrequests/{user_uuid}`), reviewer
-  PRs via per-repository BBQL queries on selected repositories (`q=reviewers.uuid="{uuid}" AND state="OPEN"`).
+  PRs via per-repository BBQL queries on selected repositories (`q=reviewers.uuid="{uuid}" AND state="OPEN"`);
+  involved = the same repositories with `participants.user.uuid="{uuid}" AND state="OPEN"`, own PRs excluded.
   Comments with `parent` / `inline` (from/to/path) / `resolution`; tasks; `participants` (approved, state
   `changes_requested`); `/statuses` (commit statuses) and pipelines + steps + step `/log`. Paginate via `next`.
   `fetchHeadSpec` → source repository clone URL + `refs/heads/<source branch>` (forks use the fork's clone URL).
@@ -781,7 +788,10 @@ Provider specifics (see §5.2–5.4 and each provider's current REST docs):
   task/item is hot, 5 min when idle overnight), exponential backoff with jitter on failures (cap 15 min), honours
   `rateLimited` reset, stops on `authExpired` until `accountsDidChange()`. Offline → `offline` state, auto-retry.
   An outage for one account never blocks another.
-- Cycle: `listChangeRequests(.authored)` + `(.reviewRequested)` → compare `versionToken`/`updatedAt`/`headSHA` with
+- Cycle: `listChangeRequests(.authored)` + `(.reviewRequested)` (+ `(.involved)` with `updatedSince = now −
+  SyncConfiguration.involvedWindow` (30 days) when the provider's manifest marks `listInvolved` usable; not found /
+  forbidden / unsupported / decoding failures of this additive listing keep the stored involved CRs, account-level
+  failures propagate) → compare `versionToken`/`updatedAt`/`headSHA` with
   stored snapshot → `hydrate` only changed ones (bounded concurrency 4) → CRs that disappeared from the lists are
   hydrated once to detect merged/closed → `EventDeriver` → `AttentionDeriver` → `database.applySyncBatch` (atomic;
   cursors and events persisted **before** notification) → `NotificationGrouper` (one notification per CR per cycle,

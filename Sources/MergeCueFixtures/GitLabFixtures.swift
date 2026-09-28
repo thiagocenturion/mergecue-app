@@ -135,6 +135,18 @@ public enum GitLabFixtures {
                 guard match.query["reviewer_id"]?.first == user.remoteID else { return respond(json: [Any](), request: request) }
                 return paged("merge_requests_review_requested", step: step, request: request, match: match)
             },
+            // Involved listing: the user's own comment events, then the commented merge requests per project.
+            Route(pathPattern: "/events") { request, _ in serve("events_commented", step: step, request: request) },
+            Route(pathPattern: "/projects/{project}/merge_requests") { request, match in
+                let iids = Set(match.query["iids[]"] ?? [])
+                let project = match["project"] ?? ""
+                let lists = ["merge_requests_review_requested", "merge_requests_authored_page1", "merge_requests_authored_page2"]
+                let all = lists.flatMap { name in (data(name, step: step).flatMap { try? jsonArray($0) }) ?? [] }
+                let selected = all.filter { mr in
+                    "\(mr["project_id"] ?? "")" == project && iids.contains("\(mr["iid"] ?? "")") && (mr["state"] as? String) == "opened"
+                }
+                return respond(json: selected, request: request)
+            },
             Route(pathPattern: "/projects/{project}/merge_requests/{iid}") { request, match in
                 serve(mrName(match), step: step, request: request)
             },

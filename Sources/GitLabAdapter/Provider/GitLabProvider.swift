@@ -18,6 +18,9 @@ public struct GitLabProvider: ReviewProvider {
         entries: [
             .listAuthored: .supported,
             .listReviewRequested: .supported,
+            .listInvolved: .partial(
+                note: "Reviewers stay on a merge request after reviewing, so the review-requested listing keeps them. Merge requests you only commented on come from your own comment events of the sync window (one page), in at most 20 projects."
+            ),
             .readThreads: .supported,
             .resolveThread: .supported,
             .readChecks: .partial(
@@ -138,7 +141,9 @@ public struct GitLabProvider: ReviewProvider {
 
     /// `GET /merge_requests?scope=created_by_me&state=opened` (authored) or
     /// `GET /merge_requests?scope=all&reviewer_id=<me>&state=opened` (review requested), all pages.
+    /// Involved: see `listInvolved(_:)`.
     public func listChangeRequests(_ query: ChangeRequestQuery) async throws -> ChangeRequestPage {
+        if query.scope == .involved { return try await listInvolved(query) }
         let user = try await cachedUser()
         let userID = String(user.id)
         let account = AccountKey(instance: instance, remoteUserID: userID)
@@ -149,6 +154,8 @@ public struct GitLabProvider: ReviewProvider {
         case .reviewRequested:
             items.append(URLQueryItem(name: "scope", value: "all"))
             items.append(URLQueryItem(name: "reviewer_id", value: userID))
+        case .involved:
+            return .unchanged  // handled above
         }
         if let since = query.updatedSince {
             items.append(URLQueryItem(name: "updated_after", value: since.formatted(.iso8601)))

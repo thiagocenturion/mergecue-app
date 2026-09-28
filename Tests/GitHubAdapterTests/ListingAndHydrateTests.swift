@@ -46,6 +46,18 @@ struct ListingAndHydrateTests {
         #expect(query == "is:pr is:open archived:false review-requested:@me")
     }
 
+    @Test func involvedListingSearchesInvolvesButNotAuthored() async throws {
+        let (provider, transport) = GH.provider()
+        let since = Date(timeIntervalSince1970: 1_790_000_000)
+        let page = try await provider.listChangeRequests(ChangeRequestQuery(scope: .involved, updatedSince: since))
+        #expect(page.items.map(\.key.number) == [7])
+        #expect(page.items.first?.involvement == [.participated])
+        let query = transport.requests(path: "/graphql").first?.jsonBody?["variables"]?["q"]?.stringValue
+        #expect(query == "is:pr is:open archived:false involves:@me -author:@me updated:>=2026-09-21T14:13:20Z")
+        #expect(GitHubProvider.capabilityManifest.isUsable(.listInvolved))
+        #expect(GitHubProvider.maxInvolvedPages == 2)
+    }
+
     @Test func searchQueryQualifiersAndNamespaceFilter() async throws {
         let since = Date(timeIntervalSince1970: 1_790_000_000.25)
         let q = GitHubProvider.searchQuery(ChangeRequestQuery(scope: .authored, namespaces: ["acme", "bad name"], updatedSince: since))

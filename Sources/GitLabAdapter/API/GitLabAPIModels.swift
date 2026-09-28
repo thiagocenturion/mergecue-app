@@ -136,6 +136,21 @@ struct GLMergeRequest: Decodable, Sendable {
     var headPipeline: GLPipeline?
 }
 
+/// `GET /events?action=commented` — the current user's own contribution events (only the fields used to find the
+/// merge requests they commented on).
+struct GLEvent: Decodable, Sendable {
+    var projectId: Int?
+    /// `Note`, `DiffNote`, `DiscussionNote`, `MergeRequest`, …
+    var targetType: String?
+    var note: GLEventNote?
+}
+
+struct GLEventNote: Decodable, Sendable {
+    /// `MergeRequest`, `Issue`, `Commit`, `Snippet`.
+    var noteableType: String?
+    var noteableIid: Int?
+}
+
 /// `GET …/discussions`.
 struct GLDiscussion: Decodable, Sendable {
     var id: String

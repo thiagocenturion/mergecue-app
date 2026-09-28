@@ -141,11 +141,26 @@ public struct ChangeRequestPage: Codable, Sendable, Hashable {
 public enum ChangeRequestScope: String, Codable, Sendable, CaseIterable {
     case authored
     case reviewRequested = "review_requested"
+    /// Open change requests of others the user reviewed or commented on — they stay tracked after the provider
+    /// drops the review request (e.g. GitHub, once the review is submitted), so replies to the user's comments are
+    /// not missed. Requires `Capability.listInvolved`; attention follows the usual relevance rule (only threads the
+    /// user took part in).
+    case involved
 
     public var involvement: Involvement {
         switch self {
         case .authored: .authored
         case .reviewRequested: .reviewRequested
+        case .involved: .participated
+        }
+    }
+
+    /// The capability a provider must declare (usable) to be asked for this listing.
+    public var capability: Capability {
+        switch self {
+        case .authored: .listAuthored
+        case .reviewRequested: .listReviewRequested
+        case .involved: .listInvolved
         }
     }
 }

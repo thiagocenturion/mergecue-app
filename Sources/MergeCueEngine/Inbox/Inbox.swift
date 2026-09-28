@@ -18,7 +18,8 @@ extension MergeCueEngine {
                 let involvement = try await involvementByChangeRequest()
                 items = items.filter { item in
                     let set = involvement[item.changeRequest.id] ?? []
-                    return query.scope == .mine ? set.contains(.authored) : set.contains(.reviewRequested)
+                    // "Reviewing" = review requested, or reviewed/commented on (the involved listing).
+                    return query.scope == .mine ? set.contains(.authored) : !set.isDisjoint(with: [.reviewRequested, .participated])
                 }
             }
             if let provider = query.provider { items = items.filter { $0.providerKind == provider } }

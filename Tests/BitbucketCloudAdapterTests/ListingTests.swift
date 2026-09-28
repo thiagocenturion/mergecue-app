@@ -102,6 +102,18 @@ struct ListingTests {
         #expect(raw.contains("q=reviewers.uuid%3D%22%7B8a6f0b4e-2c1d-4c8e-9f3a-5b7d1e2c3a40%7D%22%20AND%20state%3D%22OPEN%22"))
     }
 
+    @Test func involvedUsesPerRepositoryParticipantBBQL() async throws {
+        let harness = Harness()
+        let repos = try await harness.provider.listRepositories(namespace: nil)
+        let items = try await harness.provider.listChangeRequests(ChangeRequestQuery(scope: .involved, repositories: repos)).items
+        #expect(items.map(\.key.number) == [7])
+        #expect(items.first?.involvement.contains(.participated) == true)
+        let expected = #"participants.user.uuid="{8a6f0b4e-2c1d-4c8e-9f3a-5b7d1e2c3a40}" AND state="OPEN""#
+        let queries = harness.requests(containing: "/pullrequests?").filter { $0.queryItems.contains(URLQueryItem(name: "q", value: expected)) }
+        #expect(queries.count == repos.count, "one BBQL query per repository, bounded like reviewer search")
+        #expect(BitbucketCloudProvider.capabilityManifest.isUsable(.listInvolved))
+    }
+
     @Test func reviewRequestedWithoutRepositoriesUsesRecentlyUpdatedMemberRepositories() async throws {
         let harness = Harness()
         let items = try await harness.reviewing()

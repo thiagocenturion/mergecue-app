@@ -16,6 +16,8 @@ enum GitHubFixtureGraphQL {
         case "MergeCueSearch":
             let query = variables["q"]?.stringValue ?? ""
             if query.contains("review-requested:@me") { return GitHubFixtures.file("graphql/search_review_requested.json") }
+            // Involved (reviewed/commented, not authored): the user also commented on the review-requested PR #7.
+            if query.contains("involves:@me") { return GitHubFixtures.file("graphql/search_review_requested.json") }
             if query.contains("author:@me") { return GitHubFixtures.file("graphql/search_authored_step\(step).json") }
             return data(["viewer": viewer, "search": ["issueCount": 0, "pageInfo": emptyPageInfo, "nodes": []]])
 

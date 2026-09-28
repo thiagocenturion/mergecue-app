@@ -38,7 +38,9 @@ struct SyncCycle {
         let repositories = try await database.repositories(account: account.id)
         async let authoredPage = provider.listChangeRequests(query(.authored, repositories: repositories))
         async let requestedPage = provider.listChangeRequests(query(.reviewRequested, repositories: repositories))
-        let pages: [(ChangeRequestScope, ChangeRequestPage)] = [(.authored, try await authoredPage), (.reviewRequested, try await requestedPage)]
+        async let involvedPage = involvedListing(repositories: repositories, now: now, window: configuration.involvedWindow)
+        var pages: [(ChangeRequestScope, ChangeRequestPage)] = [(.authored, try await authoredPage), (.reviewRequested, try await requestedPage)]
+        if let involved = try await involvedPage { pages.append((.involved, involved)) }
 
         // 2. Merge the lists and compare with stored state.
         let storedSnapshots = try await database.snapshots(account: account.id)
@@ -168,6 +170,24 @@ struct SyncCycle {
         ChangeRequestQuery(scope: scope, namespaces: account.selectedNamespaces, repositories: repositories)
     }
 
+    /// The involved listing (CRs of others the user reviewed or commented on), when the provider declares it and
+    /// the window is on. A failure specific to this additive listing (not found, forbidden, unsupported, decoding)
+    /// keeps the stored involved CRs (`notModified`) instead of failing the whole cycle; account-level failures
+    /// (auth, rate limit, offline) propagate like the other listings.
+    private func involvedListing(repositories: [Repository], now: Date, window: TimeInterval?) async throws -> ChangeRequestPage? {
+        guard let window, provider.capabilities.support(for: .listInvolved).isUsable else { return nil }
+        var request = query(.involved, repositories: repositories)
+        request.updatedSince = now.addingTimeInterval(-window)
+        do {
+            return try await provider.listChangeRequests(request)
+        } catch {
+            switch ProviderError.classify(error) {
+            case .notFound?, .forbidden?, .unsupported?, .decoding?: return .unchanged
+            default: throw error
+            }
+        }
+    }
+
     // MARK: Pure helpers
 
     /// Union of both listings (involvement merged). A `notModified` page keeps the stored CRs of that scope.
@@ -204,7 +224,7 @@ struct SyncCycle {
     /// Change detector of a listed CR, stored in the account cursor.
     static func listVersion(_ summary: ChangeRequestSummary) -> String {
         let scopes = summary.involvement
-            .filter { $0 == .authored || $0 == .reviewRequested }
+            .filter { $0 == .authored || $0 == .reviewRequested || $0 == .participated }
             .map(\.rawValue)
             .sorted()
             .joined(separator: ",")

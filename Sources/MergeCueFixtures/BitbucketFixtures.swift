@@ -158,7 +158,9 @@ public enum BitbucketFixtures {
             Route(method: "GET", pathPattern: "/repositories/{workspace}/{repo}/pullrequests") { _, match in
                 let query = match.query["q"]?.first ?? ""
                 let isReviewerQuery = query.contains("reviewers.uuid") && query.contains(userUUID)
-                if isReviewerQuery, match["workspace"] == "acme", match["repo"] == "web" {
+                // Participants (involved listing): the user takes part in the web PR they review.
+                let isParticipantQuery = query.contains("participants.user.uuid") && query.contains(userUUID)
+                if isReviewerQuery || isParticipantQuery, match["workspace"] == "acme", match["repo"] == "web" {
                     return respond("reviewer_prs_web.json")
                 }
                 return respond("empty_page.json")
