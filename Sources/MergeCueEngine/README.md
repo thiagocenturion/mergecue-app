@@ -22,7 +22,7 @@ UI-facing methods throw `EngineError` (cases mirror the UI's `AppBackendError`: 
 
 | Area | API |
 | --- | --- |
-| Lifecycle | `start()`, `stop()`, `changes() -> AsyncStream<EngineChange>` (independent stream per call), `snapshot() -> EngineSnapshot` (accounts + statuses, attention, tasks with history, CRs, rules, mappings, pause/quiet settings, `isDemo`) |
+| Lifecycle | `start()`, `stop()`, `changes() -> AsyncStream<EngineChange>` (independent stream per call), `forwardExternalChange(_:)` (the runtime relays Sync's `onChange` into `changes()`), `snapshot() -> EngineSnapshot` (accounts + statuses, attention, tasks with history, CRs, rules, mappings, pause/quiet settings, `isDemo`) |
 | IPC / MCP | `handle(method:params:client:)` — every method of §5 (see guarantees below) |
 | Accounts | `accountStates() -> [EngineAccountState]`, `connectAccount(AccountConnectionRequest) -> Account`, `disconnectAccount(_:)`, `setAccountLabel(_:label:)`, `setSelectedNamespaces(_:_:)`, `setWritesEnabled(_:_:)`, `availableNamespaces(_:)`, `refresh(account:)` |
 | Inbox | `attentionItems(AttentionQuery)` (scope mine/reviewing/all, provider, account, repo, status all/needsAction/unread/withTask/snoozed/done), `markAttentionRead(_:read:)`, `acknowledgeAttention`, `snoozeAttention(_:until:)`, `dismissAttention`, `reopenAttention`, `changeRequests(account:)`, `changeRequest(_:)`, `events(for:)`, `loadCheckLog(_:maxBytes:)`, `loadDiff(_:maxBytes:)`, `reviewChanges(_ taskID)` |
@@ -91,7 +91,7 @@ inspection). `draft_reply` tasks get `read_only`. The engine never modifies the 
 `commit_and_push`, `merge` → `disabledByPolicy`. A preview fingerprints (`MergeCueCoding.digest`) task version,
 target, content digest, head SHA, thread version and checkout head; it expires after `previewLifetime` and is
 single-use. `perform` requires a live preview with a matching fingerprint, an unchanged task in `ready_for_review`,
-and for provider writes `Account.writesEnabled` + a usable capability. It records the approval
+and for provider writes `Account.writesEnabled` + a usable capability of the account-specific manifest (`ProviderFactory.capabilities(for: Account)`). It records the approval
 (`approved_action`), audits `attempted`, then re-fetches fresh state right before writing (`headInfo`, `thread`;
 for patches the checkout head/safety and the worktree diff) — any change → `blocked` + `action_blocked` + audit
 `rejected`, nothing written. Success → `TaskStateMachine.triggerAfterSuccessfulAction(moreActionsRemain:)` (done

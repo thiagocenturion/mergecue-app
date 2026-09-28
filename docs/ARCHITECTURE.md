@@ -851,3 +851,31 @@ unique-constraint violations.
   (team `TTSKDZ455K`); not sandboxed; Hardened Runtime on; `mergecue-mcp` embedded in `Contents/MacOS/`.
 - Remote write policy (owner): only `post_reply` and `resolve_thread` may be enabled; `request_changes`,
   `commit_and_push`, `merge` stay disabled/hidden. `apply_patch` (local) requires approval. Login item via `SMAppService.mainApp` (opt-in).
+
+Implemented runtime surface (stage C; doc comments in `Sources/MergeCueRuntime`):
+- `public final class MergeCueRuntime: Sendable` — `static func makeLive(paths: MergeCuePaths = .init(), appVersion:
+  String, options: RuntimeOptions = .init()) async throws`, `static func makeDemo(paths:appVersion:options:) async
+  throws`; `mode: RuntimeMode (.live/.demo)`, `isDemo`, `engine`, `sync: SyncCoordinator`, `database`,
+  `credentials`, `providers: LiveProviderFactory`, `workspace`, `demo: DemoScenario?`, `paths` (IPC socket/token —
+  the helper's `MERGECUE_HOME`), `dataPaths` (`paths` live, `<root>/demo` demo); `start() async throws` (link
+  registries preloaded from stored snapshots, engine, Sync, network monitoring (live), IPC; demo: baseline sync +
+  confirmed mappings to the synthetic checkout), `stop() async` (socket + token removed), `handleSystemWake()`,
+  `refresh(account:)`, `ipcStatus()`, `isRunning`; conveniences `mcpHelperURL`, `helperEnvironment`,
+  `importGitHubCLIToken(hostname:)`, `connectGitHubFromCLI(label:)`, `detectAgents()`,
+  `registrationPlan(for:action:)`, `registrationStatus(for:)`, `applyRegistration(_:consent:)`,
+  `verifyMCPHelper(probe:)`, `handoffCommand(for:agent:)`, `openInAgent(taskID:agent:)`, `loginItemStatus()`,
+  `setLaunchAtLogin(_:)`. `RuntimeOptions` injects clock, sync configuration, lease/monitor periods, notifier,
+  credential store, IPC on/off, `PeerValidationPolicy`, helper override, git environment, mapping search roots.
+- `LiveProviderFactory: ProviderFactory` (real adapters; one shared `URLSessionTransport` live, injected transports in
+  demo). `WriteCapabilityPolicy` = the account-specific manifest the engine gates writes with
+  (`ProviderFactory.capabilities(for: Account)`): GitHub by classic scopes (`repo` → supported; none reported →
+  partial; other scopes only → `requiresWriteAccess(repo)`), GitLab known scopes without `api` →
+  `requiresWriteAccess(api)`, Bitbucket known scopes without a pull-request write scope → `requiresWriteAccess`.
+- IPC peers: signed builds require `anchor apple generic and certificate leaf[subject.OU] = "<team>" and identifier
+  "com.thiagocenturion.MergeCue.mcp"` (`RuntimeIPC`); unsigned/ad-hoc dev builds use uid + token only (logged).
+- `UserNotificationDeliverer` (UserNotifications inside an app bundle, a log line elsewhere); `userInfo` keys in
+  `UserNotificationDeliverer.Keys` (`mergecue.deep_link` = `mergecue://change-request/<change request id>`, …).
+- Demo (`MergeCueFixtures`): `DemoScenario` (accounts, per-provider `DemoScenarioTransport` = fixture `StubTransport`
+  + SHA rewriting to `DemoRepository`, steps persisted in `demo-scenario.json`, `simulateForcePush(_:)`,
+  `providerWrites(_:)`); engine refreshes advance the step (`DemoSyncControl`), automatic polling/wake never do.
+- `mergecue-demo-host` (executable): headless demo host for real agent round trips (`scripts/e2e-real-agent.sh`).

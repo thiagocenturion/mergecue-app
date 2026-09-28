@@ -128,12 +128,18 @@ PY
     (cd "$WORKTREE" && run_with_timeout "${COMMAND[@]}") >"$TRANSCRIPT" 2>"$AGENT_ERR" || AGENT_STATUS=$?
     ;;
   codex)
+    # Codex persists a trust entry for the repository root it runs in; pre-trust the throwaway paths for this run
+    # only (-c) so it has nothing to persist, and remove any entry it still adds (see below).
+    WORKTREE_REAL="$(cd "$WORKTREE" && pwd -P)"
+    CHECKOUT="$(cd "$WORKTREE" && cd "$(git rev-parse --git-common-dir)/.." && pwd -P)"
     AGENT_VERSION="$("$CODEX_BIN" --version 2>/dev/null || true)"
     COMMAND=("$CODEX_BIN" exec --json --ephemeral --ignore-user-config --skip-git-repo-check
       -s workspace-write -C "$WORKTREE"
       -c "mcp_servers.mergecue.command=\"$BIN/mergecue-mcp\""
       -c "mcp_servers.mergecue.args=[]"
       -c "mcp_servers.mergecue.env={MERGECUE_HOME=\"$E2E_HOME\"}"
+      -c "projects.\"$CHECKOUT\".trust_level=\"trusted\""
+      -c "projects.\"$WORKTREE_REAL\".trust_level=\"trusted\""
       ${CODEX_EXTRA:-}
       "$PROMPT")
     (cd "$WORKTREE" && run_with_timeout "${COMMAND[@]}" </dev/null) >"$TRANSCRIPT" 2>"$AGENT_ERR" || AGENT_STATUS=$?
@@ -152,15 +158,42 @@ sleep 1
 kill -TERM "$HOST_PID" 2>/dev/null || true
 wait "$HOST_PID" 2>/dev/null || true
 HOST_PID=""
+# Remove trust entries an agent CLI persisted for this run's throwaway paths (nothing else is touched).
+CONFIG_CLEANUP="$(/usr/bin/python3 - "$E2E_HOME" <<'PY'
+import os, re, sys
+home = sys.argv[1]
+prefixes = {home, home.replace("/private/tmp/", "/tmp/", 1)}
+path = os.path.expanduser("~/.codex/config.toml")
+try:
+    text = open(path).read()
+except FileNotFoundError:
+    sys.exit(0)
+pattern = re.compile(r'\[projects\."([^"]+)"\]\ntrust_level = "[a-z_]+"\n\n?')
+removed = []
+def drop(match):
+    if any(match.group(1).startswith(p) for p in prefixes):
+        removed.append(match.group(1))
+        return ""
+    return match.group(0)
+cleaned = pattern.sub(drop, text)
+if removed:
+    mode = os.stat(path).st_mode & 0o777
+    with open(path, "w") as f:
+        f.write(cleaned)
+    os.chmod(path, mode)
+    print("removed Codex trust entries it added for the throwaway paths: " + ", ".join(p.replace(home, "$MERGECUE_HOME") for p in removed))
+PY
+)"
+[[ -n "$CONFIG_CLEANUP" ]] && echo "==> $CONFIG_CLEANUP" >&2
 AFTER_CONFIG="$(config_fingerprint)"
 
 mkdir -p "$ROOT/docs/evidence"
 REPORT="$ROOT/docs/evidence/agent-roundtrip-$AGENT.md"
 /usr/bin/python3 - "$AGENT" "$E2E_HOME" "$REPORT" "$AGENT_STATUS" "$AGENT_VERSION" "$STARTED" "$FINISHED" \
-  "$BEFORE_CONFIG" "$AFTER_CONFIG" "${COMMAND[*]}" <<'PY'
+  "$BEFORE_CONFIG" "$AFTER_CONFIG" "${COMMAND[*]}" "$CONFIG_CLEANUP" <<'PY'
 import json, os, re, sys
 
-agent, home, report, status, version, started, finished, before, after, command = sys.argv[1:11]
+agent, home, report, status, version, started, finished, before, after, command, cleanup = sys.argv[1:12]
 user_home = os.path.expanduser("~")
 
 SECRET_PATTERNS = [
@@ -245,6 +278,8 @@ out.append(f"| Final task state | **{state}** |")
 out.append(f"| Reached ready_for_review | {'yes' if state == 'ready_for_review' else 'no'} |")
 out.append(f"| Provider writes during the run | {len(writes)} {'(none — claim/report/submit never publish)' if not writes else writes} |")
 out.append(f"| Agent MCP config unchanged | {'yes' if before == after else 'NO'} (before `{before}`, after `{after}`) |")
+if cleanup:
+    out.append(f"| Config cleanup | {cleanup} |")
 out.append("")
 out.append("## Command (session-only MCP configuration)")
 out.append("")
