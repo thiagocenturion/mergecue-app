@@ -189,6 +189,23 @@ struct LifecycleTests {
         #expect(h.world.writes.first?.body == "Fixed the cap.")
     }
 
+    /// S14: a read-only task never opens the agent in the user's real checkout.
+    @Test("Read-only tasks hand off into a private scratch folder, not the mapped checkout")
+    func readOnlyTaskUsesScratchFolder() async throws {
+        let h = try await Harness.make()
+        let task = try await h.engine.createTask(fromAttention: h.threadItemID, type: .draftReply)
+        #expect(task.checkout?.policy == .readOnly)
+        #expect(task.checkout?.mappedCheckoutPath == Fixture.checkoutPath)
+        let handoff = try await h.engine.handoff(for: task.id)
+        let folder = try #require(handoff.workingDirectory)
+        #expect(folder != Fixture.checkoutPath)
+        #expect(folder.hasSuffix("/handoff/scratch/\(task.id.rawValue)"))
+        let attributes = try FileManager.default.attributesOfItem(atPath: folder)
+        #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700)
+        let context = try await h.ok(GetTaskParams(taskID: task.id))
+        #expect(context.instructions.contains { $0.contains("scratch folder") && $0.contains(Fixture.checkoutPath) })
+    }
+
     @Test("Tasks created before handoff codes existed can still be claimed without one")
     func legacyTaskNeedsNoCode() async throws {
         let h = try await Harness.make()

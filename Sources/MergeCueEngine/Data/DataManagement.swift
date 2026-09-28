@@ -110,16 +110,32 @@ extension MergeCueEngine {
             case .working: task.lease.map { "\($0.agentName) is working" } ?? "Task ready to start"
             default: task.state.displayName
             }
+            // S14: read-only tasks (draft_reply) never start the agent in the user's real checkout — it gets a private
+            // scratch folder; it may still read the mapped checkout by path.
+            var workingDirectory = task.checkout?.worktreePath
+            if workingDirectory == nil, task.checkout?.policy == .readOnly {
+                workingDirectory = try scratchDirectory(for: task.id)
+            }
             return TaskHandoff(
                 taskID: task.id,
                 command: TaskHandoff.command(for: task.id, handoffCode: task.handoffCode),
-                workingDirectory: task.checkout?.worktreePath ?? (task.checkout?.policy == .readOnly ? task.checkout?.mappedCheckoutPath : nil),
+                workingDirectory: workingDirectory,
                 checkoutPolicy: task.checkout?.policy,
                 blockedReason: task.checkout?.blockedReason,
                 statusText: status,
                 handoffCode: task.handoffCode
             )
         }
+    }
+
+    /// `<root>/handoff/scratch/<task id>` (0700), created on demand: the working folder of read-only tasks.
+    func scratchDirectory(for taskID: TaskID) throws -> String {
+        let base = env.paths.handoff.appending(path: "scratch", directoryHint: .isDirectory)
+        let directory = base.appending(path: taskID.rawValue, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        _ = chmod(MergeCuePaths.fileSystemPath(base), 0o700)
+        _ = chmod(MergeCuePaths.fileSystemPath(directory), 0o700)
+        return MergeCuePaths.fileSystemPath(directory)
     }
 
     /// Records that the owner copied the handoff command (history only; the state stays unchanged until a real

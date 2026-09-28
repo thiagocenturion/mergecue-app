@@ -864,6 +864,8 @@ Public API groups (UI contract, exact names chosen by the implementer and docume
   reply / resolve thread / request changes / merge; `perform(preview)` re-fetches fresh remote state (`headInfo`,
   `thread`) and blocks on SHA/thread change; writes require `Account.writesEnabled` **and** a matching approved
   preview; every attempt/success/failure is audited; idempotency guard per preview fingerprint;
+- handoff working folder (S14): the isolated worktree for code tasks; read-only tasks (`draft_reply`) get a private
+  scratch folder `<root>/handoff/scratch/<task id>` (0700) — the agent is never started inside the user's checkout;
 - rules: CRUD, templates, activation (user only), evaluation on new events with per-(rule,event) idempotency,
   quiet hours, max fires/hour; `requestExecution` degrades to `createTask` + note unless an execution mode is
   verified (`Task ready to start`, never `AI working` without a claim);

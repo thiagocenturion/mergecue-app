@@ -24,7 +24,7 @@ enum TaskContextBuilder {
             )
         case .readOnly?:
             if let path = task.checkout?.mappedCheckoutPath {
-                lines.append("You may read the checkout at \(path) but must not modify it.")
+                lines.append("You were started in a MergeCue scratch folder. You may read the checkout at \(path) but must not modify it.")
             } else {
                 lines.append("No checkout is needed for this task; do not modify any local repository.")
             }
