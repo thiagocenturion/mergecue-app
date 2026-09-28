@@ -1,0 +1,26 @@
+[0KRunning with gitlab-runner 18.3.0 (fixture)[0;m
+section_start:1758445200:prepare_script[0K[0K[36;1mPreparing environment[0;m
+Running on runner-fixture via fixture-host...
+section_end:1758445201:prepare_script[0K
+section_start:1758445202:step_script[0K[0K[36;1mExecuting "step_script" stage of the job script[0;m
+$ export GITLAB_TOKEN=glpat-FixtureSecretValue1234567890
+$ bundle exec rspec spec/payments
+.........F..
+
+Failures:
+
+  1) Payments::Charge retries with exponential backoff
+     Failure/Error: expect(sleeps).to eq([1, 2, 4])
+       expected: [1, 2, 4]
+            got: [1, 1, 1]
+     # ./spec/payments/charge_spec.rb:57:in `block (2 levels) in <top (required)>'
+
+Finished in 2.31 seconds (files took 0.8 seconds to load)
+12 examples, 1 failure
+
+Failed examples:
+
+rspec ./spec/payments/charge_spec.rb:52 # Payments::Charge retries with exponential backoff
+section_end:1758445210:step_script[0K
+[31;1mERROR: Job failed: exit code 1
+[0;m

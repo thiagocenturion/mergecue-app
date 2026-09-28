@@ -1,0 +1,359 @@
+[
+  {
+    "id": "b0f0ec9f0575df356fe956aa32d490d6a038bab4",
+    "individual_note": false,
+    "notes": [
+      {
+        "id": 1001,
+        "type": "DiffNote",
+        "body": "This retry loop never backs off. Can we add exponential backoff here?",
+        "attachment": null,
+        "author": {
+          "id": 7003,
+          "username": "rev-alice",
+          "name": "Alice Reviewer",
+          "state": "active",
+          "locked": false,
+          "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/7003/avatar.png",
+          "web_url": "https://gitlab.com/rev-alice"
+        },
+        "created_at": "2026-09-19T09:00:00.000Z",
+        "updated_at": "2026-09-19T09:00:00.000Z",
+        "system": false,
+        "noteable_id": 99042,
+        "noteable_type": "MergeRequest",
+        "project_id": 278964,
+        "noteable_iid": 42,
+        "commit_id": "ae44e8cc153cb128e982a7360b5171bdaed69d3c",
+        "resolvable": true,
+        "confidential": false,
+        "internal": false,
+        "imported": false,
+        "imported_from": "none",
+        "resolved": false,
+        "resolved_by": null,
+        "resolved_at": null,
+        "position": {
+          "base_sha": "9286537fc5d0380eacf5eb62fe7c68cee503ecac",
+          "start_sha": "9286537fc5d0380eacf5eb62fe7c68cee503ecac",
+          "head_sha": "ae44e8cc153cb128e982a7360b5171bdaed69d3c",
+          "old_path": "src/payments/charge.rb",
+          "new_path": "src/payments/charge.rb",
+          "position_type": "text",
+          "old_line": null,
+          "new_line": 42,
+          "line_range": {
+            "start": {
+              "line_code": "d79c45395f971e7352938087f11e02dd96fe3779_40_40",
+              "type": "new",
+              "old_line": null,
+              "new_line": 40
+            },
+            "end": {
+              "line_code": "d79c45395f971e7352938087f11e02dd96fe3779_42_42",
+              "type": "new",
+              "old_line": null,
+              "new_line": 42
+            }
+          }
+        }
+      },
+      {
+        "id": 1002,
+        "type": "DiffNote",
+        "body": "Good catch — I'll add it with jitter.",
+        "attachment": null,
+        "author": {
+          "id": 7001,
+          "username": "mona-dev",
+          "name": "Mona Dev",
+          "state": "active",
+          "locked": false,
+          "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/7001/avatar.png",
+          "web_url": "https://gitlab.com/mona-dev"
+        },
+        "created_at": "2026-09-19T09:20:00.000Z",
+        "updated_at": "2026-09-19T09:20:00.000Z",
+        "system": false,
+        "noteable_id": 99042,
+        "noteable_type": "MergeRequest",
+        "project_id": 278964,
+        "noteable_iid": 42,
+        "commit_id": "ae44e8cc153cb128e982a7360b5171bdaed69d3c",
+        "resolvable": true,
+        "confidential": false,
+        "internal": false,
+        "imported": false,
+        "imported_from": "none",
+        "resolved": false,
+        "resolved_by": null,
+        "resolved_at": null,
+        "position": {
+          "base_sha": "9286537fc5d0380eacf5eb62fe7c68cee503ecac",
+          "start_sha": "9286537fc5d0380eacf5eb62fe7c68cee503ecac",
+          "head_sha": "ae44e8cc153cb128e982a7360b5171bdaed69d3c",
+          "old_path": "src/payments/charge.rb",
+          "new_path": "src/payments/charge.rb",
+          "position_type": "text",
+          "old_line": null,
+          "new_line": 42,
+          "line_range": {
+            "start": {
+              "line_code": "d79c45395f971e7352938087f11e02dd96fe3779_40_40",
+              "type": "new",
+              "old_line": null,
+              "new_line": 40
+            },
+            "end": {
+              "line_code": "d79c45395f971e7352938087f11e02dd96fe3779_42_42",
+              "type": "new",
+              "old_line": null,
+              "new_line": 42
+            }
+          }
+        }
+      },
+      {
+        "id": 1003,
+        "type": "DiffNote",
+        "body": "Also please cap the attempts at 5.",
+        "attachment": null,
+        "author": {
+          "id": 7003,
+          "username": "rev-alice",
+          "name": "Alice Reviewer",
+          "state": "active",
+          "locked": false,
+          "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/7003/avatar.png",
+          "web_url": "https://gitlab.com/rev-alice"
+        },
+        "created_at": "2026-09-19T10:05:00.000Z",
+        "updated_at": "2026-09-19T10:05:00.000Z",
+        "system": false,
+        "noteable_id": 99042,
+        "noteable_type": "MergeRequest",
+        "project_id": 278964,
+        "noteable_iid": 42,
+        "commit_id": "ae44e8cc153cb128e982a7360b5171bdaed69d3c",
+        "resolvable": true,
+        "confidential": false,
+        "internal": false,
+        "imported": false,
+        "imported_from": "none",
+        "resolved": false,
+        "resolved_by": null,
+        "resolved_at": null,
+        "position": {
+          "base_sha": "9286537fc5d0380eacf5eb62fe7c68cee503ecac",
+          "start_sha": "9286537fc5d0380eacf5eb62fe7c68cee503ecac",
+          "head_sha": "ae44e8cc153cb128e982a7360b5171bdaed69d3c",
+          "old_path": "src/payments/charge.rb",
+          "new_path": "src/payments/charge.rb",
+          "position_type": "text",
+          "old_line": null,
+          "new_line": 42,
+          "line_range": {
+            "start": {
+              "line_code": "d79c45395f971e7352938087f11e02dd96fe3779_40_40",
+              "type": "new",
+              "old_line": null,
+              "new_line": 40
+            },
+            "end": {
+              "line_code": "d79c45395f971e7352938087f11e02dd96fe3779_42_42",
+              "type": "new",
+              "old_line": null,
+              "new_line": 42
+            }
+          }
+        }
+      },
+      {
+        "id": 1004,
+        "type": "DiffNote",
+        "body": "Done: capped at 5 attempts in the latest push.",
+        "attachment": null,
+        "author": {
+          "id": 7001,
+          "username": "mona-dev",
+          "name": "Mona Dev",
+          "state": "active",
+          "locked": false,
+          "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/7001/avatar.png",
+          "web_url": "https://gitlab.com/mona-dev"
+        },
+        "created_at": "2026-09-20T09:35:00.000Z",
+        "updated_at": "2026-09-20T09:35:00.000Z",
+        "system": false,
+        "noteable_id": 99042,
+        "noteable_type": "MergeRequest",
+        "project_id": 278964,
+        "noteable_iid": 42,
+        "commit_id": "ae44e8cc153cb128e982a7360b5171bdaed69d3c",
+        "resolvable": true,
+        "confidential": false,
+        "internal": false,
+        "imported": false,
+        "imported_from": "none",
+        "resolved": false,
+        "resolved_by": null,
+        "resolved_at": null,
+        "position": {
+          "base_sha": "9286537fc5d0380eacf5eb62fe7c68cee503ecac",
+          "start_sha": "9286537fc5d0380eacf5eb62fe7c68cee503ecac",
+          "head_sha": "ae44e8cc153cb128e982a7360b5171bdaed69d3c",
+          "old_path": "src/payments/charge.rb",
+          "new_path": "src/payments/charge.rb",
+          "position_type": "text",
+          "old_line": null,
+          "new_line": 42,
+          "line_range": {
+            "start": {
+              "line_code": "d79c45395f971e7352938087f11e02dd96fe3779_40_40",
+              "type": "new",
+              "old_line": null,
+              "new_line": 40
+            },
+            "end": {
+              "line_code": "d79c45395f971e7352938087f11e02dd96fe3779_42_42",
+              "type": "new",
+              "old_line": null,
+              "new_line": 42
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "cb29c5e5927455549cb1bda910e46ca341892eab",
+    "individual_note": false,
+    "notes": [
+      {
+        "id": 1005,
+        "type": "DiffNote",
+        "body": "Parse the amount strictly:\n\n```suggestion:-0+0\n    amount_cents = Integer(params.fetch(:amount_cents))\n```",
+        "attachment": null,
+        "author": {
+          "id": 7003,
+          "username": "rev-alice",
+          "name": "Alice Reviewer",
+          "state": "active",
+          "locked": false,
+          "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/7003/avatar.png",
+          "web_url": "https://gitlab.com/rev-alice"
+        },
+        "created_at": "2026-09-19T10:10:00.000Z",
+        "updated_at": "2026-09-19T10:10:00.000Z",
+        "system": false,
+        "noteable_id": 99042,
+        "noteable_type": "MergeRequest",
+        "project_id": 278964,
+        "noteable_iid": 42,
+        "commit_id": "ae44e8cc153cb128e982a7360b5171bdaed69d3c",
+        "resolvable": true,
+        "confidential": false,
+        "internal": false,
+        "imported": false,
+        "imported_from": "none",
+        "resolved": false,
+        "resolved_by": null,
+        "resolved_at": null,
+        "position": {
+          "base_sha": "9286537fc5d0380eacf5eb62fe7c68cee503ecac",
+          "start_sha": "9286537fc5d0380eacf5eb62fe7c68cee503ecac",
+          "head_sha": "ae44e8cc153cb128e982a7360b5171bdaed69d3c",
+          "old_path": "src/payments/charge.rb",
+          "new_path": "src/payments/charge.rb",
+          "position_type": "text",
+          "old_line": null,
+          "new_line": 57
+        }
+      }
+    ]
+  },
+  {
+    "id": "6cb65f69759cabb4cbd1e7653a3f647b698afa31",
+    "individual_note": false,
+    "notes": [
+      {
+        "id": 1006,
+        "type": "DiscussionNote",
+        "body": "Why did we drop the `Idempotency-Key` header from the gateway call?",
+        "attachment": null,
+        "author": {
+          "id": 7004,
+          "username": "rev-bob",
+          "name": "Bob Reviewer",
+          "state": "active",
+          "locked": false,
+          "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/7004/avatar.png",
+          "web_url": "https://gitlab.com/rev-bob"
+        },
+        "created_at": "2026-09-19T11:00:00.000Z",
+        "updated_at": "2026-09-19T11:00:00.000Z",
+        "system": false,
+        "noteable_id": 99042,
+        "noteable_type": "MergeRequest",
+        "project_id": 278964,
+        "noteable_iid": 42,
+        "commit_id": null,
+        "resolvable": true,
+        "confidential": false,
+        "internal": false,
+        "imported": false,
+        "imported_from": "none",
+        "resolved": false,
+        "resolved_by": null,
+        "resolved_at": null
+      }
+    ]
+  },
+  {
+    "id": "99e1edd301f24fea85233c096f869326dbc07afd",
+    "individual_note": false,
+    "notes": [
+      {
+        "id": 1007,
+        "type": "DiffNote",
+        "body": "Typo: `timout` should be `timeout`.",
+        "attachment": null,
+        "author": {
+          "id": 7004,
+          "username": "rev-bob",
+          "name": "Bob Reviewer",
+          "state": "active",
+          "locked": false,
+          "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/7004/avatar.png",
+          "web_url": "https://gitlab.com/rev-bob"
+        },
+        "created_at": "2026-09-18T16:00:00.000Z",
+        "updated_at": "2026-09-18T16:00:00.000Z",
+        "system": false,
+        "noteable_id": 99042,
+        "noteable_type": "MergeRequest",
+        "project_id": 278964,
+        "noteable_iid": 42,
+        "commit_id": "fc9cdcb72ba0039cc098629314ff07f193db80e4",
+        "resolvable": true,
+        "confidential": false,
+        "internal": false,
+        "imported": false,
+        "imported_from": "none",
+        "resolved": false,
+        "resolved_by": null,
+        "resolved_at": null,
+        "position": {
+          "base_sha": "9286537fc5d0380eacf5eb62fe7c68cee503ecac",
+          "start_sha": "9286537fc5d0380eacf5eb62fe7c68cee503ecac",
+          "head_sha": "fc9cdcb72ba0039cc098629314ff07f193db80e4",
+          "old_path": "config/app.yml",
+          "new_path": "config/app.yml",
+          "position_type": "text",
+          "old_line": null,
+          "new_line": 3
+        }
+      }
+    ]
+  }
+]

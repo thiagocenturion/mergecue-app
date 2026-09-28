@@ -1,0 +1,36 @@
+[
+  {
+    "id": "ae44e8cc153cb128e982a7360b5171bdaed69d3c",
+    "short_id": "ae44e8cc",
+    "created_at": "2026-09-20T09:30:00.000Z",
+    "parent_ids": [],
+    "title": "Cap charge retries at 5 attempts",
+    "message": "Cap charge retries at 5 attempts\n",
+    "author_name": "Mona Dev",
+    "author_email": "mona-dev@example.com",
+    "authored_date": "2026-09-20T09:30:00.000Z",
+    "committer_name": "Mona Dev",
+    "committer_email": "mona-dev@example.com",
+    "committed_date": "2026-09-20T09:30:00.000Z",
+    "trailers": {},
+    "extended_trailers": {},
+    "web_url": "https://gitlab.com/acme/payments-api/-/commit/ae44e8cc153cb128e982a7360b5171bdaed69d3c"
+  },
+  {
+    "id": "fc9cdcb72ba0039cc098629314ff07f193db80e4",
+    "short_id": "fc9cdcb7",
+    "created_at": "2026-09-18T13:55:00.000Z",
+    "parent_ids": [],
+    "title": "Add retry backoff and refund path",
+    "message": "Add retry backoff and refund path\n",
+    "author_name": "Mona Dev",
+    "author_email": "mona-dev@example.com",
+    "authored_date": "2026-09-18T13:55:00.000Z",
+    "committer_name": "Mona Dev",
+    "committer_email": "mona-dev@example.com",
+    "committed_date": "2026-09-18T13:55:00.000Z",
+    "trailers": {},
+    "extended_trailers": {},
+    "web_url": "https://gitlab.com/acme/payments-api/-/commit/fc9cdcb72ba0039cc098629314ff07f193db80e4"
+  }
+]

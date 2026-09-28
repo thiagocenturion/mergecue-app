@@ -1,0 +1,51 @@
+diff --git a/src/payments/charge.rb b/src/payments/charge.rb
+index 9286537fc5d0..ae44e8cc153c 100644
+--- a/src/payments/charge.rb
++++ b/src/payments/charge.rb
+@@ -38,8 +38,14 @@ module Payments
+       attempts = 0
+       begin
+-        gateway.charge(amount)
++        attempts += 1
++        gateway.charge(amount)
+       rescue Gateway::Timeout
+-        retry
++        raise if attempts >= MAX_ATTEMPTS
++        sleep(backoff(attempts))
++        retry
+       end
++      amount_cents = params[:amount_cents].to_i
++      log_charge(amount_cents)
+     end
+diff --git a/src/payments/refund.rb b/src/payments/refund.rb
+new file mode 100644
+index 000000000000..b128e982a736
+--- /dev/null
++++ b/src/payments/refund.rb
+@@ -0,0 +1,14 @@
++module Payments
++  class Refund
++    def initialize(gateway)
++      @gateway = gateway
++    end
++
++    def call(charge_id, amount)
++      @gateway.refund(charge_id, amount)
++    end
++  end
++end
++
++# TODO: ledger
++
+diff --git a/config/app.yml b/config/application.yml
+similarity index 75%
+rename from config/app.yml
+rename to config/application.yml
+--- a/config/app.yml
++++ b/config/application.yml
+@@ -1,4 +1,4 @@
+ payments:
+-  timout: 30
++  timeout: 30
+   currency: USD
+   retries: 5
