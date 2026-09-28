@@ -1,0 +1,20 @@
+{
+  "pagelen": 500,
+  "values": [
+    {
+      "type": "diffstat",
+      "status": "modified",
+      "lines_added": 1,
+      "lines_removed": 1,
+      "old": {
+        "path": "docs/refunds.md",
+        "type": "commit_file"
+      },
+      "new": {
+        "path": "docs/refunds.md",
+        "type": "commit_file"
+      }
+    }
+  ],
+  "page": 1
+}

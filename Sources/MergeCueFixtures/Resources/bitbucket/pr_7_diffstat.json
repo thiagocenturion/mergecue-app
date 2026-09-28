@@ -1,0 +1,20 @@
+{
+  "pagelen": 500,
+  "values": [
+    {
+      "type": "diffstat",
+      "status": "modified",
+      "lines_added": 12,
+      "lines_removed": 3,
+      "old": {
+        "path": "app/checkout/Images.tsx",
+        "type": "commit_file"
+      },
+      "new": {
+        "path": "app/checkout/Images.tsx",
+        "type": "commit_file"
+      }
+    }
+  ],
+  "page": 1
+}

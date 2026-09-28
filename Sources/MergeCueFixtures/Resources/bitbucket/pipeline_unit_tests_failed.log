@@ -1,0 +1,21 @@
++ npm ci
+added 812 packages in 21s
++ export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
++ npm test -- --ci
+PASS src/payments/currency.test.ts
+FAIL src/payments/refund.test.ts
+  RefundService
+    ✓ rejects refunds above the captured amount (12 ms)
+    ✕ reports gateway failures (9 ms)
+
+  ● RefundService › reports gateway failures
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"ok": true}
+
+      at Object.<anonymous> (src/payments/refund.test.ts:41:5)
+
+Tests:       1 failed, 13 passed, 14 total
+Error: Process completed with exit code 1.

@@ -1,0 +1,51 @@
+{
+  "pagelen": 100,
+  "values": [
+    {
+      "type": "pullrequest_comment",
+      "id": 701,
+      "created_on": "2026-09-24T13:42:10.100000+00:00",
+      "updated_on": "2026-09-24T13:42:10.100000+00:00",
+      "content": {
+        "type": "rendered",
+        "raw": "Before/after Lighthouse numbers are in the description.",
+        "markup": "markdown",
+        "html": ""
+      },
+      "user": {
+        "display_name": "Devon Park",
+        "links": {
+          "self": {
+            "href": "https://api.bitbucket.org/2.0/users/%7B6e2f8a1b-9c3d-4e5f-a6b7-c8d9e0f1a2b3%7D"
+          },
+          "avatar": {
+            "href": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:2b3c4d5e-fixture-devon/fixture/128"
+          },
+          "html": {
+            "href": "https://bitbucket.org/%7B6e2f8a1b-9c3d-4e5f-a6b7-c8d9e0f1a2b3%7D/"
+          }
+        },
+        "type": "user",
+        "uuid": "{6e2f8a1b-9c3d-4e5f-a6b7-c8d9e0f1a2b3}",
+        "account_id": "712020:2b3c4d5e-fixture-devon",
+        "nickname": "devon-p"
+      },
+      "deleted": false,
+      "pending": false,
+      "links": {
+        "self": {
+          "href": "https://api.bitbucket.org/2.0/repositories/acme/web/pullrequests/7/comments/701"
+        },
+        "html": {
+          "href": "https://bitbucket.org/acme/web/pull-requests/7#comment-701"
+        }
+      },
+      "pullrequest": {
+        "type": "pullrequest",
+        "id": 7,
+        "title": ""
+      }
+    }
+  ],
+  "page": 1
+}

@@ -1,0 +1,42 @@
+{
+  "pagelen": 100,
+  "values": [
+    {
+      "type": "pipeline_step",
+      "uuid": "{aa101000-0000-4000-8000-000000000001}",
+      "name": "Build",
+      "started_on": "2026-09-27T16:31:05.000000+00:00",
+      "completed_on": "2026-09-27T16:31:55.000000+00:00",
+      "state": {
+        "type": "pipeline_step_state_completed",
+        "name": "COMPLETED",
+        "result": {
+          "type": "pipeline_step_state_completed_successful",
+          "name": "SUCCESSFUL"
+        }
+      },
+      "image": {
+        "name": "node:22"
+      }
+    },
+    {
+      "type": "pipeline_step",
+      "uuid": "{aa101000-0000-4000-8000-000000000002}",
+      "name": "Unit tests",
+      "started_on": "2026-09-27T16:31:05.000000+00:00",
+      "completed_on": "2026-09-27T16:31:55.000000+00:00",
+      "state": {
+        "type": "pipeline_step_state_completed",
+        "name": "COMPLETED",
+        "result": {
+          "type": "pipeline_step_state_completed_failed",
+          "name": "FAILED"
+        }
+      },
+      "image": {
+        "name": "node:22"
+      }
+    }
+  ],
+  "page": 1
+}
