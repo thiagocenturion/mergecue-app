@@ -115,7 +115,7 @@ extension MergeCueEngine {
         else {
             throw EngineError.unsupported("This task has no isolated worktree; there is no patch to apply.")
         }
-        let changes = try await env.workspace.changes(inWorktree: worktree, since: base, maxBytes: Self.maxPatchBytes)
+        let changes = try await worktreeChanges(checkout, worktree: worktree, base: base, maxBytes: Self.maxPatchBytes)
         var warnings: [String] = []
         var canApprove = true
         var reason: String?

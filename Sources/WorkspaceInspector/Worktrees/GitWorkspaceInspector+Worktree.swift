@@ -87,7 +87,9 @@ extension GitWorkspaceInspector {
                 command: "worktree add", exitCode: added.exitCode, stderr: Self.cleanMessage(added.stderr)
             )
         }
-        return PreparedWorktree(path: destination, baseSHA: sha, localRef: localRef)
+        // Record the git dirs now, before any agent runs in the worktree (S2): later reads are pinned to them.
+        let gitDirs = try await registeredGitDirs(worktree: destination, checkoutPath: context.topLevel)
+        return PreparedWorktree(path: destination, baseSHA: sha, localRef: localRef, gitDirs: gitDirs)
     }
 
     // MARK: Independent clone (GitButler)
@@ -131,7 +133,10 @@ extension GitWorkspaceInspector {
                 throw WorkspaceError.headMismatch(expected: expected, actual: sha)
             }
             try await gitChecked(["checkout", "--quiet", "--detach", sha], in: destination)
-            return PreparedWorktree(path: destination, baseSHA: sha, localRef: localRef)
+            let gitDir = Self.canonicalPath((destination as NSString).appendingPathComponent(".git"))
+            return PreparedWorktree(
+                path: destination, baseSHA: sha, localRef: localRef, gitDirs: WorktreeGitDirs(gitDir: gitDir, commonDir: gitDir)
+            )
         } catch {
             removeOwnedDirectory(destination)
             throw error

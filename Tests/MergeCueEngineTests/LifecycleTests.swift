@@ -150,6 +150,30 @@ struct LifecycleTests {
         #expect(claimed.state == .working)
     }
 
+    /// S2: the engine records the worktree's git dirs, pins every recomputation to them, and rejects report_changes
+    /// when the agent repointed the worktree's .git.
+    @Test("report_changes is rejected when the worktree's .git was repointed")
+    func repointedGitDirRejectsReportChanges() async throws {
+        let h = try await Harness.make()
+        let task = try await h.engine.createTask(fromAttention: h.threadItemID)
+        let checkout = try #require(task.checkout)
+        let pin = try #require(checkout.gitDirs)
+        #expect(pin.gitDir.hasSuffix("/.git/worktrees/\(task.id.rawValue)"))
+        let claim = try await h.ok(ClaimTaskParams(taskID: task.id, agentName: "codex", expectedVersion: task.version))
+        h.workspace.setChanges(["a.swift"])
+        h.workspace.state.update { $0.gitDirTampered = true }
+        let rejected = await h.call(ReportChangesParams(
+            taskID: task.id, leaseID: claim.leaseID, expectedVersion: claim.version,
+            worktreePath: try #require(checkout.worktreePath), baseSHA: try #require(checkout.baseSHA), changedPaths: ["a.swift"]
+        ))
+        guard case .failure(let error) = rejected else { Issue.record("report_changes accepted a tampered worktree"); return }
+        #expect(error.code == .validationFailed)
+        #expect(error.message.contains(".git"))
+        #expect(h.workspace.state.get().pinnedCalls.last?.gitDirs == pin)
+        #expect(try await h.engine.taskDetail(task.id).activities.contains { $0.kind == .rejectedCall })
+        #expect(try await h.task(task.id).artifactIDs.isEmpty)
+    }
+
     @Test("Tasks created before handoff codes existed can still be claimed without one")
     func legacyTaskNeedsNoCode() async throws {
         let h = try await Harness.make()

@@ -41,6 +41,8 @@ public struct TaskCheckout: Codable, Sendable, Hashable {
     public var targetBranch: String
     public var isGitButlerManaged: Bool
     public var blockedReason: String?
+    /// Git directories of `worktreePath`, recorded when MergeCue created it (S2). nil for older tasks.
+    public var gitDirs: WorktreeGitDirs?
 
     public init(
         policy: CheckoutPolicy,
@@ -50,8 +52,10 @@ public struct TaskCheckout: Codable, Sendable, Hashable {
         sourceBranch: String,
         targetBranch: String,
         isGitButlerManaged: Bool = false,
-        blockedReason: String? = nil
+        blockedReason: String? = nil,
+        gitDirs: WorktreeGitDirs? = nil
     ) {
+        self.gitDirs = gitDirs
         self.policy = policy
         self.mappedCheckoutPath = mappedCheckoutPath
         self.worktreePath = worktreePath

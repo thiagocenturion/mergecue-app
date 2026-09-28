@@ -116,7 +116,12 @@ extension MergeCueEngine {
         }
         let changes: WorkspaceChanges
         do {
-            changes = try await env.workspace.changes(inWorktree: worktree, since: base, maxBytes: Self.maxDiffArtifactBytes)
+            changes = try await worktreeChanges(checkout, worktree: worktree, base: base, maxBytes: Self.maxDiffArtifactBytes)
+        } catch WorkspaceError.worktreeGitDirChanged {
+            throw IPCError.validationFailed(
+                "The worktree's .git no longer points to the git directory MergeCue created for it. MergeCue refuses to run "
+                    + "git there; report_changes is rejected. Do not modify .git — the owner must recreate the worktree."
+            )
         } catch {
             throw IPCError.internalError(
                 "MergeCue could not recompute the diff of the worktree: \(SecretRedactor.redact((error as? LocalizedError)?.errorDescription ?? "\(error)"))",

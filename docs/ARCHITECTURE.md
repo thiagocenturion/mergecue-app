@@ -420,7 +420,8 @@ public enum CheckoutSafety: String, Codable, Sendable { case safe, dirty, gitBut
 public struct CheckoutInfo: Codable, Sendable, Hashable { var path: String; var isRepository: Bool; var topLevel: String?; var remotes: [GitRemote]; var currentBranch: String?; var headSHA: String?; var isDirty: Bool; var dirtyPaths: [String]; var worktrees: [String]; var gitButler: GitButlerStatus; var safety: CheckoutSafety }
 public struct MappingSuggestion: Codable, Sendable, Hashable { var checkoutPath: String; var confidence: MappingConfidence; var matchedRemote: String?; var reason: String }
 public struct WorktreeRequest: Codable, Sendable, Hashable { var taskID: TaskID; var checkoutPath: String; var fetch: FetchHeadSpec; var destinationRoot: String }
-public struct PreparedWorktree: Codable, Sendable, Hashable { var path: String; var baseSHA: String; var localRef: String /* refs/mergecue/tasks/<id> */ }
+public struct WorktreeGitDirs: Codable, Sendable, Hashable { var gitDir: String; var commonDir: String }  // recorded at creation (S2)
+public struct PreparedWorktree: Codable, Sendable, Hashable { var path: String; var baseSHA: String; var localRef: String /* refs/mergecue/tasks/<id> */; var gitDirs: WorktreeGitDirs? }
 public struct ChangedPath: Codable, Sendable, Hashable { var path: String; var status: FileChangeStatus }
 public struct WorkspaceChanges: Codable, Sendable, Hashable { var changedPaths: [ChangedPath]; var unifiedDiff: String; var truncated: Bool; var headSHA: String?; var hasUncommittedChanges: Bool }
 public struct PatchApplyCheck: Codable, Sendable, Hashable { var canApply: Bool; var problems: [String]; var targetHeadSHA: String?; var targetSafety: CheckoutSafety }
@@ -431,12 +432,23 @@ public protocol WorkspaceInspecting: Sendable {
     func match(repo: Repository, checkoutPath: String) async -> MappingSuggestion
     func prepareWorktree(_ request: WorktreeRequest) async throws -> PreparedWorktree
     func changes(inWorktree path: String, since baseSHA: String, maxBytes: Int) async throws -> WorkspaceChanges
+    func changes(inWorktree path: String, gitDirs: WorktreeGitDirs?, checkoutPath: String?, since baseSHA: String, maxBytes: Int) async throws -> WorkspaceChanges // pinned (S2); default forwards to the unpinned one
     func checkPatch(_ patch: String, into checkoutPath: String, expectedHeadSHA: String?) async throws -> PatchApplyCheck
     func applyPatch(_ patch: String, into checkoutPath: String, expectedHeadSHA: String?) async throws -> PatchApplyCheck
     func removeWorktree(path: String, checkoutPath: String) async throws
     func runCommand(_ argv: [String], in directory: String, timeout: TimeInterval) async throws -> CommandResult // only after explicit user approval
 }
 ```
+Task worktrees are agent-writable (S2). `TaskCheckout.gitDirs` records the worktree's git dir and common dir when
+MergeCue creates it; every later recomputation (`report_changes`, `get_diff`, review, apply-patch preview/perform)
+calls the pinned `changes`, which refuses with `WorkspaceError.worktreeGitDirChanged` when `<worktree>/.git` is not a
+regular file pointing to the recorded git dir (symlinks refused; `report_changes` then answers `validation_failed`),
+and runs git with `GIT_DIR`/`GIT_WORK_TREE` pinned, `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`,
+`GIT_ATTR_SOURCE=<empty tree>`, `-c core.attributesFile=/dev/null`, every `filter.<name>` of the repository config
+disabled with `-c` and `--no-ext-diff --no-textconv`, so no filter/textconv/diff driver ever runs. Tasks without a
+recorded pin derive it from the mapped checkout's `worktrees/*/gitdir` registry, never from the worktree. Residual:
+GitButler independent clones (unused by the engine, which blocks GitButler code tasks) keep their git dir inside the
+worktree.
 
 ### 2.9 Sync, notifications, runtime protocols
 ```swift

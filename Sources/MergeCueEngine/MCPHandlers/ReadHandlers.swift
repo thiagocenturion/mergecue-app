@@ -117,7 +117,7 @@ extension MergeCueEngine {
             if let checkout = task.checkout, checkout.policy == .isolatedWorktree,
                let worktree = checkout.worktreePath, let base = checkout.baseSHA
             {
-                let changes = try await env.workspace.changes(inWorktree: worktree, since: base, maxBytes: maxBytes)
+                let changes = try await worktreeChanges(checkout, worktree: worktree, base: base, maxBytes: maxBytes)
                 return try IPCCoding.encodeValue(Self.redacted(GetDiffResult(changes, baseSHA: base), maxBytes: maxBytes))
             }
             let snapshot = try await database.snapshot(task.origin.changeRequest)

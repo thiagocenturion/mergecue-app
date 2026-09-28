@@ -213,7 +213,7 @@ extension MergeCueEngine {
             if let expected = preview.checkoutHeadSHA, info.headSHA != expected {
                 return .stale("Your checkout moved since the preview.")
             }
-            let changes = try await env.workspace.changes(inWorktree: worktree, since: base, maxBytes: Self.maxPatchBytes)
+            let changes = try await worktreeChanges(checkout, worktree: worktree, base: base, maxBytes: Self.maxPatchBytes)
             guard ContentDigest.sha256Hex(changes.unifiedDiff) == preview.contentDigest else {
                 return .stale("The worktree changed since the preview.")
             }
