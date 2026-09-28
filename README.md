@@ -105,7 +105,13 @@ push and merge are hidden by policy.
 ### Notifications
 
 The assistant asks macOS for permission (never silently at launch). One grouped notification per PR/MR; clicking it
-opens the item in MergeCue. Pause and quiet hours: Settings ▸ Notifications or the popover's bell.
+opens the item in MergeCue. Pause and quiet hours: Settings ▸ Notifications or the popover's bell. **Notify me about**
+switches (review comments, CI failures, reviewer questions, review requests, approvals, agent results) are stored by
+the engine and only silence alerts of that kind — the items still appear in the inbox.
+
+PRs/MRs you reviewed or commented on stay tracked after the provider drops your review request (GitHub does once
+you submit a review), so replies to your comments still reach the inbox; they show as **Reviewed** in PRs & MRs and
+count as **Reviewing** in filters. Only threads you took part in create inbox items.
 
 ## Data locations and reset
 
@@ -117,6 +123,10 @@ opens the item in MergeCue. Pause and quiet hours: Settings ▸ Notifications or
 | Logs | `~/Library/Logs/MergeCue/` and the unified log (`log show --predicate 'subsystem == "dev.mergecue"'`) |
 | Tokens | Keychain, service `dev.mergecue.credentials` |
 
+Housekeeping: once a day MergeCue prunes history older than 90 days (events, finished tasks' activity and audit,
+resolved items of PRs/MRs it no longer tracks) and compacts the database log. Worktrees of finished tasks are kept
+until you remove them: after 14 days they are listed in Settings ▸ Data ▸ Housekeeping with a **Clean up** button.
+
 `MERGECUE_HOME=<dir>` moves everything (including logs, under `<dir>/logs`) — handy for trials; agents then need the
 same variable. Settings ▸ Data shows the paths, **Export Database…** (a copy without tokens) and **Reset Local
 Data…** (deletes every stored token and all local data after a confirmation; checkouts and agent configs are not
@@ -124,13 +134,31 @@ touched). Settings ▸ General has **Launch MergeCue at login** (`SMAppService`;
 
 ## Limitations
 
-- Live verification so far: GitHub.com via the owner's `gh` login. GitLab.com and Bitbucket Cloud pass the same
+Test coverage and the per-provider verification status: `docs/TESTING.md`.
+
+- Live verification so far: GitHub.com via the owner's `gh` login (authentication and sync; the account had no open
+  PRs, so threads/checks/writes were verified against fixtures only). GitLab.com and Bitbucket Cloud pass the same
   contract against recorded fixtures (demo) but are **unverified live** until real accounts are connected.
 - Hosted services only (GitHub.com, GitLab.com, Bitbucket Cloud). GitHub Enterprise Server, GitLab self-managed and
   Bitbucket Data Center are not tested.
 - No "Sign in with browser" (OAuth device flow) yet; tokens or the GitHub CLI.
 - Unattended agent execution is not available: rules can create tasks, which wait for you to hand them over.
 - Not notarized (no Developer ID certificate): on other Macs, Gatekeeper asks you to confirm the first launch.
+- Tracking PRs/MRs you only reviewed or commented on is bounded: updated within 30 days; GitHub at most 100 search
+  results; GitLab from your latest 100 comment events in up to 20 projects; Bitbucket per repository (selected, or 30
+  recently updated ones).
+
+### Blocked by access or platform
+
+| Item | Blocked by | State |
+| --- | --- | --- |
+| Notarized direct-download build | No Developer ID Application certificate | Builds are signed with Apple Development (Hardened Runtime) and run locally; Gatekeeper warns elsewhere. |
+| GitLab.com live acceptance | No GitLab account/token provided | Adapter complete; fixtures only. |
+| Bitbucket Cloud live acceptance | No Bitbucket account/token provided | Adapter complete; fixtures only. |
+| GitHub live threads/checks and remote writes (reply/resolve) | The owner's account has no open PRs; live writes to a test PR not yet authorized | Auth + sync verified live; the rest fixture-verified. |
+| Provider MCP servers (GitHub, GitLab, Atlassian) alongside MergeCue MCP | Optional; depend on each provider's tier/admin setup, not validated | Not required: agents get PR/CI context through MergeCue MCP. |
+| Unattended agent execution (routines / programmatic runs) | No agent runtime entitlement verified; would need owner approval and billing clarity | Rules create tasks that wait for a handoff ("Task ready to start"); never "AI working" without a real claim. |
+| GitHub Enterprise Server, GitLab self-managed, Bitbucket Data Center | No instances or access | Not tested. |
 
 ## Troubleshooting
 
