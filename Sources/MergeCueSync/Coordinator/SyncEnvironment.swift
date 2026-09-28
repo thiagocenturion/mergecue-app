@@ -13,6 +13,7 @@ final class SyncEnvironment: Sendable {
     struct Settings: Sendable {
         var configuration: SyncConfiguration
         var pausedUntil: Date?
+        var preferences: NotificationPreferences = .allEnabled
         var hotUntil: Date?
         var eventHandler: EventHandler?
     }
@@ -48,6 +49,8 @@ final class SyncEnvironment: Sendable {
 
     var notificationPolicy: NotificationPolicy {
         let current = current
-        return NotificationPolicy(pausedUntil: current.pausedUntil, quietHours: current.configuration.quietHours)
+        return NotificationPolicy(
+            pausedUntil: current.pausedUntil, quietHours: current.configuration.quietHours, preferences: current.preferences
+        )
     }
 }

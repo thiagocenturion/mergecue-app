@@ -55,6 +55,8 @@ public actor MergeCueEngine: IPCRequestHandling {
         if let paused = try? await database.setting(SettingsKey.notificationsPausedUntil, as: Date.self) {
             await env.sync.setNotificationsPaused(until: paused)
         }
+        await env.sync.setNotificationPreferences(await notificationPreferences())
+        await env.sync.setQuietHours(await quietHours())
         // Leases that expired while the app was not running.
         await sweepExpiredLeases()
         let interval = env.staleCheckInterval
@@ -191,6 +193,7 @@ public actor MergeCueEngine: IPCRequestHandling {
 enum SettingsKey {
     static let notificationsPausedUntil = "engine.notifications_paused_until"
     static let quietHours = "engine.quiet_hours"
+    static let notificationPreferences = "engine.notification_preferences"
     static let lastRefreshAt = "engine.last_refresh_at"
     static func performedAction(_ fingerprint: String) -> String { "engine.performed_action.\(fingerprint)" }
     static func eventTask(_ eventID: String) -> String { "engine.event_task.\(eventID)" }

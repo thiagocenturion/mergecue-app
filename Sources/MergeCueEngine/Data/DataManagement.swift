@@ -60,16 +60,42 @@ extension MergeCueEngine {
         return until
     }
 
-    /// Global quiet hours (persisted; rules carry their own quiet hours).
+    /// Global quiet hours (persisted and forwarded to Sync, which holds alerts back inside the window; rules carry
+    /// their own quiet hours).
     public func setQuietHours(_ quietHours: QuietHours?) async throws(EngineError) {
         try await uiCall {
             try await database.setSetting(SettingsKey.quietHours, quietHours)
+            await env.sync.setQuietHours(quietHours)
             emit(.rules)
+            emit(.syncStatus)
         }
     }
 
     public func quietHours() async -> QuietHours? {
         try? await database.setting(SettingsKey.quietHours, as: QuietHours.self)
+    }
+
+    /// Settings ▸ Notifications ▸ "Notify me about": persisted and forwarded to Sync. Only alerts are filtered;
+    /// attention items, events, rules and tasks are unaffected.
+    public func setNotificationPreferences(_ preferences: NotificationPreferences) async throws(EngineError) {
+        try await uiCall {
+            try await database.setSetting(SettingsKey.notificationPreferences, preferences)
+            await env.sync.setNotificationPreferences(preferences)
+            emit(.syncStatus)
+        }
+    }
+
+    /// The stored switches (everything on when never set).
+    public func notificationPreferences() async -> NotificationPreferences {
+        (try? await database.setting(SettingsKey.notificationPreferences, as: NotificationPreferences.self)) ?? .allEnabled
+    }
+
+    /// Whether an alert of `category` may be delivered now (switch on, not paused, outside quiet hours).
+    func allowsNotification(_ category: NotificationCategory) async -> Bool {
+        guard await notificationPreferences().isEnabled(category) else { return false }
+        if await notificationsPausedUntil() != nil { return false }
+        if let quiet = await quietHours(), quiet.contains(now) { return false }
+        return true
     }
 
     // MARK: Handoff
@@ -128,6 +154,7 @@ extension MergeCueEngine {
             mappings: mappings,
             notificationsPausedUntil: await notificationsPausedUntil(),
             quietHours: await quietHours(),
+            notificationPreferences: await notificationPreferences(),
             lastRefreshAt: lastRefresh ?? nil,
             isDemo: env.isDemo
         )

@@ -91,7 +91,21 @@ public actor SyncCoordinator: SyncControlling {
         environment.update { $0.pausedUntil = until }
     }
 
+    /// Per-category notification switches. Attention items and events are unaffected; only alerts are filtered.
+    public func setNotificationPreferences(_ preferences: NotificationPreferences) async {
+        environment.update { $0.preferences = preferences }
+    }
+
+    /// Global quiet hours (the engine's persisted setting): alerts are held back inside the window.
+    public func setQuietHours(_ quietHours: QuietHours?) async {
+        environment.update { $0.configuration.quietHours = quietHours }
+    }
+
     // MARK: Additional control
+
+    public func notificationPreferences() -> NotificationPreferences {
+        environment.current.preferences
+    }
 
     public func notificationsPausedUntil() -> Date? {
         environment.current.pausedUntil

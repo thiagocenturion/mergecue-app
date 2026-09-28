@@ -69,6 +69,9 @@ extension PreviewBackend {
         case .setQuietHours(let hours):
             state.quietHours = hours
             return AppCommandResult(message: hours == nil ? "Quiet hours off" : "Quiet hours saved")
+        case .setNotificationCategory(let category, let enabled):
+            state.notificationPreferences.set(category, enabled: enabled)
+            return .none
 
         case .saveRule(let rule):
             var rule = rule

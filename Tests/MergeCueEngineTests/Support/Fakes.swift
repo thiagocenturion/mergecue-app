@@ -64,6 +64,8 @@ actor FakeSync: SyncControlling {
     private(set) var accountsDidChangeCount = 0
     private(set) var refreshed: [AccountKey?] = []
     private(set) var pausedUntil: Date?
+    private(set) var preferences: NotificationPreferences?
+    private(set) var quietHours: QuietHours??
     var statusList: [AccountSyncStatus] = []
 
     func start() async {}
@@ -74,8 +76,18 @@ actor FakeSync: SyncControlling {
     func statuses() async -> [AccountSyncStatus] { statusList }
     func setEventHandler(_ handler: @escaping @Sendable ([ChangeEvent]) async -> Void) async { self.handler = handler }
     func setNotificationsPaused(until: Date?) async { pausedUntil = until }
+    func setNotificationPreferences(_ preferences: NotificationPreferences) async { self.preferences = preferences }
+    func setQuietHours(_ quietHours: QuietHours?) async { self.quietHours = .some(quietHours) }
 
     func setStatuses(_ statuses: [AccountSyncStatus]) { statusList = statuses }
+}
+
+/// Records the engine's own alerts.
+final class RecordingNotifier: NotificationDelivering, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _delivered: [GroupedNotification] = []
+    var delivered: [GroupedNotification] { lock.withLock { _delivered } }
+    func deliver(_ notification: GroupedNotification) async { lock.withLock { _delivered.append(notification) } }
 }
 
 // MARK: - Providers

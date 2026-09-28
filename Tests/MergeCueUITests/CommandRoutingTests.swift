@@ -158,6 +158,9 @@ struct CommandRoutingTests {
         #expect(model.notificationsPaused)
         await model.send(.pauseNotifications(until: nil))
         #expect(!model.notificationsPaused)
+        await model.send(.setNotificationCategory(.reviewRequests, enabled: false))
+        #expect(!model.state.notificationPreferences.isEnabled(.reviewRequests))
+        #expect(model.state.notificationPreferences.isEnabled(.ciFailures))
 
         let repo = try #require(model.knownRepositories.first { model.mapping(for: $0.key) == nil })
         await model.send(.addMapping(repo: repo.key, repoFullPath: repo.fullPath, checkoutPath: "/tmp/checkout"))

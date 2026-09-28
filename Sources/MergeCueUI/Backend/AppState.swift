@@ -157,6 +157,7 @@ public nonisolated struct AppState: Sendable, Hashable {
     public var runtime: RuntimeInfo?
     public var notificationsPausedUntil: Date?
     public var quietHours: QuietHours?
+    public var notificationPreferences: NotificationPreferences
     public var lastRefreshAt: Date?
 
     public init(
@@ -171,6 +172,7 @@ public nonisolated struct AppState: Sendable, Hashable {
         runtime: RuntimeInfo? = nil,
         notificationsPausedUntil: Date? = nil,
         quietHours: QuietHours? = nil,
+        notificationPreferences: NotificationPreferences = .allEnabled,
         lastRefreshAt: Date? = nil
     ) {
         self.accounts = accounts
@@ -184,6 +186,7 @@ public nonisolated struct AppState: Sendable, Hashable {
         self.runtime = runtime
         self.notificationsPausedUntil = notificationsPausedUntil
         self.quietHours = quietHours
+        self.notificationPreferences = notificationPreferences
         self.lastRefreshAt = lastRefreshAt
     }
 

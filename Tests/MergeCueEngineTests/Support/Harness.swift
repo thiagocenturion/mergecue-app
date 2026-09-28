@@ -123,6 +123,7 @@ struct Harness: Sendable {
     let sync: FakeSync
     let credentials: FakeCredentialStore
     let root: URL
+    let notifier: RecordingNotifier
 
     struct Options {
         var leaseDuration: TimeInterval = 600
@@ -141,16 +142,17 @@ struct Harness: Sendable {
         let workspace = FakeWorkspace()
         let sync = FakeSync()
         let credentials = FakeCredentialStore()
+        let notifier = RecordingNotifier()
         let root = FileManager.default.temporaryDirectory.appending(path: "mergecue-engine-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
         let environment = EngineEnvironment(
             database: db, credentials: credentials, providers: FakeProviderFactory(world: world), sync: sync,
             workspace: workspace, clock: clock, paths: MergeCuePaths(root: root), isDemo: options.isDemo,
             appVersion: "1.2.3-test", leaseDuration: options.leaseDuration, staleCheckInterval: options.staleCheckInterval,
-            ids: IDGenerator(seed: 42)
+            ids: IDGenerator(seed: 42), notifier: notifier
         )
         let harness = Harness(
             engine: MergeCueEngine(environment: environment), db: db, clock: clock, world: world, workspace: workspace,
-            sync: sync, credentials: credentials, root: root
+            sync: sync, credentials: credentials, root: root, notifier: notifier
         )
         workspace.setCheckout(Fixture.checkoutPath, safety: options.checkoutSafety, gitButler: options.gitButler)
         try await harness.seed(Fixture.github, writesEnabled: options.writesEnabled)

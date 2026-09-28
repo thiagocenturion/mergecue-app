@@ -309,6 +309,7 @@ public struct EngineSnapshot: Sendable, Hashable {
     public var mappings: [RepoMapping]
     public var notificationsPausedUntil: Date?
     public var quietHours: QuietHours?
+    public var notificationPreferences: NotificationPreferences
     public var lastRefreshAt: Date?
     public var isDemo: Bool
 
@@ -321,6 +322,7 @@ public struct EngineSnapshot: Sendable, Hashable {
         mappings: [RepoMapping],
         notificationsPausedUntil: Date?,
         quietHours: QuietHours?,
+        notificationPreferences: NotificationPreferences = .allEnabled,
         lastRefreshAt: Date?,
         isDemo: Bool
     ) {
@@ -332,6 +334,7 @@ public struct EngineSnapshot: Sendable, Hashable {
         self.mappings = mappings
         self.notificationsPausedUntil = notificationsPausedUntil
         self.quietHours = quietHours
+        self.notificationPreferences = notificationPreferences
         self.lastRefreshAt = lastRefreshAt
         self.isDemo = isDemo
     }

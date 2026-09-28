@@ -81,6 +81,10 @@ extension EngineBackend {
         case .setQuietHours(let hours):
             try await engine.setQuietHours(hours)
             return AppCommandResult(message: hours == nil ? "Quiet hours off" : "Quiet hours saved")
+        case .setNotificationCategory(let category, let enabled):
+            let current = await engine.notificationPreferences()
+            try await engine.setNotificationPreferences(current.setting(category, enabled: enabled))
+            return .none
 
         // MARK: Rules
         case .saveRule(let rule):

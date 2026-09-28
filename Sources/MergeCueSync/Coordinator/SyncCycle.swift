@@ -129,7 +129,8 @@ struct SyncCycle {
 
         // 6. Notifications (one per CR), then the rule/event handler.
         var notifications: [GroupedNotification] = []
-        if !isBaseline, environment.notificationPolicy.allowsDelivery(at: now) {
+        let policy = environment.notificationPolicy
+        if !isBaseline, policy.allowsDelivery(at: now) {
             notifications = NotificationGrouper.group(
                 newEvents: inserted,
                 attentionUpserts: upserts,
@@ -137,6 +138,7 @@ struct SyncCycle {
                 snapshots: snapshotMap,
                 account: account,
                 informationalTypes: configuration.informationalNotificationTypes,
+                preferences: policy.preferences,
                 now: now
             )
         }

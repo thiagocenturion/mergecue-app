@@ -12,6 +12,15 @@ public protocol SyncControlling: Sendable {
     /// Receives new (non-baseline, deduped) events after they were committed to the store.
     func setEventHandler(_ handler: @escaping @Sendable ([ChangeEvent]) async -> Void) async
     func setNotificationsPaused(until: Date?) async
+    /// Per-category notification switches (additive; the default implementation ignores them).
+    func setNotificationPreferences(_ preferences: NotificationPreferences) async
+    /// Global quiet hours for notifications (additive; the default implementation ignores them).
+    func setQuietHours(_ quietHours: QuietHours?) async
+}
+
+extension SyncControlling {
+    public func setNotificationPreferences(_ preferences: NotificationPreferences) async {}
+    public func setQuietHours(_ quietHours: QuietHours?) async {}
 }
 
 /// One semantic notification per change request per sync cycle.

@@ -130,6 +130,8 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
     /// nil resumes notifications.
     case pauseNotifications(until: Date?)
     case setQuietHours(QuietHours?)
+    /// Settings ▸ Notifications ▸ "Notify me about" (persisted by the engine, honoured by Sync).
+    case setNotificationCategory(NotificationCategory, enabled: Bool)
 
     // MARK: Rules
     case saveRule(Rule)
@@ -198,6 +200,7 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
         case .refresh: "refresh"
         case .pauseNotifications: "pauseNotifications"
         case .setQuietHours: "setQuietHours"
+        case .setNotificationCategory(let category, _): "setNotificationCategory(\(category.rawValue))"
         case .saveRule: "saveRule"
         case .deleteRule: "deleteRule"
         case .activateRule: "activateRule"

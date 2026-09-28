@@ -5,10 +5,13 @@ import MergeCueCore
 public struct NotificationPolicy: Sendable, Hashable {
     public var pausedUntil: Date?
     public var quietHours: QuietHours?
+    /// Per-category switches, applied per attention reason / informational event by `NotificationGrouper`.
+    public var preferences: NotificationPreferences
 
-    public init(pausedUntil: Date? = nil, quietHours: QuietHours? = nil) {
+    public init(pausedUntil: Date? = nil, quietHours: QuietHours? = nil, preferences: NotificationPreferences = .allEnabled) {
         self.pausedUntil = pausedUntil
         self.quietHours = quietHours
+        self.preferences = preferences
     }
 
     /// False while paused or inside quiet hours.
@@ -24,7 +27,8 @@ public struct NotificationPolicy: Sendable, Hashable {
 /// A change request is notified when at least one *newly inserted*, non-baseline event not authored by the user
 /// fed an attention item that ends up actionable (not resolved, not dismissed, not in an active snooze), or when
 /// such an event has an informational type (default: approval) on the user's own change request. Everything else
-/// (own replies, green re-runs, CI recoveries, baseline) stays silent.
+/// (own replies, green re-runs, CI recoveries, baseline) stays silent. Items and informational events whose
+/// `NotificationCategory` the owner switched off (`preferences`) never notify — the items themselves are unchanged.
 public enum NotificationGrouper {
     /// Maximum summary lines in a notification body.
     public static let maxBodyLines = 3
@@ -36,6 +40,7 @@ public enum NotificationGrouper {
         snapshots: [ChangeRequestKey: ChangeRequestSnapshot],
         account: Account,
         informationalTypes: Set<ChangeEventType> = [.approval],
+        preferences: NotificationPreferences = .allEnabled,
         now: Date
     ) -> [GroupedNotification] {
         let candidates = newEvents.filter { !$0.isBaseline && !$0.isFromCurrentUser && $0.account == account.id }
@@ -50,13 +55,17 @@ public enum NotificationGrouper {
                 item.changeRequest == key
                     && item.eventIDs.contains(where: candidateIDs.contains)
                     && isNotifiable(item, stored: existing[item.dedupeKey], now: now)
+                    && preferences.allows(item.reason)
             }
             .sorted { ($0.priority, $0.updatedAt) > ($1.priority, $1.updatedAt) }
             let snapshot = snapshots[key]
             let isMine = snapshot.map { AttentionDeriver.isAuthoredByUser($0, userID: account.id.remoteUserID) } ?? false
-            let itemEventIDs = Set(items.flatMap(\.eventIDs))
+            // Events of items the owner switched off must not resurface as "informational".
+            let switchedOff = attentionUpserts.filter { $0.changeRequest == key && !preferences.allows($0.reason) }
+            let itemEventIDs = Set((items + switchedOff).flatMap(\.eventIDs))
             let informational = candidates.filter {
                 $0.changeRequest == key && isMine && informationalTypes.contains($0.type) && !itemEventIDs.contains($0.id)
+                    && preferences.allows(informationalEvent: $0.type)
             }
             guard !items.isEmpty || !informational.isEmpty else { return nil }
             let groupEvents = candidates.filter { $0.changeRequest == key }

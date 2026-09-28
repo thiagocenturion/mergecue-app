@@ -295,6 +295,60 @@ struct AccountsInboxDataTests {
         #expect(try h.credentials.load(for: Fixture.github) == nil)
     }
 
+    @Test("Notification preferences persist, reach Sync (also on start) and gate the agent-result alert")
+    func notificationPreferences() async throws {
+        let h = try await Harness.make()
+        #expect(await h.engine.notificationPreferences() == .allEnabled)
+        let prefs = NotificationPreferences(disabled: [.ciFailures, .reviewRequests])
+        try await h.engine.setNotificationPreferences(prefs)
+        #expect(await h.sync.preferences == prefs)
+        #expect(await h.engine.notificationPreferences() == prefs)
+        #expect(try await h.engine.snapshot().notificationPreferences == prefs)
+        let quiet = QuietHours(startMinute: 1320, endMinute: 420, timeZoneID: "UTC")
+        try await h.engine.setQuietHours(quiet)
+        #expect(await h.sync.quietHours == .some(quiet), "global quiet hours are forwarded to Sync")
+
+        // A fresh engine over the same database forwards the stored settings when it starts.
+        let restarted = MergeCueEngine(environment: EngineEnvironment(
+            database: h.db, credentials: h.credentials, providers: FakeProviderFactory(world: h.world), sync: h.sync,
+            workspace: h.workspace, clock: h.clock, paths: MergeCuePaths(root: h.root)
+        ))
+        try await h.engine.setNotificationPreferences(.allEnabled)
+        try await h.db.setSetting("engine.notification_preferences", NotificationPreferences(disabled: [.approvals]))
+        await restarted.start()
+        #expect(await h.sync.preferences == NotificationPreferences(disabled: [.approvals]))
+        await restarted.stop()
+
+        // Agent result alert: on by default, silent when switched off. Items are unaffected either way.
+        try await h.engine.setQuietHours(nil)
+        let task = try await h.submittedTask()
+        #expect(task.state == .readyForReview)
+        let alert = try #require(h.notifier.delivered.last)
+        #expect(alert.subtitle.hasPrefix("Ready for review"))
+        #expect(alert.changeRequest == task.origin.changeRequest)
+        #expect(alert.body.contains(task.id.rawValue))
+        #expect(!alert.body.contains("backoff cap"), "never the agent's own text")
+    }
+
+    @Test("Agent-result alert honours its switch, pause and quiet hours")
+    func agentResultAlertIsGated() async throws {
+        let off = try await Harness.make()
+        try await off.engine.setNotificationPreferences(NotificationPreferences(disabled: [.agentResults]))
+        _ = try await off.submittedTask()
+        #expect(off.notifier.delivered.isEmpty)
+
+        let paused = try await Harness.make()
+        try await paused.engine.setNotificationsPaused(until: Fixture.start.addingTimeInterval(3600))
+        _ = try await paused.submittedTask()
+        #expect(paused.notifier.delivered.isEmpty)
+
+        let quiet = try await Harness.make()
+        try await quiet.engine.setQuietHours(QuietHours(startMinute: 0, endMinute: 1439, timeZoneID: "UTC"))
+        _ = try await quiet.submittedTask()
+        #expect(quiet.notifier.delivered.isEmpty)
+        #expect(try await quiet.db.attentionItems(includeInactive: true).count == 2)
+    }
+
     @Test("Mappings CRUD and suggestions")
     func mappings() async throws {
         let h = try await Harness.make(.init(mapCheckout: false))

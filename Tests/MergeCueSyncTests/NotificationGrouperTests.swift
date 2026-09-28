@@ -25,12 +25,80 @@ struct NotificationGrouperTests {
         return result
     }
 
-    func group(_ cycle: Cycle, existing: [AttentionItem] = [], account: AccountKey = F.github) -> [GroupedNotification] {
+    func group(
+        _ cycle: Cycle, existing: [AttentionItem] = [], account: AccountKey = F.github,
+        preferences: NotificationPreferences = .allEnabled
+    ) -> [GroupedNotification] {
         NotificationGrouper.group(
             newEvents: cycle.events, attentionUpserts: cycle.items,
             existing: Dictionary(uniqueKeysWithValues: existing.map { ($0.dedupeKey, $0) }),
-            snapshots: cycle.snapshots, account: F.account(account), now: now
+            snapshots: cycle.snapshots, account: F.account(account), preferences: preferences, now: now
         )
+    }
+
+    // MARK: Notification preferences ("Notify me about")
+
+    @Test func switchedOffCategoriesAreSilentPerReason() throws {
+        let cr = F.crKey()
+        let busy = F.snapshot(
+            cr,
+            threads: [
+                F.thread(F.threadKey(cr, "A"), comments: [F.comment("1", "Why a loop?")]),
+                F.thread(F.threadKey(cr, "B"), comments: [F.comment("2", "Rename this")]),
+            ],
+            checks: [F.check(cr, id: "9", status: .failure)]
+        )
+        let result = cycle([(F.snapshot(cr), busy)])
+        let reasons = Set(result.items.map(\.reason))
+        #expect(reasons == [.reviewerQuestion, .reviewComment, .ciFailed])
+
+        let noCI = try #require(group(result, preferences: NotificationPreferences(disabled: [.ciFailures])).first)
+        #expect(noCI.attentionItemIDs.count == 2)
+        #expect(!noCI.body.contains("CI failed"))
+
+        let onlyCI = try #require(group(result, preferences: NotificationPreferences(disabled: [.reviewComments, .reviewerQuestions])).first)
+        #expect(onlyCI.attentionItemIDs == result.items.filter { $0.reason == .ciFailed }.map(\.id))
+
+        let nothing = NotificationPreferences(disabled: [.reviewComments, .reviewerQuestions, .ciFailures])
+        #expect(group(result, preferences: nothing).isEmpty, "every item switched off → no notification for the CR")
+        // The items themselves are untouched by preferences (they come from the deriver, not the grouper).
+        #expect(result.items.allSatisfy { $0.disposition == .open })
+    }
+
+    @Test func reviewRequestsAndApprovalsFollowTheirSwitches() {
+        let cr = F.crKey()
+        // Approval on my CR (informational).
+        let approved = F.snapshot(cr, reviews: [F.review("r1", .approved)])
+        let approvalCycle = cycle([(F.snapshot(cr), approved)])
+        #expect(group(approvalCycle).count == 1)
+        #expect(group(approvalCycle, preferences: NotificationPreferences(disabled: [.approvals])).isEmpty)
+        #expect(group(approvalCycle, preferences: NotificationPreferences(disabled: [.reviewRequests, .ciFailures])).count == 1)
+    }
+
+    @Test func preferencesMapEveryReasonAndEncodeStably() throws {
+        for reason in AttentionReason.allCases {
+            let category = NotificationCategory(reason: reason)
+            #expect(!NotificationPreferences(disabled: [category]).allows(reason))
+            #expect(NotificationPreferences.allEnabled.allows(reason))
+        }
+        #expect(NotificationCategory(reason: .reviewRequested) == .reviewRequests)
+        #expect(NotificationCategory(reason: .reviewerQuestion) == .reviewerQuestions)
+        #expect(NotificationCategory(reason: .changesRequested) == .reviewComments)
+        #expect(NotificationCategory(reason: .readyToMerge) == .approvals)
+        #expect(NotificationPreferences.allEnabled.allows(informationalEvent: .ciRecovered))
+        #expect(!NotificationPreferences(disabled: [.approvals]).allows(informationalEvent: .approval))
+
+        let prefs = NotificationPreferences(disabled: [.ciFailures, .agentResults, .approvals])
+        let a = try MergeCueCoding.storageEncoder().encode(prefs)
+        let b = try MergeCueCoding.storageEncoder().encode(NotificationPreferences(disabled: [.approvals, .agentResults, .ciFailures]))
+        #expect(a == b)
+        #expect(String(decoding: a, as: UTF8.self) == #"{"disabled":["agent_results","approvals","ci_failures"]}"#)
+        #expect(try MergeCueCoding.storageDecoder().decode(NotificationPreferences.self, from: a) == prefs)
+        // Unknown categories from a newer build are ignored, missing field = all on.
+        let future = Data(#"{"disabled":["ci_failures","telepathy"]}"#.utf8)
+        #expect(try MergeCueCoding.storageDecoder().decode(NotificationPreferences.self, from: future) == NotificationPreferences(disabled: [.ciFailures]))
+        #expect(try MergeCueCoding.storageDecoder().decode(NotificationPreferences.self, from: Data("{}".utf8)) == .allEnabled)
+        #expect(prefs.setting(.ciFailures, enabled: true).disabled == [.agentResults, .approvals])
     }
 
     @Test func oneNotificationPerChangeRequest() throws {

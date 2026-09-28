@@ -321,6 +321,38 @@ struct SyncCoordinatorTests {
         #expect(h.notifier.delivered[0].body.contains("ping again"))
     }
 
+    @Test func notificationPreferencesAndGlobalQuietHoursFilterAlertsOnly() async throws {
+        let h = try await SyncHarness()
+        let remote = h.remote()
+        remote.put(F.snapshot(cr))
+        let coordinator = await h.makeCoordinator()
+        await h.start(coordinator)
+        await coordinator.setNotificationPreferences(NotificationPreferences(disabled: [.reviewComments, .reviewerQuestions]))
+        #expect(await coordinator.notificationPreferences().disabled == [.reviewComments, .reviewerQuestions])
+        let thread = t1
+        remote.update(cr) { $0 = $0.touched(60); $0.threads = [F.thread(thread, comments: [F.comment("c1", "Rename this", at: 60)])] }
+        await h.advance(90)
+        #expect(h.notifier.delivered.isEmpty, "review comments switched off")
+        let items = try await h.items()
+        #expect(items.count == 1, "the attention item still exists")
+        #expect(items[0].isUnread)
+        #expect(h.handledEvents.values.count == 1, "rules still see the event")
+
+        // Back on → the next comment notifies.
+        await coordinator.setNotificationPreferences(.allEnabled)
+        remote.update(cr) { $0 = $0.touched(200); $0.threads[0].comments.append(F.comment("c2", by: F.bob, "ping", at: 200)) }
+        await h.advance(90)
+        #expect(h.notifier.delivered.count == 1)
+
+        // Global quiet hours from the engine's setting (forwarded through setQuietHours) hold alerts back.
+        await coordinator.setQuietHours(QuietHours(startMinute: 0, endMinute: 24 * 60 - 1, timeZoneID: "UTC"))
+        #expect(await coordinator.configuration.quietHours != nil)
+        remote.update(cr) { $0 = $0.touched(400); $0.threads[0].comments.append(F.comment("c3", by: F.bob, "again", at: 400)) }
+        await h.advance(90)
+        await coordinator.stop()
+        #expect(h.notifier.delivered.count == 1)
+    }
+
     @Test func changeSignalsAreEmitted() async throws {
         let h = try await SyncHarness()
         h.remote().put(F.snapshot(cr, checks: [F.check(cr, id: "1", status: .failure)]))

@@ -163,11 +163,6 @@ struct MappingRow: View {
 
 struct NotificationsSettings: View {
     let model: AppModel
-    @AppStorage("notify.blockingComments") private var blockingComments = true
-    @AppStorage("notify.ciFailures") private var ciFailures = true
-    @AppStorage("notify.questions") private var questions = true
-    @AppStorage("notify.reviewRequests") private var reviewRequests = true
-    @AppStorage("notify.results") private var results = true
 
     var body: some View {
         let quiet = model.state.quietHours
@@ -210,17 +205,22 @@ struct NotificationsSettings: View {
             }
             Card("Notify me about", systemImage: "bell.badge") {
                 VStack(alignment: .leading, spacing: 6) {
-                    Toggle("Blocking review comments and requested changes", isOn: $blockingComments)
-                    Toggle("Failed CI checks on my PRs/MRs", isOn: $ciFailures)
-                    Toggle("Reviewer questions", isOn: $questions)
-                    Toggle("Review requests", isOn: $reviewRequests)
-                    Toggle("Agent results ready for review", isOn: $results)
-                    Text("One grouped notification per PR/MR. Your own comments and green re-runs never notify.")
+                    ForEach(NotificationCategory.allCases, id: \.self) { category in
+                        Toggle(category.displayName, isOn: categoryBinding(category))
+                    }
+                    Text("One grouped notification per PR/MR. Your own comments and green re-runs never notify. Switching a kind off only silences its alerts — the items still appear in the inbox.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
         }
+    }
+
+    private func categoryBinding(_ category: NotificationCategory) -> Binding<Bool> {
+        Binding(
+            get: { model.state.notificationPreferences.isEnabled(category) },
+            set: { enabled in Task { await model.send(.setNotificationCategory(category, enabled: enabled)) } }
+        )
     }
 
     private func minuteBinding(_ quiet: QuietHours, start: Bool) -> Binding<Date> {

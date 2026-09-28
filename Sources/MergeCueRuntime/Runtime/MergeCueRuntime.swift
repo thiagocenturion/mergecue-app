@@ -151,7 +151,7 @@ public final class MergeCueRuntime: Sendable {
             database: database, credentials: credentials, providers: providers, sync: syncControl, workspace: workspace,
             clock: options.clock, paths: dataPaths, isDemo: mode == .demo, appVersion: appVersion,
             leaseDuration: options.leaseDuration, staleCheckInterval: options.staleCheckInterval,
-            mappingSearchRoots: options.mappingSearchRoots, ids: options.ids
+            mappingSearchRoots: options.mappingSearchRoots, ids: options.ids, notifier: notifier
         ))
         relay.connect(engine)
         return MergeCueRuntime(

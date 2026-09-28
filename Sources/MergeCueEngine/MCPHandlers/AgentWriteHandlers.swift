@@ -250,7 +250,26 @@ extension MergeCueEngine {
             $0.lease = nil
         }
         await appendAudit(actor: "agent:\(lease.agentName)", action: IPCMethod.submitResult.rawValue, target: task.id.rawValue, outcome: .succeeded, taskID: task.id)
+        await notifyResultReady(updated, agentName: lease.agentName)
         return TaskStateResult(version: updated.version, state: updated.state)
+    }
+
+    /// "Agent result ready for review" alert (Settings ▸ Notifications ▸ Agent results), after the state is committed.
+    /// Honours the switch, pause and quiet hours. The body is the task's title only — never the agent's text.
+    func notifyResultReady(_ task: MCTask, agentName: String) async {
+        guard let notifier = env.notifier, await allowsNotification(.agentResults) else { return }
+        let key = task.origin.changeRequest
+        let notification = GroupedNotification(
+            id: "ntf_task_" + ContentDigest.sha256Hex("\(task.id.rawValue)|\(task.version)").prefix(24),
+            threadIdentifier: key.id,
+            title: "\(task.origin.changeRequestRef.repoFullPath) \(key.kind.formattedNumber(key.number))",
+            subtitle: "Ready for review · \(task.type.displayName)",
+            body: "\(agentName) submitted a result for task \(task.id.rawValue). Review it in MergeCue — nothing was published.",
+            changeRequest: key,
+            attentionItemIDs: task.origin.attentionItemID.map { [$0] } ?? [],
+            isUrgent: false
+        )
+        await notifier.deliver(notification)
     }
 
     // MARK: fail_task

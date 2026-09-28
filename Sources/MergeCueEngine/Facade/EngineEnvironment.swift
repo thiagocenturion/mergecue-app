@@ -28,6 +28,8 @@ public struct EngineEnvironment: Sendable {
     public var mappingSearchRoots: [String]
     /// Id source (seeded in tests).
     public var ids: IDGenerator
+    /// Delivers the engine's own alerts ("agent result ready for review"); nil = none. Sync has its own notifier.
+    public var notifier: (any NotificationDelivering)?
 
     public init(
         database: MergeCueDatabase,
@@ -44,7 +46,8 @@ public struct EngineEnvironment: Sendable {
         maxWritesPerTaskPerMinute: Int = 30,
         previewLifetime: TimeInterval = 600,
         mappingSearchRoots: [String] = [],
-        ids: IDGenerator = .system
+        ids: IDGenerator = .system,
+        notifier: (any NotificationDelivering)? = nil
     ) {
         self.database = database
         self.credentials = credentials
@@ -61,5 +64,6 @@ public struct EngineEnvironment: Sendable {
         self.previewLifetime = previewLifetime
         self.mappingSearchRoots = mappingSearchRoots
         self.ids = ids
+        self.notifier = notifier
     }
 }

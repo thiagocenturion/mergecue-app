@@ -45,6 +45,14 @@ final class DemoSyncControl: SyncControlling {
     func setNotificationsPaused(until: Date?) async {
         await coordinator.setNotificationsPaused(until: until)
     }
+
+    func setNotificationPreferences(_ preferences: NotificationPreferences) async {
+        await coordinator.setNotificationPreferences(preferences)
+    }
+
+    func setQuietHours(_ quietHours: QuietHours?) async {
+        await coordinator.setQuietHours(quietHours)
+    }
 }
 
 /// Forwards Sync's `onChange` signals into the engine's change stream (the engine is created after Sync).

@@ -450,7 +450,17 @@ public protocol SyncControlling: Sendable {
     func statuses() async -> [AccountSyncStatus]
     func setEventHandler(_ handler: @escaping @Sendable ([ChangeEvent]) async -> Void) async   // new (non-baseline, deduped) events after commit
     func setNotificationsPaused(until: Date?) async
+    func setNotificationPreferences(_: NotificationPreferences) async   // additive, default no-op
+    func setQuietHours(_: QuietHours?) async                            // additive, default no-op (engine's global setting)
 }
+public enum NotificationCategory: String { case reviewComments, ciFailures, reviewerQuestions, reviewRequests, approvals, agentResults
+    init(reason: AttentionReason); init?(informationalEvent: ChangeEventType) }
+public struct NotificationPreferences: Codable, Sendable, Hashable { var disabled: Set<NotificationCategory> /* sorted-array JSON */
+    func allows(_ reason: AttentionReason) -> Bool; func allows(informationalEvent:) -> Bool }
+// Settings ▸ Notifications ▸ "Notify me about": persisted by the engine (`engine.notification_preferences`), forwarded
+// to Sync on start and on change; NotificationGrouper drops items/informational events of switched-off categories.
+// Attention items, events, rules and tasks are never affected. The engine's own "agent result ready" alert
+// (EngineEnvironment.notifier) honours `agentResults`, pause and quiet hours.
 public struct GroupedNotification: Codable, Sendable, Hashable { var id: String; var threadIdentifier: String /* CR id */; var title: String; var subtitle: String; var body: String; var changeRequest: ChangeRequestKey; var attentionItemIDs: [String]; var isUrgent: Bool; var webURL: URL? }
 public protocol NotificationDelivering: Sendable { func deliver(_ notification: GroupedNotification) async }
 public protocol MCClock: Sendable { var now: Date { get }; func sleep(for seconds: TimeInterval) async throws }

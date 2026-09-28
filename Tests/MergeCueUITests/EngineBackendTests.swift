@@ -203,6 +203,13 @@ struct EngineBackendTests {
         let quiet = QuietHours(startMinute: 22 * 60, endMinute: 7 * 60, timeZoneID: "Europe/Lisbon")
         _ = try await backend.perform(.setQuietHours(quiet))
         #expect(await harness.state().quietHours == quiet)
+        // "Notify me about" switches are engine settings (persisted, forwarded to Sync), not UI-only preferences.
+        _ = try await backend.perform(.setNotificationCategory(.ciFailures, enabled: false))
+        _ = try await backend.perform(.setNotificationCategory(.agentResults, enabled: false))
+        #expect(await harness.state().notificationPreferences == NotificationPreferences(disabled: [.ciFailures, .agentResults]))
+        _ = try await backend.perform(.setNotificationCategory(.ciFailures, enabled: true))
+        #expect(await harness.state().notificationPreferences == NotificationPreferences(disabled: [.agentResults]))
+        #expect(await backend.runtime.sync.notificationPreferences() == NotificationPreferences(disabled: [.agentResults]))
 
         // Fixture links are not opened in demo mode; other links are.
         let fixture = try await backend.perform(.openURL(URL(string: "https://github.com/acme/payments-api/pull/42")!))
