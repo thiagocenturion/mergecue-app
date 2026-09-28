@@ -64,9 +64,18 @@ struct PresentationTests {
         var items = Presentation.handoffContext(waiting, state: state)
         // The preview mapping for checkout-web is only "probable" (not confirmed): amber, never green.
         #expect(items.first { $0.kind == .repository }?.status == .warning)
-        // MergeCue does not read project instructions itself: grey, never a fake green check.
+        // checkout-web has no AGENTS.md/CLAUDE.md in the preview: grey, never a fake green check.
         #expect(items.first { $0.kind == .instructions }?.status == .unavailable)
         #expect(items.first { $0.kind == .thread }?.status == .ready)
+
+        // Existence of instruction files in the mapped checkout (names shown; contents never read).
+        let checkout = try #require(state.mappings.first { $0.repo == waiting.task.origin.changeRequest.repo }?.checkoutPath)
+        state.instructionFiles[checkout] = ["AGENTS.md", "CLAUDE.md"]
+        let instructions = try #require(Presentation.handoffContext(waiting, state: state).first { $0.kind == .instructions })
+        #expect(instructions.status == .ready)
+        #expect(instructions.detail.hasPrefix("AGENTS.md, CLAUDE.md"))
+        state.instructionFiles[checkout] = []
+        #expect(Presentation.handoffContext(waiting, state: state).first { $0.kind == .instructions }?.detail == "No AGENTS.md or CLAUDE.md in the checkout")
 
         state.mappings.removeAll()
         items = Presentation.handoffContext(waiting, state: state)

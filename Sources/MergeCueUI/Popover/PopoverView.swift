@@ -539,7 +539,9 @@ struct OnboardingPrompt: View {
                 ForEach(ProviderKind.allCases, id: \.self) { ProviderBadge(kind: $0, size: 34, style: .tile) }
             }
             .padding(.vertical, 6)
-            Button("Connect an Account…") { model.showSettings(.accounts) }
+            Button("Connect an Account…") {
+                if model.mode == .live { model.showOnboarding() } else { model.showSettings(.accounts) }
+            }
                 .buttonStyle(GradientButtonStyle())
         }
         .padding(24)

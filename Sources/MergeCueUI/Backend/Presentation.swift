@@ -314,9 +314,29 @@ public nonisolated enum Presentation {
         }
 
         items.append(repositoryContext(record, snapshot: snapshot, mappings: state.mappings))
-        items.append(ContextItem(kind: .instructions, title: "Project instructions",
-                                 detail: "Read by your agent from the checkout", status: .unavailable))
+        items.append(instructionsContext(record, state: state))
         return items
+    }
+
+    /// Which instruction files (AGENTS.md, CLAUDE.md) exist in the mapped checkout. MergeCue only checks that
+    /// they exist; the agent reads them itself from its checkout.
+    static func instructionsContext(_ record: TaskRecord, state: AppState) -> ContextItem {
+        let task = record.task
+        let checkout = task.checkout?.mappedCheckoutPath
+            ?? state.mappings.first { $0.repo == task.origin.changeRequest.repo }?.checkoutPath
+        guard let checkout else {
+            return ContextItem(kind: .instructions, title: "Project instructions", detail: "Map a checkout to check for AGENTS.md / CLAUDE.md",
+                               status: .unavailable)
+        }
+        guard let files = state.instructionFiles[checkout] else {
+            return ContextItem(kind: .instructions, title: "Project instructions", detail: "Checkout not found on this Mac", status: .unavailable)
+        }
+        if files.isEmpty {
+            return ContextItem(kind: .instructions, title: "Project instructions", detail: "No AGENTS.md or CLAUDE.md in the checkout",
+                               status: .unavailable)
+        }
+        return ContextItem(kind: .instructions, title: "Project instructions",
+                           detail: "\(files.joined(separator: ", ")) in the checkout — your agent reads it", status: .ready)
     }
 
     static func repositoryContext(_ record: TaskRecord, snapshot: ChangeRequestSnapshot?, mappings: [RepoMapping]) -> ContextItem {

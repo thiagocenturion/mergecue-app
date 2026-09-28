@@ -1,3 +1,4 @@
+import AgentHandoff
 import Foundation
 import MergeCueCore
 
@@ -153,6 +154,29 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
     case loadCheckLog(CheckKey)
     case openURL(URL)
 
+    // MARK: Agent setup (wizard)
+    /// Detects installed agents and their registration again.
+    case refreshAgents
+    /// Builds the exact plan (command, config snippet, files touched, backup folder) shown before consent.
+    case prepareAgentRegistration(AgentKind, RegistrationAction)
+    /// Applies a plan the owner confirmed in the UI (`RegistrationConsent.userConfirmed`). Backs up first.
+    case applyAgentRegistration(MCPRegistrationPlan, RegistrationConsent)
+    /// Spawns the bundled helper, lists its tools and makes a read-only round trip; only then "Connected".
+    case verifyAgent(AgentKind)
+
+    // MARK: Checkouts
+    /// Local checkouts whose remotes match a repository (with confidence).
+    case findCheckouts(RepoKey)
+
+    // MARK: App and data
+    case setLaunchAtLogin(Bool)
+    /// Asks macOS for notification permission (onboarding; never silently at launch).
+    case requestNotificationPermission
+    /// Writes a copy of the local database (no credentials) to a file the owner picked.
+    case exportDatabase(to: URL)
+    /// Deletes every stored credential and record (after the owner confirmed).
+    case resetAllData
+
     /// Safe, secret-free name for logs and diagnostics.
     public var description: String {
         switch self {
@@ -187,6 +211,15 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
         case .openInAgent(_, let agent): "openInAgent(\(agent.rawValue))"
         case .loadCheckLog: "loadCheckLog"
         case .openURL: "openURL"
+        case .refreshAgents: "refreshAgents"
+        case .prepareAgentRegistration(let kind, let action): "prepareAgentRegistration(\(kind.rawValue), \(action.rawValue))"
+        case .applyAgentRegistration(let plan, _): "applyAgentRegistration(\(plan.agent.rawValue), \(plan.action.rawValue))"
+        case .verifyAgent(let kind): "verifyAgent(\(kind.rawValue))"
+        case .findCheckouts: "findCheckouts"
+        case .setLaunchAtLogin(let enabled): "setLaunchAtLogin(\(enabled))"
+        case .requestNotificationPermission: "requestNotificationPermission"
+        case .exportDatabase: "exportDatabase"
+        case .resetAllData: "resetAllData"
         }
     }
 }
@@ -205,6 +238,15 @@ public nonisolated struct AppCommandResult: Sendable {
     public var createdTaskID: TaskID?
     /// Set by `.loadCheckLog`.
     public var logExcerpt: LogExcerpt?
+    /// Set by `.prepareAgentRegistration`: shown in full before the owner consents.
+    public var registrationPlan: MCPRegistrationPlan?
+    /// Set by `.verifyAgent`.
+    public var verification: AgentVerification?
+    /// Set by `.findCheckouts`.
+    public var mappingSuggestions: [MappingSuggestion]?
+    /// Banner tone for `message` (nil = derived: success for handoffs/new tasks, neutral otherwise). Recorded
+    /// refusals (an approved action blocked by fresh state, a failed write) use `.critical`.
+    public var tone: Tone?
 
     public init(
         message: String? = nil,
@@ -212,7 +254,11 @@ public nonisolated struct AppCommandResult: Sendable {
         handoffCommand: String? = nil,
         urlToOpen: URL? = nil,
         createdTaskID: TaskID? = nil,
-        logExcerpt: LogExcerpt? = nil
+        logExcerpt: LogExcerpt? = nil,
+        registrationPlan: MCPRegistrationPlan? = nil,
+        verification: AgentVerification? = nil,
+        mappingSuggestions: [MappingSuggestion]? = nil,
+        tone: Tone? = nil
     ) {
         self.message = message
         self.preview = preview
@@ -220,6 +266,10 @@ public nonisolated struct AppCommandResult: Sendable {
         self.urlToOpen = urlToOpen
         self.createdTaskID = createdTaskID
         self.logExcerpt = logExcerpt
+        self.registrationPlan = registrationPlan
+        self.verification = verification
+        self.mappingSuggestions = mappingSuggestions
+        self.tone = tone
     }
 
     public static let none = AppCommandResult()
@@ -231,5 +281,26 @@ public nonisolated enum HandoffText {
     public static func command(for taskID: TaskID) -> String {
         "Work on MergeCue task \(taskID.rawValue). Use MergeCue MCP for context and status updates. "
             + "Work only in the designated checkout. Stop before publishing anything."
+    }
+}
+
+/// Outcome of the agent wizard's verification step (`tools/list` + a read-only round trip through the helper).
+public nonisolated struct AgentVerification: Sendable, Hashable {
+    public var agent: AgentKind
+    /// True only when the helper answered as `mergecue` with every required tool and the read-only call succeeded.
+    public var succeeded: Bool
+    public var toolCount: Int
+    public var missingTools: [String]
+    /// "list_attention answered", "MergeCue is not running", …
+    public var roundTrip: String
+    public var checkedAt: Date
+
+    public init(agent: AgentKind, succeeded: Bool, toolCount: Int, missingTools: [String], roundTrip: String, checkedAt: Date) {
+        self.agent = agent
+        self.succeeded = succeeded
+        self.toolCount = toolCount
+        self.missingTools = missingTools
+        self.roundTrip = roundTrip
+        self.checkedAt = checkedAt
     }
 }

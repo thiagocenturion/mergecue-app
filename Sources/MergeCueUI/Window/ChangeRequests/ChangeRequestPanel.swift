@@ -61,6 +61,9 @@ struct ChangeRequestPanel: View {
                 Text(kind.formattedNumber(changeRequest.number))
                     .font(.system(size: 16))
                     .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .layoutPriority(2)
                 if let url = snapshot?.summary.webURL {
                     Button {
                         Task { await model.send(.openURL(url)) }

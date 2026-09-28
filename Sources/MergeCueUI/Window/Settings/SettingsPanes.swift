@@ -30,22 +30,73 @@ struct RepositoriesSettings: View {
                 if unmapped.isEmpty {
                     Text("Every repository with open PRs/MRs is mapped.").font(.callout).foregroundStyle(.secondary)
                 }
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(unmapped, id: \.key) { repo in
-                        HStack(spacing: 8) {
-                            ProviderGlyph(kind: repo.providerKind, size: 16)
-                            Text(repo.fullPath).font(.callout)
-                            Text(repo.providerKind.displayName).font(.caption).foregroundStyle(.secondary)
-                            Spacer()
-                            Button("Map Checkout…") { chooseCheckout(for: repo) }
-                        }
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(unmapped.enumerated()), id: \.element.key) { index, repo in
+                        if index > 0 { Divider().padding(.vertical, 8) }
+                        UnmappedRepositoryRow(model: model, repo: repo)
                     }
                 }
             }
         }
     }
+}
 
-    private func chooseCheckout(for repo: Repository) {
+/// A repository without a mapping: find matching checkouts (with confidence) or choose a folder.
+struct UnmappedRepositoryRow: View {
+    let model: AppModel
+    let repo: Repository
+    @State private var suggestions: [MappingSuggestion]?
+    @State private var searching = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                ProviderGlyph(kind: repo.providerKind, size: 16)
+                Text(repo.fullPath).font(.callout)
+                Text(repo.providerKind.displayName).font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                if searching { ProgressView().controlSize(.small) }
+                Button("Find Checkouts") { find() }
+                    .disabled(searching)
+                    .help("Looks in ~/Developer, ~/Projects, ~/Code, ~/src and ~/Documents/GitHub for clones whose remote matches")
+                Button("Choose Folder…") { chooseCheckout() }
+            }
+            if let suggestions {
+                if suggestions.isEmpty {
+                    Text("No matching checkout found — choose the folder yourself.").font(.caption).foregroundStyle(.secondary)
+                }
+                ForEach(suggestions, id: \.checkoutPath) { suggestion in
+                    HStack(spacing: 8) {
+                        ConfidenceChip(confidence: suggestion.confidence)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(UIFormat.abbreviatedPath(suggestion.checkoutPath)).font(.caption.monospaced())
+                            Text(suggestion.matchedRemote.map { "\(suggestion.reason) · \($0)" } ?? suggestion.reason)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        Spacer()
+                        Button("Use This Checkout") {
+                            Task { await model.send(.addMapping(repo: repo.key, repoFullPath: repo.fullPath, checkoutPath: suggestion.checkoutPath)) }
+                        }
+                        .disabled(suggestion.confidence == .mismatch)
+                    }
+                    .padding(.leading, 24)
+                }
+            }
+        }
+    }
+
+    private func find() {
+        searching = true
+        Task {
+            suggestions = await model.send(.findCheckouts(repo.key))?.mappingSuggestions ?? []
+            searching = false
+        }
+    }
+
+    private func chooseCheckout() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -54,6 +105,20 @@ struct RepositoriesSettings: View {
         panel.message = "Choose the local checkout of \(repo.fullPath) (\(repo.providerKind.displayName))"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task { await model.send(.addMapping(repo: repo.key, repoFullPath: repo.fullPath, checkoutPath: url.path(percentEncoded: false))) }
+    }
+}
+
+struct ConfidenceChip: View {
+    var confidence: MappingConfidence
+    var confirmed = false
+
+    var body: some View {
+        switch confidence {
+        case .exact: Chip(text: confirmed ? "Exact match" : "Exact match · unconfirmed", symbol: "checkmark.seal", tone: .success)
+        case .probable: Chip(text: confirmed ? "Confirmed" : "Probable · needs confirmation", symbol: "questionmark.circle",
+                             tone: confirmed ? .neutral : .attention)
+        case .mismatch: Chip(text: "Remote mismatch", symbol: "exclamationmark.triangle", tone: .critical)
+        }
     }
 }
 
@@ -67,13 +132,18 @@ struct MappingRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(mapping.repoFullPath).font(.callout.weight(.medium))
-                    confidenceChip
+                    ConfidenceChip(confidence: mapping.confidence, confirmed: mapping.isConfirmed)
                 }
                 Text(UIFormat.abbreviatedPath(mapping.checkoutPath))
                     .font(.caption.monospaced())
                     .textSelection(.enabled)
                 if let remote = mapping.matchedRemote {
                     Text("Matched remote \(remote)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if let files = model.state.instructionFiles[mapping.checkoutPath], !files.isEmpty {
+                    Text("Project instructions: \(files.joined(separator: ", "))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -86,85 +156,6 @@ struct MappingRow: View {
             Button("Remove") { Task { await model.send(.removeMapping(id: mapping.id)) } }
         }
         .accessibilityElement(children: .combine)
-    }
-
-    @ViewBuilder
-    private var confidenceChip: some View {
-        switch mapping.confidence {
-        case .exact: Chip(text: mapping.isConfirmed ? "Exact match" : "Exact match · unconfirmed", symbol: "checkmark.seal", tone: .success)
-        case .probable: Chip(text: mapping.isConfirmed ? "Confirmed" : "Needs confirmation", symbol: "questionmark.circle",
-                             tone: mapping.isConfirmed ? .neutral : .attention)
-        case .mismatch: Chip(text: "Remote mismatch", symbol: "exclamationmark.triangle", tone: .critical)
-        }
-    }
-}
-
-// MARK: - Agents
-
-struct AgentsSettings: View {
-    let model: AppModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("MergeCue hands tasks to the coding agent you already use. It never runs a model itself and never edits your agent's configuration without your consent and a backup.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            if model.state.agents.isEmpty {
-                Text("No supported agent found. Install Claude Code or Codex CLI, then refresh.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            ForEach(model.state.agents) { agent in
-                Card {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(spacing: 10) {
-                            Image(systemName: "terminal.fill")
-                                .font(.title2)
-                                .foregroundStyle(Theme.accent)
-                                .frame(width: 32)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text("\(agent.name)\(agent.version.map { " \($0)" } ?? "")").font(.headline)
-                                Text(agent.path).font(.caption.monospaced()).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Chip(text: agent.mcpRegistration.displayText,
-                                 symbol: agent.mcpRegistration.isVerified ? "checkmark.seal.fill" : "exclamationmark.triangle",
-                                 tone: agent.mcpRegistration.isVerified ? .success : .attention)
-                        }
-                        Text(agent.canOpenTasks ? "Open in \(agent.name) is available for tasks." : "Open in \(agent.name) isn't verified yet — tasks offer Copy command.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        DisclosureGroup("Register MergeCue MCP") {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(agent.kind == .claudeCode ? "Run in Terminal:" : "Add to ~/.codex/config.toml:")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Text(Self.setupSnippet(for: agent.kind))
-                                    .font(.caption.monospaced())
-                                    .textSelection(.enabled)
-                                    .padding(8)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(RoundedRectangle(cornerRadius: 6).fill(Theme.surfaceSunken))
-                                Text("`mergecue-mcp --print-config \(agent.kind == .claudeCode ? "claude" : "codex")` prints the exact configuration for this Mac.")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding(.top, 6)
-                        }
-                        .font(.callout)
-                    }
-                }
-            }
-        }
-    }
-
-    static func setupSnippet(for kind: AgentKind) -> String {
-        let binary = "/Applications/MergeCue.app/Contents/MacOS/mergecue-mcp"
-        switch kind {
-        case .claudeCode: return "claude mcp add mergecue -- \"\(binary)\""
-        case .codex: return "[mcp_servers.mergecue]\ncommand = \"\(binary)\""
-        }
     }
 }
 
@@ -248,18 +239,43 @@ struct NotificationsSettings: View {
 
 struct GeneralSettings: View {
     @Bindable var model: AppModel
-    @State private var launchAtLogin = false
+    @State private var confirmModeSwitch = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Card("Startup", systemImage: "power") {
                 VStack(alignment: .leading, spacing: 4) {
-                    Toggle("Launch MergeCue at login", isOn: $launchAtLogin)
+                    Toggle("Launch MergeCue at login", isOn: Binding(
+                        get: { loginItem == .enabled || loginItem == .requiresApproval },
+                        set: { enabled in Task { await model.send(.setLaunchAtLogin(enabled)) } }
+                    ))
+                    .toggleStyle(.switch)
+                    .disabled(loginItem == nil || loginItem == .unavailable)
+                    Text(loginItemNote)
+                        .font(.caption)
+                        .foregroundStyle(loginItem == .requiresApproval ? Theme.waiting : .secondary)
+                }
+            }
+            Card("Data source", systemImage: "externaldrive.connected.to.line.below") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle("Demo mode", isOn: Binding(get: { model.mode != .live }, set: { _ in confirmModeSwitch = true }))
                         .toggleStyle(.switch)
-                        .disabled(true)
-                    Text("Opt-in via macOS Login Items; available in the signed app build.")
+                        .disabled(model.switchModeHandler == nil || model.mode == .preview)
+                    Text(model.mode == .preview
+                         ? "Preview data (development build). Launch without --preview to use your accounts."
+                         : "Demo mode shows bundled fixture PRs/MRs through the real engine, always badged “Demo data”. Its data is kept separately from your accounts; switching relaunches MergeCue.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Card("Setup", systemImage: "wand.and.rays") {
+                HStack {
+                    Text("Accounts, repositories, agents and notifications, step by step.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Run Setup Assistant…") { model.showOnboarding() }
                 }
             }
             Card("Menu bar", systemImage: "menubar.rectangle") {
@@ -277,6 +293,27 @@ struct GeneralSettings: View {
                 }
             }
         }
+        .confirmationDialog(model.mode == .demo ? "Switch to your accounts?" : "Switch to demo data?", isPresented: $confirmModeSwitch) {
+            Button(model.mode == .demo ? "Relaunch with My Accounts" : "Relaunch in Demo Mode") {
+                model.switchModeHandler?(model.mode == .demo ? .live : .demo)
+            }
+        } message: {
+            Text(model.mode == .demo
+                 ? "MergeCue relaunches with your connected accounts. The demo data stays in its own folder."
+                 : "MergeCue relaunches with bundled demo data (badged “Demo data”). Your accounts and data are untouched.")
+        }
+    }
+
+    private var loginItem: LoginItemState? { model.state.runtime?.loginItem }
+
+    private var loginItemNote: String {
+        switch loginItem {
+        case .enabled: "Opens in the menu bar when you log in. Manage it in System Settings › General › Login Items."
+        case .requiresApproval: "Waiting for your approval in System Settings › General › Login Items."
+        case .disabled: "Off. MergeCue opens only when you start it."
+        case .unavailable: "Available in the installed app (not in development builds run from SwiftPM)."
+        case nil: "Not available with preview data."
+        }
     }
 
     private func shortcut(_ keys: String, _ action: String) -> some View {
@@ -291,16 +328,26 @@ struct GeneralSettings: View {
 
 struct DataSettings: View {
     let model: AppModel
+    @State private var confirmReset = false
 
     var body: some View {
-        let paths = MergeCuePaths()
+        let info = model.state.runtime
         VStack(alignment: .leading, spacing: 14) {
             Card("Local data", systemImage: "externaldrive") {
                 VStack(alignment: .leading, spacing: 6) {
-                    row("Database", UIFormat.abbreviatedPath(paths.database.path(percentEncoded: false)))
-                    row("Task worktrees", UIFormat.abbreviatedPath(paths.worktrees.path(percentEncoded: false)))
-                    row("Logs", UIFormat.abbreviatedPath(paths.logs.path(percentEncoded: false)))
-                    Text("Tokens live only in your Keychain, never in the database or logs. Nothing is sent anywhere except the providers you connect. No telemetry.")
+                    if let info {
+                        row("Data folder", info.dataRoot)
+                        row("Database", info.databasePath)
+                        row("Task worktrees", info.worktreesPath)
+                        row("Agent config backups", info.backupsPath)
+                        row("Logs", info.logsPath)
+                        row("Agent socket", info.socketPath + (info.ipcRunning ? "" : " (not running)"))
+                    } else {
+                        Text("Preview data lives only in memory.").font(.callout).foregroundStyle(.secondary)
+                    }
+                    Text(model.mode == .demo
+                         ? "Demo data is kept in its own folder, separate from your accounts. Demo tokens are fixtures held in memory."
+                         : "Tokens live only in your Keychain, never in the database or logs. Nothing is sent anywhere except the providers you connect. No telemetry.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -309,26 +356,51 @@ struct DataSettings: View {
             Card("Maintenance", systemImage: "wrench.and.screwdriver") {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([paths.root]) }
-                            .disabled(!FileManager.default.fileExists(atPath: paths.root.path(percentEncoded: false)))
-                        Button("Export Database…") {}
-                            .disabled(true)
-                        Button("Reset Local Data…", role: .destructive) {}
-                            .disabled(true)
+                        Button("Show in Finder") {
+                            if let info { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: info.dataRoot, directoryHint: .isDirectory)]) }
+                        }
+                        .disabled(info == nil)
+                        Button("Export Database…") { export() }
+                            .disabled(info == nil)
+                        Button("Reset Local Data…", role: .destructive) { confirmReset = true }
+                            .disabled(info == nil)
                     }
-                    Text(model.mode == .live ? "Export and reset are available once the local store is connected."
-                         : "\(model.mode.badgeText ?? "Preview"): nothing is stored, so there is nothing to export or reset.")
+                    Text(info == nil
+                         ? "\(model.mode.badgeText ?? "Preview"): nothing is stored, so there is nothing to export or reset."
+                         : "Export writes a copy of the database (no tokens). Reset deletes every stored token and all local data; your checkouts and agent configs are not touched.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
+        .confirmationDialog("Reset all local data?", isPresented: $confirmReset) {
+            Button("Delete Tokens and Data", role: .destructive) { Task { await model.send(.resetAllData) } }
+        } message: {
+            Text("MergeCue deletes every account token from your Keychain and all tasks, inbox items, rules and mappings\(model.mode == .demo ? " of the demo data" : ""). This can't be undone. Export the database first if you want a copy.")
+        }
+    }
+
+    private func export() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "MergeCue-\(model.mode == .demo ? "demo-" : "")\(Self.stamp(model.now)).sqlite"
+        panel.canCreateDirectories = true
+        panel.message = "Export a copy of MergeCue's database (contains no tokens)"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task { await model.send(.exportDatabase(to: url)) }
+    }
+
+    static func stamp(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmm"
+        return formatter.string(from: date)
     }
 
     private func row(_ label: String, _ value: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(label).font(.callout).foregroundStyle(.secondary).frame(width: 120, alignment: .leading)
-            Text(value).font(.caption.monospaced()).textSelection(.enabled)
+            Text(label).font(.callout).foregroundStyle(.secondary).frame(width: 150, alignment: .leading)
+            Text(UIFormat.abbreviatedPath(value)).font(.caption.monospaced()).textSelection(.enabled)
         }
     }
 }

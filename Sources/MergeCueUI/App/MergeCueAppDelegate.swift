@@ -1,25 +1,51 @@
 import AppKit
 import MergeCueCore
+import MergeCueRuntime
 import SwiftUI
+import UserNotifications
 
-/// The app shell: builds the `AppModel` from a backend, the menu bar status item + popover and the main window.
+/// Keys of the app's own preferences (UserDefaults).
+public enum LaunchPreferences {
+    /// "live" or "demo": the mode chosen with Settings › General › Demo mode (launch arguments and
+    /// `MERGECUE_BACKEND` take precedence).
+    public static let backendModeKey = "MergeCueBackendMode"
+    /// Set once the owner finished or closed the setup assistant.
+    public static let onboardingCompletedKey = "MergeCueOnboardingCompleted.v1"
+}
+
+/// The app shell: builds the backend (async: the engine runtime starts its IPC server), the `AppModel`, the menu
+/// bar status item + popover and the main window; forwards wake-ups, notification clicks and quitting to the backend.
 ///
-/// The Xcode app target (and `mergecue-snapshots --app`) only needs:
 /// ```swift
-/// let delegate = MergeCueAppDelegate(backendFactory: { MergeCuePreview.makeBackend() })
+/// let delegate = MergeCueAppDelegate(asyncBackendFactory: { try await EngineBackend.launch(mode: .live, appVersion: "1.0") })
 /// NSApplication.shared.delegate = delegate
 /// NSApplication.shared.run()
 /// ```
-public final class MergeCueAppDelegate: NSObject, NSApplicationDelegate {
-    private let backendFactory: @MainActor () -> any AppBackend
+public final class MergeCueAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+    public typealias BackendFactory = @MainActor () async throws -> any AppBackend
+
+    private let backendFactory: BackendFactory
     public private(set) var model: AppModel?
+    public private(set) var backend: (any AppBackend)?
     private var statusController: StatusItemController?
     private var windowController: MainWindowController?
+    private var wakeObserver: NSObjectProtocol?
+    private var pendingNotification: (changeRequestID: String?, attentionIDs: [String])?
+    private var isTerminating = false
     /// Opens the main window right after launch (otherwise the app starts in the menu bar only).
     public var showsWindowOnLaunch = false
+    /// Offer the setup assistant on the first live launch without accounts.
+    public var offersOnboarding = true
+    /// Arguments for relaunching into another mode (Settings › General › Demo mode). Nil disables switching.
+    public var relaunchArguments: ((BackendMode) -> [String])? = { mode in ["--\(mode.rawValue)", "--show-window"] }
 
-    public init(backendFactory: @escaping @MainActor () -> any AppBackend) {
-        self.backendFactory = backendFactory
+    /// A synchronous backend (preview, snapshots).
+    public convenience init(backendFactory: @escaping @MainActor () -> any AppBackend) {
+        self.init(asyncBackendFactory: { backendFactory() })
+    }
+
+    public init(asyncBackendFactory: @escaping BackendFactory) {
+        self.backendFactory = asyncBackendFactory
         super.init()
     }
 
@@ -28,12 +54,32 @@ public final class MergeCueAppDelegate: NSObject, NSApplicationDelegate {
         if Bundle.main.bundleURL.pathExtension != "app", let icon = AppIconImage.image {
             NSApp.applicationIconImage = icon
         }
-        let model = AppModel(backend: backendFactory())
+        if UserNotificationDeliverer.isAvailable {
+            // Set before launch finishes so a click that launched the app is delivered too.
+            UNUserNotificationCenter.current().delegate = self
+        }
+        Task { await launch() }
+    }
+
+    private func launch() async {
+        let backend: any AppBackend
+        do {
+            backend = try await backendFactory()
+        } catch {
+            presentLaunchError(error)
+            return
+        }
+        self.backend = backend
+        let model = AppModel(backend: backend)
         self.model = model
 
         let windowController = MainWindowController(model: model)
         self.windowController = windowController
         model.openMainWindowHandler = { [weak windowController] in windowController?.show() }
+        model.onboardingCompletedHandler = { UserDefaults.standard.set(true, forKey: LaunchPreferences.onboardingCompletedKey) }
+        if relaunchArguments != nil, backend.mode != .preview {
+            model.switchModeHandler = { [weak self] mode in self?.relaunch(into: mode) }
+        }
 
         let statusController = StatusItemController(model: model, actions: StatusMenuActions(
             openMainWindow: { [weak model] in model?.showScreen(model?.screen ?? .inbox) },
@@ -42,10 +88,26 @@ public final class MergeCueAppDelegate: NSObject, NSApplicationDelegate {
         ))
         self.statusController = statusController
         model.closePopoverHandler = { [weak statusController] in statusController?.closePopover() }
-
         NSApp.mainMenu = MainMenuBuilder.makeMenu(model: model)
-        Task { await model.start() }
-        if showsWindowOnLaunch { model.showScreen(.inbox) }
+
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { _ in
+            Task { await backend.handleSystemWake() }
+        }
+
+        await model.start()
+        let needsOnboarding = offersOnboarding && backend.mode == .live && model.state.accounts.isEmpty
+            && !UserDefaults.standard.bool(forKey: LaunchPreferences.onboardingCompletedKey)
+        if needsOnboarding {
+            model.showOnboarding()
+        } else if showsWindowOnLaunch {
+            model.showScreen(.inbox)
+        }
+        if let pending = pendingNotification {
+            pendingNotification = nil
+            model.openNotification(changeRequestID: pending.changeRequestID, attentionIDs: pending.attentionIDs)
+        }
     }
 
     public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -57,13 +119,118 @@ public final class MergeCueAppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
+    /// Stops the backend (IPC socket removed) before quitting, bounded so quitting never hangs.
+    public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let backend, !isTerminating else { return .terminateNow }
+        isTerminating = true
+        model?.stop()
+        Task {
+            await Self.shutdown(backend, timeout: .seconds(5))
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     public func applicationWillTerminate(_ notification: Notification) {
         model?.stop()
+        if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
     }
 
     /// Opens the main window (e.g. from a notification or URL handler).
     public func showMainWindow() {
         model?.showScreen(model?.screen ?? .inbox)
+    }
+
+    private static func shutdown(_ backend: any AppBackend, timeout: Duration) async {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await backend.shutdown() }
+            group.addTask { try? await Task.sleep(for: timeout) }
+            await group.next()
+            group.cancelAll()
+        }
+    }
+
+    // MARK: Mode switching
+
+    /// Stops this instance's backend, starts a new instance in `mode` and quits.
+    private func relaunch(into mode: BackendMode) {
+        guard let arguments = relaunchArguments?(mode) else { return }
+        UserDefaults.standard.set(mode.rawValue, forKey: LaunchPreferences.backendModeKey)
+        let bundleURL = Bundle.main.bundleURL
+        guard bundleURL.pathExtension == "app" else {
+            model?.showBanner(.attention, "Saved. Relaunch MergeCue with \(arguments.first ?? "") to switch (development build).")
+            return
+        }
+        isTerminating = true
+        model?.stop()
+        Task {
+            if let backend { await Self.shutdown(backend, timeout: .seconds(5)) }
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.createsNewApplicationInstance = true
+            configuration.arguments = arguments
+            do {
+                _ = try await NSWorkspace.shared.openApplication(at: bundleURL, configuration: configuration)
+            } catch {
+                MCLog(category: "ui").error("Relaunch failed: \(error.localizedDescription)")
+            }
+            NSApp.terminate(nil)
+        }
+    }
+
+    // MARK: Launch errors
+
+    private func presentLaunchError(_ error: any Error) {
+        NSApp.activate()
+        let alert = NSAlert()
+        if case RuntimeError.alreadyRunning(let socketPath)? = error as? RuntimeError {
+            alert.messageText = "MergeCue is already running"
+            alert.informativeText = "Another copy of MergeCue is serving the local agent channel (\(socketPath)). Use the MergeCue icon in the menu bar, or quit the other copy and open MergeCue again."
+            alert.addButton(withTitle: "Quit")
+            alert.runModal()
+            let others = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
+                .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
+            others.first?.activate()
+        } else {
+            alert.alertStyle = .critical
+            alert.messageText = "MergeCue couldn't start"
+            alert.informativeText = SecretRedactor.redact((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+            alert.addButton(withTitle: "Quit")
+            alert.runModal()
+        }
+        NSApp.terminate(nil)
+    }
+
+    // MARK: Notifications
+
+    /// Notification click → the item (or change request) in the main window, via the deep-link `userInfo`.
+    public nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        let info = response.notification.request.content.userInfo
+        let changeRequestID = info[UserNotificationDeliverer.Keys.changeRequestID] as? String
+            ?? (info[UserNotificationDeliverer.Keys.deepLink] as? String).flatMap(Self.changeRequestID(fromDeepLink:))
+        let attentionIDs = info[UserNotificationDeliverer.Keys.attentionItemIDs] as? [String] ?? []
+        await MainActor.run {
+            self.openNotification(changeRequestID: changeRequestID, attentionIDs: attentionIDs)
+        }
+    }
+
+    /// Show banners while MergeCue is frontmost too.
+    public nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async
+        -> UNNotificationPresentationOptions {
+        [.banner, .list, .sound]
+    }
+
+    nonisolated static func changeRequestID(fromDeepLink link: String) -> String? {
+        guard let url = URL(string: link), url.scheme == "mergecue", url.host() == "change-request" else { return nil }
+        let id = String(url.path(percentEncoded: false).drop(while: { $0 == "/" }))
+        return id.isEmpty ? nil : id
+    }
+
+    private func openNotification(changeRequestID: String?, attentionIDs: [String]) {
+        guard let model else {
+            pendingNotification = (changeRequestID, attentionIDs)
+            return
+        }
+        model.openNotification(changeRequestID: changeRequestID, attentionIDs: attentionIDs)
     }
 }
 

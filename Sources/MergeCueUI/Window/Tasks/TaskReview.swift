@@ -29,7 +29,7 @@ struct TaskReviewScreen: View {
                             WhatChangedCard(record: record)
                             TestsCard(record: record, now: model.now)
                             ProposedReplyCard(model: model, record: record)
-                            HeadCheckCard(record: record, snapshot: snapshot)
+                            HeadCheckCard(record: record, snapshot: snapshot, syncedAt: model.account(task.origin.account)?.status.lastSuccessAt, now: model.now)
                         }
                     }
                     .scrollIndicators(.never)
@@ -553,6 +553,14 @@ struct ProposedReplyCard: View {
 struct HeadCheckCard: View {
     let record: TaskRecord
     let snapshot: ChangeRequestSnapshot?
+    /// When the head was last fetched (the account's last successful sync).
+    var syncedAt: Date?
+    var now: Date
+
+    private var freshness: String {
+        let fetched = syncedAt.map { "Head fetched \(UIFormat.relative(from: $0, now: now))" } ?? "Head not fetched yet"
+        return "\(fetched); MergeCue re-reads it right before applying or posting."
+    }
 
     var body: some View {
         let check = Presentation.headCheck(record, snapshot: snapshot)
@@ -565,9 +573,15 @@ struct HeadCheckCard: View {
                     .font(.system(size: 18, weight: .medium))
                     .foregroundStyle(Theme.mint)
             } content: {
-                Text("This patch is based on the latest state of \(ref).")
-                    .font(.system(size: 13.5))
-                    .foregroundStyle(Theme.textSecondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("This patch is based on the latest state of \(ref).")
+                        .font(.system(size: 13.5))
+                        .foregroundStyle(Theme.textSecondary)
+                    Text(freshness)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         case .moved(let from, let to):
             ReviewSideCard(title: "\(noun) head moved", symbol: "arrow.triangle.branch") {

@@ -72,6 +72,7 @@ nonisolated extension PreviewWorld {
             rules: makeRules(),
             mappings: variant == .noAccounts ? [] : makeMappings(catalog),
             agents: makeAgents(),
+            instructionFiles: variant == .noAccounts ? [:] : makeInstructionFiles(),
             notificationsPausedUntil: nil,
             quietHours: QuietHours(start: (22, 0), end: (7, 0), timeZone: .current),
             lastRefreshAt: variant == .noAccounts ? nil : ago(minutes: 2)
@@ -236,12 +237,21 @@ nonisolated extension PreviewWorld {
         ]
     }
 
-    func makeAgents() -> [DetectedAgent] {
-        [
-            DetectedAgent(name: "Claude Code", kind: .claudeCode, version: "2.1.283", path: "~/.local/bin/claude",
-                          mcpRegistration: .registered(verifiedAt: ago(days: 1))),
-            DetectedAgent(name: "Codex CLI", kind: .codex, version: "0.153.4", path: "/usr/local/bin/codex",
-                          mcpRegistration: .notRegistered, canOpenTasks: false),
+    func makeAgents() -> [AgentStatus] {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return [
+            AgentStatus(detected: DetectedAgent(kind: .claudeCode, executableURL: home.appending(path: ".local/bin/claude"),
+                                                version: "2.1.283", source: .loginShellPath),
+                        mcpRegistration: .registered(verifiedAt: ago(days: 1))),
+            AgentStatus(detected: DetectedAgent(kind: .codex, executableURL: URL(filePath: "/usr/local/bin/codex"),
+                                                version: "0.153.4", source: .loginShellPath),
+                        mcpRegistration: .notRegistered),
         ]
     }
+
+    /// Instruction files "found" in the preview's mapped checkouts.
+    func makeInstructionFiles() -> [String: [String]] {
+        ["~/Developer/acme/payments-api": ["AGENTS.md", "CLAUDE.md"], "~/Developer/ledger-service": ["AGENTS.md"]]
+    }
+
 }

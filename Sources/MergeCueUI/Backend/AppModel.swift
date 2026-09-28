@@ -196,10 +196,16 @@ public final class AppModel {
     public var reviewSelectedFile: String?
     /// Collapsed popover sections.
     public var collapsedPopoverSections: Set<PopoverSection> = []
+    /// Presents the setup assistant (first live launch without accounts, or Settings › General).
+    public var showsOnboarding = false
 
     // MARK: Hooks installed by the app shell
     @ObservationIgnored public var openMainWindowHandler: (() -> Void)?
     @ObservationIgnored public var closePopoverHandler: (() -> Void)?
+    /// Relaunches the app with another backend (Settings › General › Demo mode). Nil where switching isn't possible.
+    @ObservationIgnored public var switchModeHandler: ((BackendMode) -> Void)?
+    /// Called when the owner finishes (or skips) the setup assistant.
+    @ObservationIgnored public var onboardingCompletedHandler: (() -> Void)?
 
     @ObservationIgnored let environment: AppEnvironment
     @ObservationIgnored private var changeTask: Task<Void, Never>?
@@ -309,7 +315,7 @@ public final class AppModel {
         if case .approvePreview = command { pendingPreview = nil }
         if case .declinePreview = command { pendingPreview = nil }
         if let message = result.message {
-            showBanner(result.handoffCommand != nil || result.createdTaskID != nil ? .success : .neutral, message)
+            showBanner(result.tone ?? (result.handoffCommand != nil || result.createdTaskID != nil ? .success : .neutral), message)
         }
     }
 
@@ -396,7 +402,7 @@ public final class AppModel {
     }
 
     /// The agent used for "Open in …" and handoff commands: the one picked by the user, else a verified one first.
-    public var preferredAgent: DetectedAgent? {
+    public var preferredAgent: AgentStatus? {
         if let kind = selectedAgentKind, let agent = state.agents.first(where: { $0.kind == kind }) { return agent }
         return state.agents.first { $0.mcpRegistration.isVerified } ?? state.agents.first
     }

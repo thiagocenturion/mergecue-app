@@ -57,6 +57,8 @@ struct TaskHandoffScreen: View {
                         model.showChangeRequest(task.origin.changeRequest)
                     } label: {
                         Text(task.origin.providerKind.formattedNumber(task.origin.changeRequest.number))
+                            .lineLimit(1)
+                            .fixedSize()
                             .underline()
                             .foregroundStyle(Theme.textPrimary.opacity(0.85))
                     }
@@ -389,7 +391,7 @@ struct HandoffStepView: View {
     var message: String?
 
     private var agentKind: AgentKind { model.effectiveAgentKind }
-    private var detected: DetectedAgent? { model.state.agents.first { $0.kind == agentKind } }
+    private var detected: AgentStatus? { model.state.agents.first { $0.kind == agentKind } }
 
     var body: some View {
         if wide {

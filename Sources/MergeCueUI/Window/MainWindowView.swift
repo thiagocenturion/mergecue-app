@@ -39,6 +39,9 @@ public struct MainWindowView: View {
         .sheet(item: connectSheetBinding) { item in
             ConnectAccountSheet(model: model, kind: item.kind)
         }
+        .sheet(isPresented: $model.showsOnboarding) {
+            OnboardingView(model: model)
+        }
     }
 
     private var connectSheetBinding: Binding<ConnectSheetItem?> {
