@@ -1,3 +1,4 @@
+import AgentHandoff
 import Foundation
 import MergeCueCore
 
@@ -136,6 +137,40 @@ extension PreviewBackend {
                 return AppCommandResult(message: "Preview data — \(url.host() ?? "this link") has no such repository, so the link wasn't opened.")
             }
             return AppCommandResult(urlToOpen: url)
+
+        case .refreshAgents:
+            return AppCommandResult(message: "Preview data: the agents shown are synthetic; nothing was detected.")
+        case .prepareAgentRegistration(let kind, let action):
+            guard let agent = state.agents.first(where: { $0.kind == kind }) else {
+                throw AppBackendError.unsupported("\(kind.displayName) wasn't found on this Mac.")
+            }
+            let helper = URL(filePath: "/Applications/MergeCue.app/Contents/MacOS/mergecue-mcp")
+            let plan: MCPRegistrationPlan
+            do {
+                plan = action == .register
+                    ? try MCPRegistrationPlan.register(agent.detected, helper: helper, paths: MergeCuePaths(), now: now)
+                    : try MCPRegistrationPlan.unregister(agent: kind, executable: agent.detected.executableURL, helper: helper,
+                                                         paths: MergeCuePaths(), now: now)
+            } catch {
+                throw AppBackendError.failed(error.localizedDescription)
+            }
+            return AppCommandResult(registrationPlan: plan)
+        case .applyAgentRegistration(let plan, _):
+            guard let index = state.agents.firstIndex(where: { $0.kind == plan.agent }) else { throw AppBackendError.notFound(plan.agent.displayName) }
+            state.agents[index].mcpRegistration = plan.action == .register ? .registered(verifiedAt: nil) : .notRegistered
+            return AppCommandResult(message: "Preview: \(plan.agent.displayName)'s configuration was not changed and nothing was run.")
+        case .verifyAgent(let kind):
+            return AppCommandResult(message: "Preview data: verification needs the real app, so nothing was checked.",
+                                    verification: AgentVerification(agent: kind, succeeded: false, toolCount: 0, missingTools: [],
+                                                                    roundTrip: "Not run (preview data)", checkedAt: now))
+        case .findCheckouts:
+            return AppCommandResult(message: "Preview data: no folders were scanned.", mappingSuggestions: [])
+        case .setLaunchAtLogin:
+            return AppCommandResult(message: "Preview data: the login item was not changed.")
+        case .requestNotificationPermission:
+            return AppCommandResult(message: "Preview data: macOS was not asked for notification permission.")
+        case .exportDatabase, .resetAllData:
+            throw AppBackendError.unsupported("Preview data: nothing is stored, so there is nothing to export or reset.")
         }
     }
 

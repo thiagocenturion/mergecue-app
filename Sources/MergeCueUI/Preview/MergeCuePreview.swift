@@ -36,6 +36,11 @@ public enum MergeCuePreview {
         ConnectAccountSheet(model: model, kind: kind)
     }
 
+    /// The setup assistant at step `step` (0 welcome … 5 done) on its own (snapshots).
+    public static func onboarding(model: AppModel, step: Int) -> some View {
+        OnboardingView(model: model, initialStep: OnboardingStep(rawValue: step) ?? .welcome)
+    }
+
     /// The approval sheet for `preview` on its own (snapshots).
     public static func approvalSheet(model: AppModel, preview: ActionPreview) -> some View {
         ApprovalSheet(model: model, preview: preview)

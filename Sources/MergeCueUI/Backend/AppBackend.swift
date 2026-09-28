@@ -46,6 +46,15 @@ public nonisolated protocol AppBackend: AnyObject, Sendable {
     func refresh() async
     /// Executes one user action. Throws `AppBackendError` (or any error; the UI shows its description).
     func perform(_ command: AppCommand) async throws -> AppCommandResult
+    /// The Mac woke from sleep: refresh every account and expire stale agent leases.
+    func handleSystemWake() async
+    /// Stops background work before the app quits (the engine backend removes its IPC socket).
+    func shutdown() async
+}
+
+public nonisolated extension AppBackend {
+    func handleSystemWake() async {}
+    func shutdown() async {}
 }
 
 /// Errors a backend reports for a user action. Messages are user-facing and never contain credentials.

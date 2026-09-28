@@ -98,7 +98,8 @@ nonisolated extension AppCommand {
     /// Whether the command can change `AppState` (read-only commands don't notify observers).
     var mutatesState: Bool {
         switch self {
-        case .copyHandoffCommand, .openInAgent, .loadCheckLog, .openURL, .requestActionPreview: false
+        case .copyHandoffCommand, .openInAgent, .loadCheckLog, .openURL, .requestActionPreview, .prepareAgentRegistration,
+             .findCheckouts, .exportDatabase, .requestNotificationPermission: false
         default: true
         }
     }

@@ -65,6 +65,36 @@ extension AppModel {
         openMainWindow()
     }
 
+    /// Opens what a notification points at: its attention item when it still exists, else the change request.
+    public func openNotification(changeRequestID: String?, attentionIDs: [String]) {
+        if let id = attentionIDs.first(where: { attentionItem($0) != nil }) {
+            showAttention(id)
+        } else if let snapshot = snapshot(id: changeRequestID) {
+            showChangeRequest(snapshot.key)
+        } else {
+            showScreen(.inbox)
+        }
+    }
+
+    /// `mergecue://change-request/<id>` (the deep link notifications carry).
+    public func openDeepLink(_ url: URL) {
+        guard url.scheme == "mergecue", url.host() == "change-request" else { return }
+        let id = String(url.path(percentEncoded: false).drop(while: { $0 == "/" }))
+        openNotification(changeRequestID: id.isEmpty ? nil : id, attentionIDs: [])
+    }
+
+    /// Shows the setup assistant in the main window.
+    public func showOnboarding() {
+        openMainWindow()
+        showsOnboarding = true
+    }
+
+    /// Closes the setup assistant and remembers that it ran.
+    public func finishOnboarding() {
+        showsOnboarding = false
+        onboardingCompletedHandler?()
+    }
+
     public func showSettings(_ tab: SettingsTab = .accounts) {
         screen = .settings
         settingsTab = tab

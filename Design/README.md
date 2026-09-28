@@ -7,12 +7,12 @@ never redrawn or recoloured.
 | File | Role |
 | --- | --- |
 | `Design/MergeCue-AppIcon.png` | Source of truth for the app icon (1254×1254 RGBA, untagged sRGB). Do not edit. |
-| `Design/menubar-glyph.svg` | Vector source of the monochrome menu bar template glyph (normal state). |
-| `Design/menubar-glyph-alert.svg` | Same glyph, attention state (dot filled and enlarged). |
-| `scripts/make-icons.py` | Entry point: app icon sizes, asset catalog JSON, verification, contact sheet; then runs the glyph build. |
-| `scripts/menubar_glyph.py` | Exact rasteriser for the glyph SVG subset, glyph PNGs, template checks, preview. |
-| `App/Assets.xcassets/` | `AppIcon.appiconset` (mac 16–512 @1x/@2x), `AccentColor.colorset`, `MenuBarIcon.imageset`, `MenuBarIconAlert.imageset` (template). |
-| `Sources/MergeCueUI/Resources/MenuBarIcon{,@2x}.png`, `MenuBarIconAlert{,@2x}.png` | Copies of the glyph PNGs for `Bundle.module` in SwiftPM builds. |
+| `Design/menubar/MenuBar-{light,dark}[-dot][@2x].png` | **Owner-supplied menu bar icons — the shipped ones.** Source of truth; never generated or overwritten by a script. |
+| `Design/menubar-glyph.svg`, `Design/menubar-glyph-alert.svg` | Earlier monochrome template glyph (reference only, no longer shipped). |
+| `scripts/make-icons.py` | Entry point: app icon sizes, asset catalog JSON, verification, contact sheet; then runs `menubar_glyph.py`. |
+| `scripts/menubar_glyph.py` | Renders the reference SVG glyph preview and **verifies** the owner menu bar icons (see below). |
+| `App/Assets.xcassets/` | `AppIcon.appiconset` (mac 16–512 @1x/@2x), `AccentColor.colorset`, `MenuBarIcon.imageset`, `MenuBarIconAlert.imageset` (owner PNGs, `original` rendering). |
+| `Sources/MergeCueUI/Resources/MenuBar-*.png` | Verbatim copies of `Design/menubar/` for `Bundle.module` in SwiftPM builds. |
 | `docs/evidence/icon-contact-sheet.png` | Every icon size at 1:1 on light and dark, magnified small sizes, edge zooms. |
 | `docs/evidence/menubar-glyph-preview.png` | Glyph at actual size in light and dark menu-bar-like strips (1x and 2x), plus magnified pixels. |
 | `docs/evidence/icon-verification.json` | Machine-readable alpha stats and per-size check results from the last run. |
@@ -25,7 +25,14 @@ python3 scripts/make-icons.py --check  # verify committed files only: checks + b
 ```
 
 Needs only Python 3 and Pillow (tested with the system Python 3.9.6 and Pillow 11.3.0). Output is deterministic:
-two consecutive runs produced identical SHA-256 sums for all 26 generated files. No Xcode project is involved.
+two consecutive runs produced identical SHA-256 sums for all generated files.
+
+**Menu bar icons are preserved.** Neither script writes `MenuBarIcon*.imageset/*` or the `MenuBar-*.png` copies
+in `Sources/MergeCueUI/Resources/`. Both modes check that every file in `Design/menubar/` is present and
+byte-identical in its imageset (`-dot` → `MenuBarIconAlert`, otherwise `MenuBarIcon`) and in the UI resources, and
+that the imageset's `Contents.json` references it. The full run only restores a copy that is **missing**; a copy
+that differs is reported as `FAIL` and left alone. To change the menu bar icon, replace the PNGs in
+`Design/menubar/` and copy them to both places by hand (or delete the old copies and run the script). No Xcode project is involved.
 `xcodegen`'s `project.yml` should point the app target at `App/Assets.xcassets`, with `AppIcon` as the app icon and
 `AccentColor` as the global accent colour.
 
@@ -123,7 +130,12 @@ the 1024 master right edge. The edges are smooth and anti-aliased on both backgr
 The thin dark outline and the inner rim light are part of the source art. Sizes ≤ 32 px keep the M, the triangle
 cut-out and the mint dot legible.
 
-## Menu bar template glyph
+## Menu bar template glyph (reference only — superseded by the owner's icons in `Design/menubar/`)
+
+The app now ships the owner-supplied coloured PNGs (light glyphs for dark menu bars and vice versa, with `-dot`
+variants for the attention state); `MenuBarIcon` in MergeCueUI picks the variant from the status button's
+appearance. The glyph below is kept as a design reference; its PNGs are rendered in memory for the preview only.
+
 
 The glyph echoes the icon's folded "M" as a line drawing. The left half is the **play-triangle loop** (forward cue).
 A diagonal from the triangle's apex rises to the top of a **vertical bar**, which gives the M. The **signal dot** sits
@@ -154,8 +166,8 @@ files exactly:
 - Coverage is box-averaged down to 8-bit alpha, with RGB fixed to black.
 - Unsupported SVG raises an error instead of rendering incorrectly.
 
-Outputs are 18 px (@1x) and 36 px (@2x) PNGs in both imagesets, whose `Contents.json` sets
-`"template-rendering-intent": "template"`. The same four PNGs are copied into `Sources/MergeCueUI/Resources/`.
+Historically these were written to both imagesets as template PNGs; that output was removed when the owner's
+icons replaced the glyph (see "Menu bar icons are preserved" above).
 
 **Cross-check against AppKit.** Both SVGs were also rendered with `NSImage` (CoreSVG) at 288 px and compared with
 this renderer at 288 px:
@@ -171,19 +183,11 @@ this renderer at 288 px:
 12 pt text, plus ×12/×6 magnifications. Both states read clearly at 2x. At 1x the ring becomes a small open blob, but
 it stays distinct from the filled attention dot.
 
-### Using it (MergeCueUI / app target)
+### Shipped icon (MergeCueUI / app target)
 
-```swift
-// SwiftPM (MergeCueUI): the processed resource bundle holds MenuBarIcon.png + @2x, loaded as one 18x18 pt image.
-let image = Bundle.module.image(forResource: needsAttention ? "MenuBarIconAlert" : "MenuBarIcon")
-image?.isTemplate = true            // required: .process() resources carry no template flag
-statusItem.button?.image = image
-statusItem.button?.image?.accessibilityDescription = "MergeCue"
-// Xcode app target: NSImage(named: "MenuBarIcon") from Assets.xcassets is already a template image.
-```
-
-Verified with the built `MergeCue_MergeCueUI.bundle`: `Bundle.image(forResource:)` returns an 18 × 18 pt image with
-36 px and 18 px representations for both names.
+`MenuBarIcon.image(showsDot:)` (MergeCueUI) loads `MenuBar-light*` / `MenuBar-dark*` from `Bundle.module` and picks
+the variant for the status button's effective appearance at draw time; the Xcode target's asset catalog carries the
+same PNGs in `MenuBarIcon.imageset` / `MenuBarIconAlert.imageset` (`template-rendering-intent: original`).
 
 ## Accent colour
 

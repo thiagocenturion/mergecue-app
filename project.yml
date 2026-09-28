@@ -99,7 +99,7 @@ schemes:
         # Open the main window at launch (without it the app starts in the menu bar only, like a normal launch).
         "--show-window": true
       environmentVariables:
-        # preview | demo | live. Only `preview` exists today; demo/live fall back to preview (see App/MergeCueApp.swift).
+        # live (default) | demo | preview. Launch arguments --live/--demo/--preview take precedence (App/MergeCueApp.swift).
         - variable: MERGECUE_BACKEND
           value: preview
           isEnabled: false

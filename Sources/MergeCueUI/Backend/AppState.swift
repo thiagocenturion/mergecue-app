@@ -1,3 +1,4 @@
+@_exported import AgentHandoff
 import Foundation
 import MergeCueCore
 
@@ -49,61 +50,94 @@ public nonisolated struct TaskRecord: Sendable, Hashable, Identifiable {
     }
 }
 
-/// Coding agents MergeCue can hand tasks to.
-public nonisolated enum AgentKind: String, Sendable, Hashable, CaseIterable, Codable {
-    case claudeCode = "claude_code"
-    case codex
-
-    public var displayName: String {
-        switch self {
-        case .claudeCode: "Claude Code"
-        case .codex: "Codex CLI"
-        }
-    }
-}
-
-/// Whether the MergeCue MCP server is registered with (and verified by) an agent.
-public nonisolated enum MCPRegistrationStatus: Sendable, Hashable {
+/// Whether the MergeCue MCP server is registered with (and verified for) an agent. The agent kinds and the
+/// detection result are AgentHandoff's (`AgentKind`, `DetectedAgent`); this is the UI's summary of the setup.
+public nonisolated enum MCPConnectionState: Sendable, Hashable {
     case notRegistered
-    /// Registered; `verifiedAt` is set once a read-only `tools/list` + task round trip succeeded.
+    /// Registered with this Mac's helper; `verifiedAt` is set once a `tools/list` + read-only round trip succeeded.
     case registered(verifiedAt: Date?)
+    /// Registered with a different command, the CLI could not be queried, or verification failed.
     case needsAttention(String)
 
     public var displayText: String {
         switch self {
         case .notRegistered: "MergeCue MCP not registered"
-        case .registered(let verifiedAt): verifiedAt == nil ? "Registered, not verified yet" : "Registered and verified"
+        case .registered(let verifiedAt): verifiedAt == nil ? "Registered, not verified yet" : "Connected"
         case .needsAttention(let message): message
         }
     }
 
-    /// Verified registrations are the only ones treated as connected.
+    /// Only a verified registration counts as connected.
     public var isVerified: Bool {
         if case .registered(let verifiedAt) = self { return verifiedAt != nil }
         return false
     }
+
+    public var isRegistered: Bool {
+        if case .registered = self { return true }
+        return false
+    }
 }
 
-/// An agent found on this Mac.
-public nonisolated struct DetectedAgent: Sendable, Hashable, Identifiable {
-    public var name: String
+/// A coding agent found on this Mac, with the state of its MergeCue MCP setup.
+public nonisolated struct AgentStatus: Sendable, Hashable, Identifiable {
     public var kind: AgentKind
-    public var version: String?
-    public var path: String
-    public var mcpRegistration: MCPRegistrationStatus
-    /// A tested CLI/deep link can open the task's checkout without overwriting an existing session.
+    /// AgentHandoff's detection result (executable, version, how it was found).
+    public var detected: DetectedAgent
+    public var mcpRegistration: MCPConnectionState
+    /// A tested launcher can open the task's checkout in a new Terminal window without touching existing sessions.
     public var canOpenTasks: Bool
 
-    public init(name: String, kind: AgentKind, version: String?, path: String, mcpRegistration: MCPRegistrationStatus, canOpenTasks: Bool = true) {
-        self.name = name
-        self.kind = kind
-        self.version = version
-        self.path = path
+    public init(detected: DetectedAgent, mcpRegistration: MCPConnectionState, canOpenTasks: Bool = true) {
+        self.kind = detected.kind
+        self.detected = detected
         self.mcpRegistration = mcpRegistration
         self.canOpenTasks = canOpenTasks
     }
 
-    public var id: String { kind.rawValue + ":" + path }
+    public var id: String { kind.rawValue + ":" + detected.executablePath }
+    public var name: String { kind.displayName }
+    public var version: String? { detected.version }
+    /// Executable path with `~` for the home directory.
+    public var path: String { UIFormat.abbreviatedPath(detected.executablePath) }
+}
+
+/// Launch-at-login state (mirrors `MergeCueRuntime.LoginItemStatus`).
+public nonisolated enum LoginItemState: String, Sendable, Hashable {
+    case enabled, disabled, requiresApproval, unavailable
+}
+
+/// Where the running backend keeps its data and how agents reach it (Settings › Data, onboarding, agent setup).
+public nonisolated struct RuntimeInfo: Sendable, Hashable {
+    /// Data root (`~/Library/Application Support/MergeCue`, `<root>/demo` in demo mode, or `MERGECUE_HOME`).
+    public var dataRoot: String
+    public var databasePath: String
+    public var worktreesPath: String
+    public var logsPath: String
+    /// Where agent config backups go before MergeCue changes an agent's MCP configuration.
+    public var backupsPath: String
+    public var socketPath: String
+    public var ipcRunning: Bool
+    /// The bundled `mergecue-mcp` agents are configured with (nil when not found).
+    public var helperPath: String?
+    /// `MERGECUE_HOME` the helper needs when this runtime does not use the default location.
+    public var helperHome: String?
+    public var loginItem: LoginItemState
+
+    public init(dataRoot: String, databasePath: String, worktreesPath: String, logsPath: String, backupsPath: String,
+                socketPath: String, ipcRunning: Bool, helperPath: String?, helperHome: String? = nil,
+                loginItem: LoginItemState) {
+        self.dataRoot = dataRoot
+        self.databasePath = databasePath
+        self.worktreesPath = worktreesPath
+        self.logsPath = logsPath
+        self.backupsPath = backupsPath
+        self.socketPath = socketPath
+        self.ipcRunning = ipcRunning
+        self.helperPath = helperPath
+        self.helperHome = helperHome
+        self.loginItem = loginItem
+    }
 }
 
 /// Everything the UI shows, as one consistent value built from Core domain types.
@@ -114,7 +148,13 @@ public nonisolated struct AppState: Sendable, Hashable {
     public var changeRequests: [ChangeRequestSnapshot]
     public var rules: [Rule]
     public var mappings: [RepoMapping]
-    public var agents: [DetectedAgent]
+    /// Agents found on this Mac (only detected ones).
+    public var agents: [AgentStatus]
+    /// Project instruction files (`AGENTS.md`, `CLAUDE.md`) found at the root of each mapped checkout, keyed by
+    /// checkout path. MergeCue only checks that they exist; it never reads them into the agent's context.
+    public var instructionFiles: [String: [String]]
+    /// nil for the in-memory preview.
+    public var runtime: RuntimeInfo?
     public var notificationsPausedUntil: Date?
     public var quietHours: QuietHours?
     public var lastRefreshAt: Date?
@@ -126,7 +166,9 @@ public nonisolated struct AppState: Sendable, Hashable {
         changeRequests: [ChangeRequestSnapshot] = [],
         rules: [Rule] = [],
         mappings: [RepoMapping] = [],
-        agents: [DetectedAgent] = [],
+        agents: [AgentStatus] = [],
+        instructionFiles: [String: [String]] = [:],
+        runtime: RuntimeInfo? = nil,
         notificationsPausedUntil: Date? = nil,
         quietHours: QuietHours? = nil,
         lastRefreshAt: Date? = nil
@@ -138,6 +180,8 @@ public nonisolated struct AppState: Sendable, Hashable {
         self.rules = rules
         self.mappings = mappings
         self.agents = agents
+        self.instructionFiles = instructionFiles
+        self.runtime = runtime
         self.notificationsPausedUntil = notificationsPausedUntil
         self.quietHours = quietHours
         self.lastRefreshAt = lastRefreshAt

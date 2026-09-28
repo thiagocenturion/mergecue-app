@@ -117,7 +117,10 @@ let package = Package(
                 "MergeCueIPC", "GitHubAdapter", "GitLabAdapter", "BitbucketCloudAdapter", "AgentHandoff",
             ]
         ),
-        .testTarget(name: "MergeCueUITests", dependencies: ["MergeCueUI"]),
+        .testTarget(
+            name: "MergeCueUITests",
+            dependencies: ["MergeCueUI", "MergeCueRuntime", "MergeCueEngine", "MergeCueCore", "AgentHandoff"]
+        ),
         .testTarget(
             name: "IntegrationTests",
             dependencies: [
