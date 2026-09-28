@@ -70,7 +70,7 @@ extension EngineBackend {
             id: preview.id, taskID: preview.taskID, action: preview.action, title: preview.title, target: preview.target,
             body: preview.body, headSHA: preview.headSHA, fingerprint: preview.fingerprint, warnings: warnings,
             canApprove: preview.canApprove, blockedReason: preview.blockedReason, createdAt: preview.createdAt,
-            isSimulated: preview.isSimulated
+            isSimulated: preview.isSimulated, claimant: preview.claimant
         )
     }
 

@@ -112,11 +112,12 @@ extension MergeCueEngine {
             }
             return TaskHandoff(
                 taskID: task.id,
-                command: TaskHandoff.command(for: task.id),
+                command: TaskHandoff.command(for: task.id, handoffCode: task.handoffCode),
                 workingDirectory: task.checkout?.worktreePath ?? (task.checkout?.policy == .readOnly ? task.checkout?.mappedCheckoutPath : nil),
                 checkoutPolicy: task.checkout?.policy,
                 blockedReason: task.checkout?.blockedReason,
-                statusText: status
+                statusText: status,
+                handoffCode: task.handoffCode
             )
         }
     }

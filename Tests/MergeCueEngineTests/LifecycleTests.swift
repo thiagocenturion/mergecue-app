@@ -87,6 +87,7 @@ struct LifecycleTests {
 
         // Then post the reply (last action → done).
         let replyPreview = try await engine.previewAction(created.id, .postReply)
+        #expect(replyPreview.claimant == "claude-code (run run-1)")
         #expect(replyPreview.canApprove)
         #expect(replyPreview.body == "Done — capped at 30 s.")
         let replyOutcome = try await engine.perform(previewID: replyPreview.id, approval: PreviewApproval(fingerprint: replyPreview.fingerprint))
@@ -118,12 +119,57 @@ struct LifecycleTests {
         #expect(h.world.writes.count == 1)
     }
 
+    /// S7: only an agent holding the handoff prompt's code can claim; reads never reveal it.
+    @Test("claim_task requires the handoff code; get_task and list_tasks never reveal it")
+    func handoffCodeGatesClaims() async throws {
+        let h = try await Harness.make()
+        let task = try await h.engine.createTask(fromAttention: h.threadItemID)
+        let code = try #require(task.handoffCode)
+
+        let context = try await h.ok(GetTaskParams(taskID: task.id))
+        #expect(!(try IPCCoding.encodeValue(context).jsonString()).contains(code))
+        #expect(context.nextSteps.contains { $0.contains("handoff_code") })
+        let listed = try await h.ok(ListTasksParams())
+        #expect(!(try IPCCoding.encodeValue(listed).jsonString()).contains(code))
+
+        let missing = await h.callVerbatim(ClaimTaskParams(taskID: task.id, agentName: "intruder", expectedVersion: context.version))
+        guard case .failure(let missingError) = missing else { Issue.record("claim without code succeeded"); return }
+        #expect(missingError.code == .validationFailed)
+        #expect(missingError.message.contains("handoff code"))
+        let wrong = await h.callVerbatim(ClaimTaskParams(taskID: task.id, agentName: "intruder", expectedVersion: context.version, handoffCode: "WRONG000"))
+        guard case .failure(let wrongError) = wrong else { Issue.record("claim with a wrong code succeeded"); return }
+        #expect(wrongError.code == .validationFailed)
+        #expect(try await h.task(task.id).state == .waitingForAgent)
+        let history = try await h.engine.taskDetail(task.id).activities
+        #expect(history.filter { $0.kind == .rejectedCall }.count == 2)
+
+        // Codes are compared case-insensitively and ignore dashes (agents retype them).
+        let loose = String(code.prefix(4)).lowercased() + "-" + String(code.dropFirst(4)).lowercased()
+        let claim = await h.callVerbatim(ClaimTaskParams(taskID: task.id, agentName: "Claude Code", runID: "run-42", expectedVersion: context.version, handoffCode: loose))
+        guard case .success(let claimed) = claim else { Issue.record("claim with the right code failed: \(claim)"); return }
+        #expect(claimed.state == .working)
+    }
+
+    @Test("Tasks created before handoff codes existed can still be claimed without one")
+    func legacyTaskNeedsNoCode() async throws {
+        let h = try await Harness.make()
+        var task = try await h.engine.createTask(fromAttention: h.threadItemID)
+        task.handoffCode = nil
+        task.version += 1
+        try await h.db.updateTask(task, expectedVersion: task.version - 1)
+        let claim = await h.callVerbatim(ClaimTaskParams(taskID: task.id, agentName: "codex", expectedVersion: task.version))
+        guard case .success = claim else { Issue.record("legacy claim failed: \(claim)"); return }
+    }
+
     @Test("Handoff command copied but never executed: task stays waiting_for_agent")
     func copiedCommandStaysWaiting() async throws {
         let h = try await Harness.make()
         let task = try await h.engine.createTask(fromAttention: h.threadItemID)
         let handoff = try await h.engine.handoff(for: task.id)
-        #expect(handoff.command == "Work on MergeCue task \(task.id.rawValue). Use MergeCue MCP for context and status updates. Work only in the designated checkout. Stop before publishing anything.")
+        let code = try #require(task.handoffCode)
+        #expect(code.count == HandoffCode.length)
+        #expect(handoff.handoffCode == code)
+        #expect(handoff.command == "Work on MergeCue task \(task.id.rawValue) (handoff code: \(code)). Use MergeCue MCP for context and status updates. Work only in the designated checkout. Stop before publishing anything.")
         #expect(handoff.statusText == "Task ready to start")
         #expect(handoff.workingDirectory == task.checkout?.worktreePath)
         try await h.engine.recordHandoffCopied(task.id, agentName: "Claude Code")

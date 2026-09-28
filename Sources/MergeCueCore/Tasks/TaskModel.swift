@@ -243,6 +243,9 @@ public struct MCTask: Codable, Sendable, Hashable, Identifiable {
     public var resultSummary: String?
     public var proposedReply: String?
     public var knownRisks: [String]
+    /// Secret the agent must present to `claim_task` (from the handoff prompt only; never exposed over MCP reads).
+    /// nil for tasks created before handoff codes existed (claims then need no code).
+    public var handoffCode: String?
 
     public init(
         id: TaskID,
@@ -262,7 +265,8 @@ public struct MCTask: Codable, Sendable, Hashable, Identifiable {
         lastError: TaskErrorInfo? = nil,
         resultSummary: String? = nil,
         proposedReply: String? = nil,
-        knownRisks: [String] = []
+        knownRisks: [String] = [],
+        handoffCode: String? = nil
     ) {
         self.id = id
         self.type = type
@@ -282,6 +286,7 @@ public struct MCTask: Codable, Sendable, Hashable, Identifiable {
         self.resultSummary = resultSummary
         self.proposedReply = proposedReply
         self.knownRisks = knownRisks
+        self.handoffCode = handoffCode
     }
 
     public var isTerminal: Bool { state.isTerminal }

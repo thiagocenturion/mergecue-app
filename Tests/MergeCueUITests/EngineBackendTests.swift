@@ -110,7 +110,8 @@ struct EngineBackendTests {
         #expect(Presentation.handoffStep(record) == .waiting)
 
         let copied = try await backend.perform(.copyHandoffCommand(taskID, agent: .claudeCode))
-        #expect(copied.handoffCommand == TaskHandoff.command(for: taskID))
+        #expect(copied.handoffCommand == TaskHandoff.command(for: taskID, handoffCode: record.task.handoffCode))
+        #expect(record.task.handoffCode.map { copied.handoffCommand?.contains("(handoff code: \($0))") == true } == true)
         #expect(copied.message?.contains("Task ready to start") == true)
         state = await harness.state()
         #expect(state.tasks.first { $0.id == taskID }?.state == .waitingForAgent)

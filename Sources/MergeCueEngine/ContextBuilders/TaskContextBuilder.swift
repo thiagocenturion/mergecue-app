@@ -61,6 +61,10 @@ enum TaskContextBuilder {
     static func nextSteps(for task: MCTask) -> [String] {
         switch task.state {
         case .waitingForAgent, .stale:
+            if task.handoffCode != nil {
+                return ["Call claim_task with task_id \(task.id.rawValue), expected_version \(task.version) and handoff_code = "
+                    + "the code from the owner's handoff prompt (\"(handoff code: …)\"; it is not shown here)."]
+            }
             return ["Call claim_task with task_id \(task.id.rawValue) and expected_version \(task.version)."]
         case .working:
             var steps = ["Continue working; send heartbeat or update_task with expected_version \(task.version)."]

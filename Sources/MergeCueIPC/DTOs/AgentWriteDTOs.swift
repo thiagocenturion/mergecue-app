@@ -28,11 +28,13 @@ public enum IPCLimits {
     public static let agentNameCharacters = " ._-()+/@:"
     /// Punctuation allowed in `run_id` besides ASCII letters and digits (UUIDs, session ids).
     public static let runIDCharacters = "._-:/@=+"
+    public static let maxHandoffCodeLength = 32
 }
 
 // MARK: - claim_task
 
-/// `{task_id, agent_name, run_id?, expected_version}`.
+/// `{task_id, agent_name, run_id?, expected_version, handoff_code?}`. `handoff_code` is the code from the owner's
+/// handoff prompt (`(handoff code: K7Q2M9XD)`); it is required when the task has one.
 public struct ClaimTaskParams: IPCMethodParams, Hashable {
     public typealias Output = ClaimTaskResult
     public static let method = IPCMethod.claimTask
@@ -42,12 +44,15 @@ public struct ClaimTaskParams: IPCMethodParams, Hashable {
     /// Agent execution/session id, if the agent has one.
     public var runID: String?
     public var expectedVersion: Int
+    /// Code from the handoff prompt (never returned by any read).
+    public var handoffCode: String?
 
-    public init(taskID: TaskID, agentName: String, runID: String? = nil, expectedVersion: Int) {
+    public init(taskID: TaskID, agentName: String, runID: String? = nil, expectedVersion: Int, handoffCode: String? = nil) {
         self.taskID = taskID
         self.agentName = agentName
         self.runID = runID
         self.expectedVersion = expectedVersion
+        self.handoffCode = handoffCode
     }
 
     public func validate() throws(IPCError) {
@@ -55,6 +60,8 @@ public struct ClaimTaskParams: IPCMethodParams, Hashable {
                                             allowed: IPCLimits.agentNameCharacters, required: true)
         try IPCValidation.requireIdentifier(runID, field: "run_id", maxLength: IPCLimits.maxRunIDLength,
                                             allowed: IPCLimits.runIDCharacters, required: false)
+        try IPCValidation.requireIdentifier(handoffCode, field: "handoff_code", maxLength: IPCLimits.maxHandoffCodeLength,
+                                            allowed: " -", required: false)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -62,6 +69,7 @@ public struct ClaimTaskParams: IPCMethodParams, Hashable {
         case agentName = "agent_name"
         case runID = "run_id"
         case expectedVersion = "expected_version"
+        case handoffCode = "handoff_code"
     }
 }
 

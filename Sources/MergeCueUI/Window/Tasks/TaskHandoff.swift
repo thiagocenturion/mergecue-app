@@ -438,7 +438,7 @@ struct HandoffStepView: View {
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.textSecondary)
                 .padding(.top, 18)
-            CommandField(command: HandoffText.command(for: record.id)) {
+            CommandField(command: HandoffText.command(for: record.id, handoffCode: record.task.handoffCode)) {
                 Task { await model.send(.copyHandoffCommand(record.id, agent: agentKind)) }
             }
             .padding(.top, 8)
@@ -575,7 +575,7 @@ struct TerminalPreview: View {
     }
 
     private var firstSentence: String {
-        let command = HandoffText.command(for: record.id)
+        let command = HandoffText.command(for: record.id, handoffCode: record.task.handoffCode)
         return command.split(separator: ".").first.map(String.init) ?? command
     }
 

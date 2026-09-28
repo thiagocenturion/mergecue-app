@@ -91,7 +91,9 @@ extension MergeCueRuntime {
         guard let directory = handoff.workingDirectory else {
             throw RuntimeError.failed(handoff.blockedReason ?? "The task has no checkout to open the agent in yet.")
         }
-        return try HandoffCommandBuilder.command(for: agent, taskID: taskID, worktree: URL(filePath: directory, directoryHint: .isDirectory))
+        return try HandoffCommandBuilder.command(
+            for: agent, taskID: taskID, worktree: URL(filePath: directory, directoryHint: .isDirectory), handoffCode: handoff.handoffCode
+        )
     }
 
     /// "Open in agent": opens a Terminal window running the agent in the task's checkout. The task stays

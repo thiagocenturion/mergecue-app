@@ -188,6 +188,8 @@ public struct ReviewPreview: Sendable, Hashable, Identifiable {
     public var expiresAt: Date
     /// True in demo mode: fixtures, nothing reaches a real provider.
     public var isSimulated: Bool
+    /// The agent (and run id) that claimed the task and produced this result, as it identified itself (S7).
+    public var claimant: String?
 
     public init(
         id: String,
@@ -207,7 +209,8 @@ public struct ReviewPreview: Sendable, Hashable, Identifiable {
         blockedReason: String? = nil,
         createdAt: Date,
         expiresAt: Date,
-        isSimulated: Bool
+        isSimulated: Bool,
+        claimant: String? = nil
     ) {
         self.id = id
         self.taskID = taskID
@@ -227,6 +230,7 @@ public struct ReviewPreview: Sendable, Hashable, Identifiable {
         self.createdAt = createdAt
         self.expiresAt = expiresAt
         self.isSimulated = isSimulated
+        self.claimant = claimant
     }
 }
 
@@ -274,6 +278,8 @@ public struct TaskHandoff: Sendable, Hashable {
     public var blockedReason: String?
     /// "Task ready to start" until a real `claim_task` arrives, never "AI working".
     public var statusText: String
+    /// The task's handoff code (already embedded in `command`); nil for tasks created before codes existed.
+    public var handoffCode: String?
 
     public init(
         taskID: TaskID,
@@ -281,7 +287,8 @@ public struct TaskHandoff: Sendable, Hashable {
         workingDirectory: String?,
         checkoutPolicy: CheckoutPolicy?,
         blockedReason: String?,
-        statusText: String
+        statusText: String,
+        handoffCode: String? = nil
     ) {
         self.taskID = taskID
         self.command = command
@@ -289,11 +296,13 @@ public struct TaskHandoff: Sendable, Hashable {
         self.checkoutPolicy = checkoutPolicy
         self.blockedReason = blockedReason
         self.statusText = statusText
+        self.handoffCode = handoffCode
     }
 
-    /// The short handoff text. Carries only the task id; the agent fetches context through MergeCue MCP.
-    public static func command(for taskID: TaskID) -> String {
-        "Work on MergeCue task \(taskID.rawValue). Use MergeCue MCP for context and status updates. "
+    /// The short handoff text. Carries only the task id and its handoff code (S7); the agent fetches context
+    /// through MergeCue MCP and must pass the code to `claim_task`.
+    public static func command(for taskID: TaskID, handoffCode: String? = nil) -> String {
+        "Work on MergeCue task \(taskID.rawValue)\(HandoffCode.promptFragment(handoffCode)). Use MergeCue MCP for context and status updates. "
             + "Work only in the designated checkout. Stop before publishing anything."
     }
 }

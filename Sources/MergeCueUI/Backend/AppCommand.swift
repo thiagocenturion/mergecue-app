@@ -67,6 +67,8 @@ public nonisolated struct ActionPreview: Sendable, Hashable, Identifiable {
     public var createdAt: Date
     /// True for preview/demo backends: approving records the decision but nothing is written anywhere.
     public var isSimulated: Bool
+    /// Agent (and run id) that claimed the task and produced the content, as it identified itself.
+    public var claimant: String?
 
     public init(
         id: String,
@@ -81,8 +83,10 @@ public nonisolated struct ActionPreview: Sendable, Hashable, Identifiable {
         canApprove: Bool = true,
         blockedReason: String? = nil,
         createdAt: Date,
-        isSimulated: Bool
+        isSimulated: Bool,
+        claimant: String? = nil
     ) {
+        self.claimant = claimant
         self.id = id
         self.taskID = taskID
         self.action = action
@@ -278,11 +282,11 @@ public nonisolated struct AppCommandResult: Sendable {
     public static let none = AppCommandResult()
 }
 
-/// The short, agent-agnostic handoff command (PLAN §7). It carries only the task id; the agent fetches context
-/// through MergeCue MCP.
+/// The short, agent-agnostic handoff command (PLAN §7). It carries only the task id and its handoff code (S7); the
+/// agent fetches context through MergeCue MCP.
 public nonisolated enum HandoffText {
-    public static func command(for taskID: TaskID) -> String {
-        "Work on MergeCue task \(taskID.rawValue). Use MergeCue MCP for context and status updates. "
+    public static func command(for taskID: TaskID, handoffCode: String? = nil) -> String {
+        "Work on MergeCue task \(taskID.rawValue)\(HandoffCode.promptFragment(handoffCode)). Use MergeCue MCP for context and status updates. "
             + "Work only in the designated checkout. Stop before publishing anything."
     }
 }

@@ -48,8 +48,8 @@ public struct HandoffCommand: Sendable, Hashable, Codable {
 public enum HandoffCommandBuilder {
     /// "Work on MergeCue task <id>. Use MergeCue MCP for context and status updates. Work only in the designated
     /// checkout. Stop before publishing anything."
-    public static func prompt(for taskID: TaskID) -> String {
-        "Work on MergeCue task \(taskID.rawValue). Use MergeCue MCP for context and status updates. "
+    public static func prompt(for taskID: TaskID, handoffCode: String? = nil) -> String {
+        "Work on MergeCue task \(taskID.rawValue)\(HandoffCode.promptFragment(handoffCode)). Use MergeCue MCP for context and status updates. "
             + "Work only in the designated checkout. Stop before publishing anything."
     }
 
@@ -65,7 +65,8 @@ public enum HandoffCommandBuilder {
         agent: AgentKind,
         taskID: TaskID,
         worktree: URL,
-        executable: String? = nil
+        executable: String? = nil,
+        handoffCode: String? = nil
     ) throws(AgentHandoffError) -> HandoffCommand {
         let path = MergeCuePathsHelper.path(worktree)
         guard worktree.isFileURL, path.hasPrefix("/") else { throw .invalidPath("worktree must be an absolute path") }
@@ -73,7 +74,10 @@ public enum HandoffCommandBuilder {
         let executable = executable ?? agent.executableName
         guard !executable.isEmpty, !executable.unicodeScalars.contains(where: { $0.properties.generalCategory == .control })
         else { throw .invalidPath("agent executable is empty or contains control characters") }
-        let prompt = prompt(for: taskID)
+        if let handoffCode, !handoffCode.unicodeScalars.allSatisfy({ $0.isASCII && (CharacterSet.alphanumerics.contains($0) || $0 == "-") }) {
+            throw .invalidPath("handoff code contains unexpected characters")
+        }
+        let prompt = prompt(for: taskID, handoffCode: handoffCode)
         let shell = "cd \(ShellQuoting.quote(path)) && \(ShellQuoting.quoteIfNeeded(executable)) \(ShellQuoting.quote(prompt))"
         return HandoffCommand(
             agent: agent,
@@ -96,7 +100,7 @@ public enum HandoffCommandBuilder {
     }
 
     /// Builds the command for a detected agent (bare name when on the login `PATH`, absolute path otherwise).
-    public static func command(for agent: DetectedAgent, taskID: TaskID, worktree: URL) throws(AgentHandoffError) -> HandoffCommand {
-        try command(agent: agent.kind, taskID: taskID, worktree: worktree, executable: agent.invocation)
+    public static func command(for agent: DetectedAgent, taskID: TaskID, worktree: URL, handoffCode: String? = nil) throws(AgentHandoffError) -> HandoffCommand {
+        try command(agent: agent.kind, taskID: taskID, worktree: worktree, executable: agent.invocation, handoffCode: handoffCode)
     }
 }

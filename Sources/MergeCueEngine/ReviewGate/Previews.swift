@@ -192,8 +192,15 @@ extension MergeCueEngine {
             target: target, body: body, headSHA: headSHA, threadVersion: threadVersion, checkoutHeadSHA: checkoutHeadSHA,
             contentDigest: contentDigest, fingerprint: fingerprint, warnings: warnings, canApprove: canApprove,
             blockedReason: blockedReason, createdAt: createdAt, expiresAt: createdAt.addingTimeInterval(env.previewLifetime),
-            isSimulated: env.isDemo
+            isSimulated: env.isDemo, claimant: Self.claimant(of: task)
         )
+    }
+
+    /// "Claude Code (run 0f4c2a9e…)": who claimed the task, as the agent identified itself at `claim_task`.
+    static func claimant(of task: MCTask) -> String? {
+        guard let name = task.lease?.agentName ?? task.agentLabel else { return nil }
+        guard let run = task.lease?.runID ?? task.agentSessionID, !run.isEmpty else { return name }
+        return "\(name) (run \(run.count > 24 ? String(run.prefix(24)) + "…" : run))"
     }
 
     /// Resolution + the ordered comment ids/edit times: any new reply, edit or (un)resolution changes it.

@@ -24,6 +24,12 @@ struct ApprovalSheet: View {
                         .font(.system(size: 12.5))
                         .foregroundStyle(Theme.textSecondary)
                         .textSelection(.enabled)
+                    if let claimant = preview.claimant {
+                        Text("Produced by \(claimant)")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.textSecondary)
+                            .help("The agent that claimed this task, as it identified itself. Check it is the agent you handed the task to.")
+                    }
                 }
             }
             if preview.action == .applyPatch {

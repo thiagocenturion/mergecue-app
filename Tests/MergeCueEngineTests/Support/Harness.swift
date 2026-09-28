@@ -198,7 +198,19 @@ struct Harness: Sendable {
 
     static let client = IPCClientInfo(name: "test-agent", version: "1.0", pid: 1)
 
+    /// Calls the engine like an agent that received the owner's handoff prompt: a `claim_task` without a
+    /// `handoff_code` gets the task's code filled in (tests of the S7 check itself use `callVerbatim`).
     func call<P: IPCMethodParams>(_ params: P) async -> Result<P.Output, IPCError> {
+        if var claim = params as? ClaimTaskParams, claim.handoffCode == nil,
+           let code = (try? await db.task(claim.taskID))?.handoffCode {
+            claim.handoffCode = code
+            if let filled = claim as? P { return await callVerbatim(filled) }
+        }
+        return await callVerbatim(params)
+    }
+
+    /// Sends `params` exactly as given.
+    func callVerbatim<P: IPCMethodParams>(_ params: P) async -> Result<P.Output, IPCError> {
         let encoded: JSONValue
         do {
             encoded = try IPCCoding.encodeValue(params)
