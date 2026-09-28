@@ -14,6 +14,8 @@ final class SyncEnvironment: Sendable {
         var configuration: SyncConfiguration
         var pausedUntil: Date?
         var preferences: NotificationPreferences = .allEnabled
+        /// Scopes listed besides "authored". `.all` until the engine forwards the owner's choice.
+        var tracking: TrackingPreferences = .all
         var hotUntil: Date?
         var eventHandler: EventHandler?
     }

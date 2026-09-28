@@ -159,6 +159,8 @@ public nonisolated struct AppState: Sendable, Hashable {
     public var notificationsPausedUntil: Date?
     public var quietHours: QuietHours?
     public var notificationPreferences: NotificationPreferences
+    /// Which PRs/MRs besides the user's own are tracked.
+    public var trackingPreferences: TrackingPreferences
     public var lastRefreshAt: Date?
     /// Last scheduled housekeeping (history retention) run; nil = never / preview.
     public var lastMaintenance: MaintenanceReport?
@@ -178,6 +180,7 @@ public nonisolated struct AppState: Sendable, Hashable {
         notificationsPausedUntil: Date? = nil,
         quietHours: QuietHours? = nil,
         notificationPreferences: NotificationPreferences = .allEnabled,
+        trackingPreferences: TrackingPreferences = .all,
         lastRefreshAt: Date? = nil,
         lastMaintenance: MaintenanceReport? = nil,
         worktreeCleanupCandidates: [WorktreeCleanupCandidate] = []
@@ -194,6 +197,7 @@ public nonisolated struct AppState: Sendable, Hashable {
         self.notificationsPausedUntil = notificationsPausedUntil
         self.quietHours = quietHours
         self.notificationPreferences = notificationPreferences
+        self.trackingPreferences = trackingPreferences
         self.lastMaintenance = lastMaintenance
         self.worktreeCleanupCandidates = worktreeCleanupCandidates
         self.lastRefreshAt = lastRefreshAt

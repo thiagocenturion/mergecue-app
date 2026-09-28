@@ -310,6 +310,8 @@ public struct EngineSnapshot: Sendable, Hashable {
     public var notificationsPausedUntil: Date?
     public var quietHours: QuietHours?
     public var notificationPreferences: NotificationPreferences
+    /// Which PRs/MRs besides the user's own are tracked.
+    public var trackingPreferences: TrackingPreferences
     public var lastRefreshAt: Date?
     public var isDemo: Bool
     /// Last scheduled housekeeping run.
@@ -327,6 +329,7 @@ public struct EngineSnapshot: Sendable, Hashable {
         notificationsPausedUntil: Date?,
         quietHours: QuietHours?,
         notificationPreferences: NotificationPreferences = .allEnabled,
+        trackingPreferences: TrackingPreferences = .authoredOnly,
         lastRefreshAt: Date?,
         isDemo: Bool,
         lastMaintenance: MaintenanceReport? = nil,
@@ -341,6 +344,7 @@ public struct EngineSnapshot: Sendable, Hashable {
         self.notificationsPausedUntil = notificationsPausedUntil
         self.quietHours = quietHours
         self.notificationPreferences = notificationPreferences
+        self.trackingPreferences = trackingPreferences
         self.lastRefreshAt = lastRefreshAt
         self.isDemo = isDemo
         self.lastMaintenance = lastMaintenance

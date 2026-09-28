@@ -89,6 +89,9 @@ extension EngineBackend {
             let current = await engine.notificationPreferences()
             try await engine.setNotificationPreferences(current.setting(category, enabled: enabled))
             return .none
+        case .setTrackingPreferences(let preferences):
+            try await engine.setTrackingPreferences(preferences)
+            return .none
 
         // MARK: Rules
         case .saveRule(let rule):

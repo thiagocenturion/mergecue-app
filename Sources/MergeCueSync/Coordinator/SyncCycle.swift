@@ -36,10 +36,16 @@ struct SyncCycle {
 
         // 1. Lightweight lists.
         let repositories = try await database.repositories(account: account.id)
+        let tracking = settings.tracking
         async let authoredPage = provider.listChangeRequests(query(.authored, repositories: repositories))
-        async let requestedPage = provider.listChangeRequests(query(.reviewRequested, repositories: repositories))
-        async let involvedPage = involvedListing(repositories: repositories, now: now, window: configuration.involvedWindow)
-        var pages: [(ChangeRequestScope, ChangeRequestPage)] = [(.authored, try await authoredPage), (.reviewRequested, try await requestedPage)]
+        async let requestedPage: ChangeRequestPage? = tracking.includeReviewRequests
+            ? try await provider.listChangeRequests(query(.reviewRequested, repositories: repositories))
+            : nil
+        async let involvedPage = tracking.includeInvolved
+            ? try await involvedListing(repositories: repositories, now: now, window: configuration.involvedWindow)
+            : nil
+        var pages: [(ChangeRequestScope, ChangeRequestPage)] = [(.authored, try await authoredPage)]
+        if let requested = try await requestedPage { pages.append((.reviewRequested, requested)) }
         if let involved = try await involvedPage { pages.append((.involved, involved)) }
 
         // 2. Merge the lists and compare with stored state.

@@ -103,6 +103,16 @@ public actor SyncCoordinator: SyncControlling {
 
     // MARK: Additional control
 
+    /// Which PRs/MRs are tracked besides the user's own. Excluded scopes stop being listed; their change requests
+    /// leave the lists and are cleaned up like any other that disappears (hydrated once, items resolved, removed).
+    public func setTrackingPreferences(_ preferences: TrackingPreferences) async {
+        environment.update { $0.tracking = preferences }
+    }
+
+    public func trackingPreferences() -> TrackingPreferences {
+        environment.current.tracking
+    }
+
     public func notificationPreferences() -> NotificationPreferences {
         environment.current.preferences
     }

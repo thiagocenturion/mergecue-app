@@ -132,6 +132,8 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
     case setQuietHours(QuietHours?)
     /// Settings ▸ Notifications ▸ "Notify me about" (persisted by the engine, honoured by Sync).
     case setNotificationCategory(NotificationCategory, enabled: Bool)
+    /// Which PRs/MRs besides the user's own are tracked (Settings ▸ General ▸ Tracking).
+    case setTrackingPreferences(TrackingPreferences)
 
     // MARK: Data
     /// Removes the isolated worktrees of these finished tasks (Settings ▸ Data ▸ Clean up, after confirmation).
@@ -205,6 +207,7 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
         case .pauseNotifications: "pauseNotifications"
         case .setQuietHours: "setQuietHours"
         case .setNotificationCategory(let category, _): "setNotificationCategory(\(category.rawValue))"
+        case .setTrackingPreferences: "setTrackingPreferences"
         case .cleanUpWorktrees(let ids): "cleanUpWorktrees(\(ids.count))"
         case .saveRule: "saveRule"
         case .deleteRule: "deleteRule"

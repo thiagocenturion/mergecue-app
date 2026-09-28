@@ -53,6 +53,10 @@ final class DemoSyncControl: SyncControlling {
     func setQuietHours(_ quietHours: QuietHours?) async {
         await coordinator.setQuietHours(quietHours)
     }
+
+    func setTrackingPreferences(_ preferences: TrackingPreferences) async {
+        await coordinator.setTrackingPreferences(preferences)
+    }
 }
 
 /// Forwards Sync's `onChange` signals into the engine's change stream (the engine is created after Sync).

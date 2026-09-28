@@ -75,6 +75,9 @@ extension PreviewBackend {
         case .setNotificationCategory(let category, let enabled):
             state.notificationPreferences.set(category, enabled: enabled)
             return .none
+        case .setTrackingPreferences(let preferences):
+            state.trackingPreferences = preferences
+            return .none
 
         case .saveRule(let rule):
             var rule = rule

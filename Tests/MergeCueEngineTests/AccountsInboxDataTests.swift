@@ -330,6 +330,27 @@ struct AccountsInboxDataTests {
         #expect(!alert.body.contains("backoff cap"), "never the agent's own text")
     }
 
+    @Test("Tracking defaults to the user's own PRs/MRs in live, persists and reaches Sync (also on start)")
+    func trackingPreferences() async throws {
+        let h = try await Harness.make()
+        #expect(await h.engine.trackingPreferences() == .authoredOnly)
+        #expect(try await h.engine.snapshot().trackingPreferences == .authoredOnly)
+        let opted = TrackingPreferences(includeReviewRequests: true)
+        try await h.engine.setTrackingPreferences(opted)
+        #expect(await h.sync.tracking == opted)
+        #expect(await h.engine.trackingPreferences() == opted)
+        #expect(try await h.engine.snapshot().trackingPreferences == opted)
+
+        let restarted = MergeCueEngine(environment: EngineEnvironment(
+            database: h.db, credentials: h.credentials, providers: FakeProviderFactory(world: h.world), sync: h.sync,
+            workspace: h.workspace, clock: h.clock, paths: MergeCuePaths(root: h.root)
+        ))
+        try await h.db.setSetting("engine.tracking_preferences", TrackingPreferences.authoredOnly)
+        await restarted.start()
+        #expect(await h.sync.tracking == .authoredOnly)
+        await restarted.stop()
+    }
+
     @Test("Agent-result alert honours its switch, pause and quiet hours")
     func agentResultAlertIsGated() async throws {
         let off = try await Harness.make()

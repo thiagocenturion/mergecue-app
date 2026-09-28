@@ -16,11 +16,14 @@ public protocol SyncControlling: Sendable {
     func setNotificationPreferences(_ preferences: NotificationPreferences) async
     /// Global quiet hours for notifications (additive; the default implementation ignores them).
     func setQuietHours(_ quietHours: QuietHours?) async
+    /// Which scopes beyond "authored" are listed (additive; the default implementation ignores it).
+    func setTrackingPreferences(_ preferences: TrackingPreferences) async
 }
 
 extension SyncControlling {
     public func setNotificationPreferences(_ preferences: NotificationPreferences) async {}
     public func setQuietHours(_ quietHours: QuietHours?) async {}
+    public func setTrackingPreferences(_ preferences: TrackingPreferences) async {}
 }
 
 /// One semantic notification per change request per sync cycle.

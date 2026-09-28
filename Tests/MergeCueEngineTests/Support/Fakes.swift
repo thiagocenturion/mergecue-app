@@ -66,6 +66,7 @@ actor FakeSync: SyncControlling {
     private(set) var pausedUntil: Date?
     private(set) var preferences: NotificationPreferences?
     private(set) var quietHours: QuietHours??
+    private(set) var tracking: TrackingPreferences?
     var statusList: [AccountSyncStatus] = []
 
     func start() async {}
@@ -78,6 +79,7 @@ actor FakeSync: SyncControlling {
     func setNotificationsPaused(until: Date?) async { pausedUntil = until }
     func setNotificationPreferences(_ preferences: NotificationPreferences) async { self.preferences = preferences }
     func setQuietHours(_ quietHours: QuietHours?) async { self.quietHours = .some(quietHours) }
+    func setTrackingPreferences(_ preferences: TrackingPreferences) async { tracking = preferences }
 
     func setStatuses(_ statuses: [AccountSyncStatus]) { statusList = statuses }
 }

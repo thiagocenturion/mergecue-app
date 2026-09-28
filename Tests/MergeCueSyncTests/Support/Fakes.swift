@@ -20,6 +20,7 @@ final class FakeRemote: Sendable {
         var supportsInvolved = false
         var involvedError: ProviderError?
         var involvedQueries: [ChangeRequestQuery] = []
+        var listedScopes: [ChangeRequestScope] = []
     }
 
     private let state = OSAllocatedUnfairLock(initialState: State())
@@ -68,6 +69,7 @@ final class FakeRemote: Sendable {
     }
 
     var involvedQueries: [ChangeRequestQuery] { state.withLock { $0.involvedQueries } }
+    var listedScopes: [ChangeRequestScope] { state.withLock { $0.listedScopes } }
 
     var listCalls: Int { state.withLock { $0.listCalls } }
     var maxInFlightHydrations: Int { state.withLock { $0.maxInFlightHydrations } }
@@ -77,6 +79,7 @@ final class FakeRemote: Sendable {
     fileprivate func list(_ query: ChangeRequestQuery) throws -> ChangeRequestPage {
         try state.withLock { state in
             state.listCalls += 1
+            state.listedScopes.append(query.scope)
             if let error = state.listError { throw error }
             if query.scope == .involved {
                 state.involvedQueries.append(query)

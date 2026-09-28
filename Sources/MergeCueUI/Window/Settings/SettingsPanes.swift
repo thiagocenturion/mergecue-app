@@ -242,6 +242,17 @@ struct GeneralSettings: View {
     @Bindable var model: AppModel
     @State private var confirmModeSwitch = false
 
+    private func trackingBinding(_ keyPath: WritableKeyPath<TrackingPreferences, Bool>) -> Binding<Bool> {
+        Binding(
+            get: { model.state.trackingPreferences[keyPath: keyPath] },
+            set: { enabled in
+                var updated = model.state.trackingPreferences
+                updated[keyPath: keyPath] = enabled
+                Task { await model.send(.setTrackingPreferences(updated)) }
+            }
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Card("Startup", systemImage: "power") {
@@ -255,6 +266,20 @@ struct GeneralSettings: View {
                     Text(loginItemNote)
                         .font(.caption)
                         .foregroundStyle(loginItem == .requiresApproval ? Theme.waiting : .secondary)
+                }
+            }
+            Card("Tracking", systemImage: "person.crop.circle.badge.checkmark") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Your own PRs/MRs are always tracked.")
+                        .font(.callout)
+                    Toggle("Also track PRs/MRs that request my review", isOn: trackingBinding(\.includeReviewRequests))
+                        .toggleStyle(.switch)
+                    Toggle("Also track PRs/MRs I've reviewed or commented on", isOn: trackingBinding(\.includeInvolved))
+                        .toggleStyle(.switch)
+                    Text("Off by default: MergeCue then lists only pull/merge requests you authored. Other people's work appears only if you switch these on.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Card("Data source", systemImage: "externaldrive.connected.to.line.below") {

@@ -85,6 +85,24 @@ extension MergeCueEngine {
         }
     }
 
+    /// Settings ▸ General ▸ "Track": which PRs/MRs besides the user's own are listed. Persisted and forwarded to
+    /// Sync, then an immediate refresh so the inbox reflects the choice.
+    public func setTrackingPreferences(_ preferences: TrackingPreferences) async throws(EngineError) {
+        try await uiCall {
+            try await database.setSetting(SettingsKey.trackingPreferences, preferences)
+            await env.sync.setTrackingPreferences(preferences)
+            emit(.syncStatus)
+        }
+        await env.sync.refreshAll()
+    }
+
+    /// The stored choice. Live default: the user's own PRs/MRs only (owner decision); demo shows everything so
+    /// its review-request samples remain visible.
+    public func trackingPreferences() async -> TrackingPreferences {
+        (try? await database.setting(SettingsKey.trackingPreferences, as: TrackingPreferences.self))
+            ?? (env.isDemo ? .all : .authoredOnly)
+    }
+
     /// The stored switches (everything on when never set).
     public func notificationPreferences() async -> NotificationPreferences {
         (try? await database.setting(SettingsKey.notificationPreferences, as: NotificationPreferences.self)) ?? .allEnabled
@@ -155,6 +173,7 @@ extension MergeCueEngine {
             notificationsPausedUntil: await notificationsPausedUntil(),
             quietHours: await quietHours(),
             notificationPreferences: await notificationPreferences(),
+            trackingPreferences: await trackingPreferences(),
             lastRefreshAt: lastRefresh ?? nil,
             isDemo: env.isDemo,
             lastMaintenance: await lastMaintenance(),

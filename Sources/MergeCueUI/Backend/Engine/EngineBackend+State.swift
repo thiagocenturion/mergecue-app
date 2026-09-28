@@ -39,6 +39,7 @@ extension EngineBackend {
             notificationsPausedUntil: snapshot.notificationsPausedUntil,
             quietHours: snapshot.quietHours,
             notificationPreferences: snapshot.notificationPreferences,
+            trackingPreferences: snapshot.trackingPreferences,
             lastRefreshAt: snapshot.lastRefreshAt,
             lastMaintenance: snapshot.lastMaintenance,
             worktreeCleanupCandidates: snapshot.worktreeCleanupCandidates
