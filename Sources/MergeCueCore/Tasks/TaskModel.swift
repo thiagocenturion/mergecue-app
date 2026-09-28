@@ -89,11 +89,12 @@ public struct UntrustedText: Codable, Sendable, Hashable {
     /// Appended when `bounded` cuts the text.
     public static let truncationMarker = "\n[… truncated by MergeCue]"
 
-    /// Redacts secrets, then bounds the text to `maxBytes` UTF-8 bytes (keeping the head). When the text is cut,
+    /// Strips terminal control sequences and control characters (`TerminalControlStripper`, which also blocks
+    /// OSC 52 / OSC 8 injection into agent terminals), redacts secrets, then bounds the text to `maxBytes` UTF-8 bytes (keeping the head). When the text is cut,
     /// `truncationMarker` is appended **within** the budget (it is omitted if the budget is smaller than the
     /// marker), so `result.text.utf8.count <= max(0, maxBytes)` always holds.
     public static func bounded(source: String, author: String? = nil, createdAt: Date? = nil, text: String, maxBytes: Int) -> UntrustedText {
-        let redacted = SecretRedactor.redact(text)
+        let redacted = SecretRedactor.redact(TerminalControlStripper.strip(text))
         let budget = max(0, maxBytes)
         let marked: String
         if redacted.utf8.count <= budget {

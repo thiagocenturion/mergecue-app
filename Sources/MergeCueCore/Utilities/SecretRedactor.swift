@@ -3,7 +3,9 @@ import Foundation
 /// Masks credentials in text that may be displayed, copied, logged or returned over MCP.
 ///
 /// Covers GitHub (`ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, `github_pat_`), GitLab (`glpat-`, `gloas-`, `glrt-`
-/// and related prefixes), Atlassian (`ATATT…`, `ATCTT…`, `ATBB…`), Slack (`xox?-`), AWS access key ids, JWTs,
+/// and related prefixes), Atlassian (`ATATT…`, `ATCTT…`, `ATBB…`), Slack (`xox?-`, webhook URLs), OpenAI
+/// (`sk-proj-`, `sk-…`), Anthropic (`sk-ant-`), Stripe (`sk_live_`, `rk_live_`, test keys), npm (`npm_`), Docker
+/// Hub (`dckr_pat_`), Google API keys (`AIza…`), AWS access key ids, JWTs,
 /// `Authorization:` / `Bearer` / `Basic` values, secret-bearing headers (`PRIVATE-TOKEN`, `X-…-Token`, `Cookie`),
 /// `password=` / `token: …` / `"secret": …` / `:api_key => …` pairs, `--password value` CLI flags, PEM and PGP
 /// private keys and URL userinfo credentials. Ordinary prose is left untouched: bare words such as "token",
@@ -82,9 +84,10 @@ public enum SecretRedactor {
     /// A match may only start where the previous character is not part of the same key run.
     private static let runStart = #"(?<![\#(keyRunClass)])"#
 
-    /// Distinctive token prefixes: not preceded by an alphanumeric character, or right after a percent-escape
-    /// (`%3Aghs_…` in URL-encoded text).
-    private static let prefixStart = #"(?:(?<![A-Za-z0-9])|(?<=%[0-9A-Fa-f]{2}))"#
+    /// Distinctive token prefixes: not preceded by an alphanumeric character, right after a percent-escape
+    /// (`%3Aghs_…` in URL-encoded text), or right after an ANSI SGR/CSI sequence (`ESC[1mghp_…` in coloured CI
+    /// output — the `m` of the sequence would otherwise count as a preceding letter). The look-behind is bounded.
+    private static let prefixStart = #"(?:(?<![A-Za-z0-9])|(?<=%[0-9A-Fa-f]{2})|(?<=\x{1B}\[[0-9;:?<=>]{0,32}[A-Za-z@~]))"#
 
     /// Key names whose values are secrets. The key must *end* with one of these words, so `max_tokens=5` or
     /// `tokenizer=bert` are not touched. The prefix before the word is bounded (≤ 64 characters).
@@ -140,6 +143,20 @@ public enum SecretRedactor {
         },
         // Atlassian API tokens / Bitbucket app passwords.
         Rule(#"\#(prefixStart)(ATATT|ATCTT|ATBB)[A-Za-z0-9_\-=]{16,}"#) { m in "\(m.group(1))\(marker)" },
+        // OpenAI (`sk-proj-`, `sk-svcacct-`, `sk-admin-`, legacy `sk-` + 32+ alphanumerics) and Anthropic
+        // (`sk-ant-api03-…`) API keys.
+        Rule(#"\#(prefixStart)(sk-(?:proj|svcacct|admin|ant(?:-[a-z]{3,8}[0-9]{2})?)-)[A-Za-z0-9_\-]{20,}"#) { m in "\(m.group(1))\(marker)" },
+        Rule(#"\#(prefixStart)sk-[A-Za-z0-9]{32,}(?![A-Za-z0-9_\-])"#) { _ in "sk-\(marker)" },
+        // Stripe secret and restricted keys (live and test).
+        Rule(#"\#(prefixStart)((?:sk|rk)_(?:live|test)_)[A-Za-z0-9]{10,}"#) { m in "\(m.group(1))\(marker)" },
+        // npm, Docker Hub and Google API keys.
+        Rule(#"\#(prefixStart)(npm_)[A-Za-z0-9]{30,}"#) { m in "\(m.group(1))\(marker)" },
+        Rule(#"\#(prefixStart)(dckr_pat_)[A-Za-z0-9_\-]{20,}"#) { m in "\(m.group(1))\(marker)" },
+        Rule(#"\#(prefixStart)(AIza)[0-9A-Za-z_\-]{35}"#) { m in "\(m.group(1))\(marker)" },
+        // Slack incoming-webhook / workflow URLs: the path is the secret.
+        Rule(#"(https?://hooks\.slack(?:-gov)?\.com/(?:services|workflows|triggers)/)[A-Za-z0-9_/\-]+"#, options: [.caseInsensitive]) { m in
+            "\(m.group(1))\(marker)"
+        },
         // Slack tokens.
         Rule(#"\#(prefixStart)(xox[a-z]-)[A-Za-z0-9\-]{8,}"#) { m in "\(m.group(1))\(marker)" },
         // AWS access key ids.
