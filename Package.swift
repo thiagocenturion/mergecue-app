@@ -60,7 +60,7 @@ let package = Package(
 
         // MARK: Services
         .target(name: "MergeCueSync", dependencies: ["MergeCueCore", "MergeCueStore"]),
-        .target(name: "MergeCueEngine", dependencies: ["MergeCueCore", "MergeCueStore", "MergeCueIPC"]),
+        .target(name: "MergeCueEngine", dependencies: ["MergeCueCore", "MergeCueStore", "MergeCueIPC"], exclude: ["README.md"]),
         .target(name: "MergeCueMCPServer", dependencies: ["MergeCueCore", "MergeCueIPC", mcp]),
         .target(
             name: "MergeCueRuntime",
