@@ -145,18 +145,24 @@ struct SidebarAccountRow: View {
         Button {
             model.showSettings(.accounts)
         } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: Self.spacing) {
                 ProviderGlyph(kind: account.kind, size: 26)
+                // The name column takes every point the trailing status needs not (layout priority), and a long
+                // label wraps to a second line instead of being cut ("Bitbucket (de…" at the default width).
                 VStack(alignment: .leading, spacing: 1) {
                     Text(account.kind.shortName)
                         .font(.system(size: 13.5, weight: .semibold))
                         .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(1)
                     Text(account.account.displayLabel)
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(1)
+                        .lineLimit(Self.labelLineLimit)
+                        .truncationMode(.middle)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
                 Circle()
                     .fill(Self.dotColor(account.status.state))
                     .frame(width: 8, height: 8)
@@ -165,7 +171,8 @@ struct SidebarAccountRow: View {
                     .foregroundStyle(Theme.textTertiary)
             }
             .padding(.horizontal, 10)
-            .frame(height: 50)
+            .padding(.vertical, 7)
+            .frame(minHeight: Self.minHeight)
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(isHovering ? Theme.surfaceHover : .clear))
         }
         .buttonStyle(PlainRowButtonStyle())
@@ -174,6 +181,11 @@ struct SidebarAccountRow: View {
         .accessibilityLabel("\(account.kind.displayName) account \(account.account.displayLabel), \(status)")
         .accessibilityHint("Opens Settings, Accounts")
     }
+
+    static let spacing: CGFloat = 10
+    static let minHeight: CGFloat = 50
+    /// Labels longer than one line wrap once; beyond that the middle is elided (the tooltip has the full label).
+    static let labelLineLimit = 2
 
     /// Green ok, amber rate-limited / offline / syncing trouble, red credentials expired or errors.
     static func dotColor(_ state: AccountSyncState) -> Color {
