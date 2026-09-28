@@ -18,33 +18,75 @@ extension MergeCueEngine {
     }
 
     /// Maps a repository to a local checkout. The confidence comes from `WorkspaceInspecting.match` (remote URL /
-    /// host / path); only an `exact` match is confirmed automatically — others require `confirmMapping`.
+    /// host / path); only an `exact` match is confirmed automatically — others require `confirmMapping`, unless
+    /// `confirm` is true (the owner explicitly chose "Map anyway" after seeing `previewMapping`). A subfolder of a
+    /// checkout maps the checkout's top level. Missing folders and folders that are not git checkouts are refused.
     @discardableResult
-    public func addMapping(repo: RepoKey, repoFullPath: String, checkoutPath: String) async throws(EngineError) -> RepoMapping {
+    public func addMapping(repo: RepoKey, repoFullPath: String, checkoutPath: String, confirm: Bool = false) async throws(EngineError) -> RepoMapping {
         try await uiCall {
-            let path = (checkoutPath as NSString).standardizingPath
-            guard path.hasPrefix("/") else {
-                throw EngineError.invalidInput("Choose an absolute folder path for the checkout.")
+            let preview = try await mappingPreview(repo: repo, repoFullPath: repoFullPath, checkoutPath: checkoutPath)
+            guard preview.isRepository else {
+                throw EngineError.invalidInput(preview.suggestion.reason)
             }
-            let repository = try await findRepository(repo) ?? Repository(
-                key: repo, namespacePath: "", name: (repoFullPath as NSString).lastPathComponent, fullPath: repoFullPath,
-                webURL: repo.account.kind.defaultInstance.webURL
-            )
-            let suggestion = await env.workspace.match(repo: repository, checkoutPath: path)
+            let suggestion = preview.suggestion
+            let existing = try await database.mappings(repo: repo)
+                .first { ($0.checkoutPath as NSString).standardizingPath == suggestion.checkoutPath }
             let mapping = RepoMapping(
-                id: ids.mappingID(),
+                id: existing?.id ?? ids.mappingID(),
                 repo: repo,
-                repoFullPath: repository.fullPath,
-                checkoutPath: path,
+                repoFullPath: preview.repository.fullPath,
+                checkoutPath: suggestion.checkoutPath,
                 confidence: suggestion.confidence,
                 matchedRemote: suggestion.matchedRemote,
-                confirmedAt: suggestion.confidence == .exact ? now : nil,
-                createdAt: now
+                confirmedAt: suggestion.confidence == .exact || confirm ? now : nil,
+                createdAt: existing?.createdAt ?? now
             )
             try await database.upsertMapping(mapping)
             emit(.mappings)
             return mapping
         }
+    }
+
+    /// What mapping `checkoutPath` to `repo` would record, without saving anything: the match (resolved to the
+    /// checkout's top level), the remotes found and the remotes expected — shown before "Map anyway".
+    public func previewMapping(repo: RepoKey, repoFullPath: String, checkoutPath: String) async throws(EngineError) -> MappingPreview {
+        try await uiCall { try await mappingPreview(repo: repo, repoFullPath: repoFullPath, checkoutPath: checkoutPath) }
+    }
+
+    private func mappingPreview(repo: RepoKey, repoFullPath: String, checkoutPath: String) async throws -> MappingPreview {
+        let path = (checkoutPath as NSString).standardizingPath
+        guard path.hasPrefix("/") else {
+            throw EngineError.invalidInput("Choose an absolute folder path for the checkout.")
+        }
+        let repository = try await mappableRepository(repo, fullPath: repoFullPath)
+        var suggestion = await env.workspace.match(repo: repository, checkoutPath: path)
+        suggestion.checkoutPath = (suggestion.checkoutPath as NSString).standardizingPath
+        let info = try? await env.workspace.inspect(path: suggestion.checkoutPath)
+        let isRepository = suggestion.confidence != .mismatch || (info?.isRepository ?? false)
+        return MappingPreview(
+            repository: repository,
+            chosenPath: path,
+            suggestion: suggestion,
+            isRepository: isRepository,
+            remotesFound: (info?.remotes ?? []).map { "\($0.name) → \(CanonicalRemote.sanitizedURL($0.fetchURL))" },
+            remotesExpected: CanonicalRemote.candidates(for: repository).map(\.description).sorted()
+        )
+    }
+
+    /// The stored repository, else one built from the account's instance and the full path (so its remotes can
+    /// still be matched when the listing has not been stored yet).
+    private func mappableRepository(_ key: RepoKey, fullPath: String) async throws -> Repository {
+        if let stored = try await findRepository(key) { return stored }
+        let trimmed = fullPath.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        let base = (try await database.account(key.account))?.instance.webURL ?? key.account.kind.defaultInstance.webURL
+        let slash = trimmed.lastIndex(of: "/")
+        return Repository(
+            key: key,
+            namespacePath: slash.map { String(trimmed[..<$0]) } ?? "",
+            name: slash.map { String(trimmed[trimmed.index(after: $0)...]) } ?? trimmed,
+            fullPath: trimmed,
+            webURL: base.appending(path: trimmed)
+        )
     }
 
     /// The user confirms a probable/mismatched mapping.

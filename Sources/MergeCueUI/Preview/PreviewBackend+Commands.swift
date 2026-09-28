@@ -120,6 +120,19 @@ extension PreviewBackend {
             state.mappings.append(RepoMapping(id: IDGenerator.mappingID(), repo: repo, repoFullPath: path, checkoutPath: checkoutPath,
                                               confidence: .probable, confirmedAt: now, createdAt: now))
             return AppCommandResult(message: "Mapped \(path) to \(checkoutPath). Preview: the checkout's remotes were not inspected.")
+        case .mapCheckoutFolder(let repo, let path, let checkoutPath, _):
+            state.mappings.removeAll { $0.repo == repo && $0.checkoutPath == checkoutPath }
+            let mapping = RepoMapping(id: IDGenerator.mappingID(), repo: repo, repoFullPath: path, checkoutPath: checkoutPath,
+                                      confidence: .probable, createdAt: now)
+            state.mappings.append(mapping)
+            return AppCommandResult(message: "Mapped \(path) to \(checkoutPath). Preview: the checkout's remotes were not inspected.",
+                                    savedMapping: mapping)
+        case .cancelCheckoutScan:
+            state.checkoutScan.isRunning = false
+            return .none
+        case .setCheckoutSearchFolders(let folders):
+            state.checkoutSearchFolders = folders ?? []
+            return AppCommandResult(message: "Preview data: search folders are not stored.")
         case .confirmMapping(let id):
             guard let index = state.mappings.firstIndex(where: { $0.id == id }) else { throw AppBackendError.notFound("The mapping") }
             state.mappings[index].confirmedAt = now

@@ -25,6 +25,7 @@ struct RepositoriesSettings: View {
                     }
                 }
             }
+            SearchFoldersCard(model: model)
             if model.state.accounts.isEmpty {
                 Text("Connect an account in Settings › Accounts to list its repositories.")
                     .scaledFont(.callout).foregroundStyle(Theme.textSecondary)
@@ -35,17 +36,18 @@ struct RepositoriesSettings: View {
     }
 }
 
-/// A repository without a mapping: find matching checkouts (with confidence) or choose a folder.
+/// A repository without a mapping: scan candidates (with confidence) or Choose Folder….
 struct UnmappedRepositoryRow: View {
     let model: AppModel
     let repo: Repository
     var hasOpenPRs = false
-    @State private var found: [MappingSuggestion]?
-    @State private var searching = false
+    @State private var mapping = false
+    @State private var errorMessage: String?
+    @State private var mismatch: MappingPreview?
 
-    /// Own search results, else candidates from the background checkout scan.
+    /// Candidates from the screen-level checkout scan.
     private var suggestions: [MappingSuggestion]? {
-        found ?? model.state.checkoutScan.suggestions[repo.key]
+        model.state.checkoutScan.suggestions[repo.key]
     }
 
     var body: some View {
@@ -58,16 +60,22 @@ struct UnmappedRepositoryRow: View {
                     Chip(text: "has open \(repo.providerKind.changeRequestAbbreviation)s", symbol: "arrow.triangle.pull", tone: .neutral)
                 }
                 Spacer()
-                if searching { ProgressView().controlSize(.small) }
-                Button("Find Checkouts") { find() }
-                    .disabled(searching)
-                    .help("Looks in ~/Developer, ~/Projects, ~/Code, ~/src and ~/Documents/GitHub for clones whose remote matches")
-                Button("Choose Folder…") { chooseCheckout() }
-            }
-            if let suggestions {
-                if suggestions.isEmpty {
-                    Text("No matching checkout found — choose the folder yourself.").scaledFont(.caption).foregroundStyle(Theme.textSecondary)
+                if mapping {
+                    ProgressView().controlSize(.small)
+                    Text("Checking folder…").scaledFont(.caption).foregroundStyle(Theme.textSecondary)
                 }
+                Button("Choose Folder…") { chooseCheckout() }
+                    .disabled(mapping)
+                    .accessibilityLabel("Choose the local checkout folder of \(repo.fullPath)")
+            }
+            if let errorMessage {
+                Label(errorMessage, systemImage: "exclamationmark.triangle")
+                    .scaledFont(.caption)
+                    .foregroundStyle(Theme.criticalText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 24)
+            }
+            if let suggestions, !suggestions.isEmpty {
                 ForEach(suggestions, id: \.checkoutPath) { suggestion in
                     HStack(spacing: 8) {
                         ConfidenceChip(confidence: suggestion.confidence)
@@ -80,22 +88,18 @@ struct UnmappedRepositoryRow: View {
                                 .truncationMode(.middle)
                         }
                         Spacer()
-                        Button("Use This Checkout") {
-                            Task { await model.send(.addMapping(repo: repo.key, repoFullPath: repo.fullPath, checkoutPath: suggestion.checkoutPath)) }
-                        }
-                        .disabled(suggestion.confidence == .mismatch)
+                        Button("Use This Checkout") { map(suggestion.checkoutPath) }
+                            .disabled(suggestion.confidence == .mismatch || mapping)
                     }
                     .padding(.leading, 24)
                 }
             }
         }
-    }
-
-    private func find() {
-        searching = true
-        Task {
-            found = await model.send(.findCheckouts(repo.key))?.mappingSuggestions ?? []
-            searching = false
+        .sheet(item: $mismatch) { preview in
+            MappingMismatchSheet(preview: preview) { mapAnyway in
+                mismatch = nil
+                if mapAnyway { map(preview.suggestion.checkoutPath, anyway: true) }
+            }
         }
     }
 
@@ -107,7 +111,78 @@ struct UnmappedRepositoryRow: View {
         panel.prompt = "Map"
         panel.message = "Choose the local checkout of \(repo.fullPath) (\(repo.providerKind.displayName))"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        Task { await model.send(.addMapping(repo: repo.key, repoFullPath: repo.fullPath, checkoutPath: url.path(percentEncoded: false))) }
+        map(url.path(percentEncoded: false))
+    }
+
+    /// Inspects and saves; a mismatch or a folder that is not a checkout opens the explanation sheet, any other
+    /// failure stays visible on the row (and as a banner).
+    private func map(_ path: String, anyway: Bool = false) {
+        mapping = true
+        errorMessage = nil
+        Task {
+            let result = await model.send(.mapCheckoutFolder(repo: repo.key, repoFullPath: repo.fullPath, checkoutPath: path, mapAnyway: anyway))
+            mapping = false
+            if let result {
+                if let preview = result.mappingPreview { mismatch = preview }
+            } else {
+                errorMessage = "Couldn't map \(UIFormat.abbreviatedPath(path)): \(model.lastCommandError ?? "unknown error")"
+            }
+        }
+    }
+}
+
+/// Explains why a chosen folder was not mapped: the remotes found vs the ones expected. "Map Anyway" only for a
+/// real checkout (confirmed mismatches are usable but ranked last by the checkout policy).
+struct MappingMismatchSheet: View {
+    let preview: MappingPreview
+    var done: (Bool) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(preview.isRepository ? "Remotes don't match \(preview.repository.fullPath)" : "Not a git checkout",
+                  systemImage: "exclamationmark.triangle")
+                .scaledFont(.headline)
+                .foregroundStyle(Theme.attentionText)
+            Text(UIFormat.abbreviatedPath(preview.suggestion.checkoutPath))
+                .scaledFont(.callout.monospaced())
+                .textSelection(.enabled)
+            Text(preview.suggestion.reason)
+                .scaledFont(.callout)
+                .foregroundStyle(Theme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            if preview.isRepository {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Remotes found").scaledFont(.caption.weight(.medium))
+                    ForEach(preview.remotesFound.isEmpty ? ["none"] : preview.remotesFound, id: \.self) {
+                        Text($0).scaledFont(.caption.monospaced()).foregroundStyle(Theme.textSecondary)
+                    }
+                    Text("Expected").scaledFont(.caption.weight(.medium)).padding(.top, 4)
+                    ForEach(preview.remotesExpected, id: \.self) {
+                        Text($0).scaledFont(.caption.monospaced()).foregroundStyle(Theme.textSecondary)
+                    }
+                }
+                .textSelection(.enabled)
+                Text("Map anyway only if this really is a clone of \(preview.repository.fullPath) (e.g. behind an unusual SSH alias). Agents still work in an isolated worktree, never in this folder.")
+                    .scaledFont(.caption)
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Choose the folder of a git clone (or any folder inside it).")
+                    .scaledFont(.caption)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            HStack {
+                Spacer()
+                Button(preview.canMapAnyway ? "Cancel" : "OK") { done(false) }
+                    .keyboardShortcut(.cancelAction)
+                if preview.canMapAnyway {
+                    Button("Map Anyway") { done(true) }
+                        .accessibilityLabel("Map \(preview.repository.fullPath) to this checkout anyway")
+                }
+            }
+        }
+        .padding(20)
+        .frame(width: 460)
     }
 }
 
@@ -125,6 +200,58 @@ struct ConfidenceChip: View {
     }
 }
 
+/// Settings ▸ Repositories ▸ Search folders: where "Find Checkouts" looks (add / remove / reset).
+struct SearchFoldersCard: View {
+    let model: AppModel
+
+    var body: some View {
+        let folders = model.state.checkoutSearchFolders
+        Card("Search folders", systemImage: "magnifyingglass") {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Find Checkouts walks these folders once, up to 4 levels deep, skipping hidden, build and dependency folders.")
+                    .scaledFont(.caption)
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if folders.isEmpty {
+                    Text("No search folders").scaledFont(.callout).foregroundStyle(Theme.textSecondary)
+                }
+                ForEach(folders, id: \.self) { folder in
+                    HStack(spacing: 8) {
+                        Image(systemName: "folder").foregroundStyle(Theme.textSecondary)
+                        Text(UIFormat.abbreviatedPath(folder)).scaledFont(.callout.monospaced())
+                        if !FileManager.default.fileExists(atPath: folder) {
+                            Text("not found, skipped").scaledFont(.caption).foregroundStyle(Theme.textSecondary)
+                        }
+                        Spacer()
+                        Button("Remove") {
+                            Task { await model.send(.setCheckoutSearchFolders(folders.filter { $0 != folder })) }
+                        }
+                        .accessibilityLabel("Remove search folder \(UIFormat.abbreviatedPath(folder))")
+                    }
+                }
+                HStack {
+                    Button("Add Folder…") { add(to: folders) }
+                    Button("Restore Defaults") { Task { await model.send(.setCheckoutSearchFolders(nil)) } }
+                }
+                .padding(.top, 4)
+            }
+        }
+    }
+
+    private func add(to folders: [String]) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = true
+        panel.prompt = "Add"
+        panel.message = "Choose folders that contain your git clones"
+        guard panel.runModal() == .OK else { return }
+        let added = panel.urls.map { $0.path(percentEncoded: false) }
+        Task { await model.send(.setCheckoutSearchFolders(folders + added)) }
+    }
+}
+
+/// A mapped repository: confidence, checkout, Confirm (when unconfirmed) and Remove.
 struct MappingRow: View {
     let model: AppModel
     let mapping: RepoMapping

@@ -76,12 +76,12 @@ public struct RuntimeOptions: Sendable {
         self.ids = ids
     }
 
-    /// `~/Developer`, `~/Projects`, `~/Code`, `~/src`, `~/Documents/GitHub` (only those that exist are scanned).
+    /// `~/Developer`, `~/Projects`, `~/Code`, `~/src`, `~/Documents/GitHub`, `~/Documents` — the default
+    /// Settings ▸ Repositories ▸ Search folders (the owner can edit the list; folders that do not exist are skipped).
     public static var defaultMappingSearchRoots: [String] {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        return ["Developer", "Projects", "Code", "src", "Documents/GitHub"]
+        return ["Developer", "Projects", "Code", "src", "Documents/GitHub", "Documents"]
             .map { MergeCuePaths.fileSystemPath(home.appending(path: $0, directoryHint: .isDirectory)) }
-            .filter { FileManager.default.fileExists(atPath: $0) }
     }
 }
 

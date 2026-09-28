@@ -26,30 +26,64 @@ public nonisolated enum RepositoryListState: Sendable, Hashable {
     }
 }
 
-/// Progress of the local checkout scan (exact remote matches are mapped automatically).
+/// Progress of the local checkout scan — one walk of the search folders, counted in directories (exact remote
+/// matches are mapped automatically). Only started by the owner ("Find Checkouts").
 public nonisolated struct CheckoutScanState: Sendable, Hashable {
     public var isRunning: Bool
-    public var done: Int
-    public var total: Int
+    /// Directories walked so far.
+    public var directoriesScanned: Int
+    /// Git checkouts found so far.
+    public var checkoutsFound: Int
+    /// The walk finished; remotes are being matched.
+    public var isMatching: Bool
     /// Repositories mapped automatically by the last scan.
     public var mappedCount: Int
     /// Candidates that need the owner's confirmation, by repository.
     public var suggestions: [RepoKey: [MappingSuggestion]]
     public var finishedAt: Date?
     public var errorMessage: String?
+    public var wasCancelled: Bool
+    /// A bound stopped the walk early (very large folders).
+    public var isTruncated: Bool
 
-    public init(isRunning: Bool = false, done: Int = 0, total: Int = 0, mappedCount: Int = 0,
-                suggestions: [RepoKey: [MappingSuggestion]] = [:], finishedAt: Date? = nil, errorMessage: String? = nil) {
+    public init(isRunning: Bool = false, directoriesScanned: Int = 0, checkoutsFound: Int = 0, isMatching: Bool = false,
+                mappedCount: Int = 0, suggestions: [RepoKey: [MappingSuggestion]] = [:], finishedAt: Date? = nil,
+                errorMessage: String? = nil, wasCancelled: Bool = false, isTruncated: Bool = false) {
         self.isRunning = isRunning
-        self.done = done
-        self.total = total
+        self.directoriesScanned = directoriesScanned
+        self.checkoutsFound = checkoutsFound
+        self.isMatching = isMatching
         self.mappedCount = mappedCount
         self.suggestions = suggestions
         self.finishedAt = finishedAt
         self.errorMessage = errorMessage
+        self.wasCancelled = wasCancelled
+        self.isTruncated = isTruncated
     }
 
     public static let idle = CheckoutScanState()
+
+    /// "Scanning… 1,240 folders checked, 12 checkouts found".
+    public var progressText: String {
+        let folders = "\(directoriesScanned.formatted()) folder\(directoriesScanned == 1 ? "" : "s") checked"
+        let found = "\(checkoutsFound) checkout\(checkoutsFound == 1 ? "" : "s") found"
+        return isMatching ? "Matching remotes… \(found)" : "Scanning your search folders… \(folders), \(found)"
+    }
+
+    /// Outcome line once finished.
+    public var summaryText: String? {
+        if let errorMessage { return "Checkout search failed: \(errorMessage)" }
+        guard finishedAt != nil else { return nil }
+        if wasCancelled { return "Search cancelled — nothing was mapped." }
+        let pending = suggestions.values.filter { !$0.isEmpty }.count
+        var parts: [String] = []
+        parts.append(mappedCount == 0
+            ? "No exact remote match to map automatically"
+            : "Mapped \(mappedCount) repositor\(mappedCount == 1 ? "y" : "ies") to exact remote matches")
+        if pending > 0 { parts.append("\(pending) with candidates to review below") }
+        let checked = "(\(directoriesScanned.formatted()) folders, \(checkoutsFound) checkouts)"
+        return parts.joined(separator: "; ") + " \(checked)." + (isTruncated ? " The search stopped at its size limit — add a narrower search folder." : "")
+    }
 }
 
 /// What the repositories step / pane shows for one account's PR-backed repositories.

@@ -64,14 +64,15 @@ struct RepositoryDirectoryTests {
         _ = try await h.engine.accountRepositories(Fixture.github)
         let docs = RepoKey(account: Fixture.github, remoteRepoID: "r9")
         // FakeWorkspace suggests one probable candidate per root.
-        let progress = Locked<[Int]>([])
-        let report = try await h.engine.detectCheckouts(for: [docs, docs, Fixture.repo(Fixture.github)], searchRoots: ["/tmp/code"]) { done, _ in
-            progress.update { $0.append(done) }
+        let progress = Locked<[CheckoutScanProgress]>([])
+        let report = try await h.engine.detectCheckouts(for: [docs, docs, Fixture.repo(Fixture.github)], searchRoots: ["/tmp/code"]) { value in
+            progress.update { $0.append(value) }
         }
         #expect(report.scanned == 2)
         #expect(report.mapped.isEmpty)
         #expect(report.suggestions[docs]?.first?.checkoutPath == "/tmp/code/docs-site")
-        #expect(progress.get() == [0, 1, 2])
+        #expect(progress.get().last?.isMatching == true)
+        #expect(report.directoriesScanned == 7)
 
         h.workspace.state.update { $0.suggestionConfidence = .exact }
         let exact = try await h.engine.detectCheckouts(for: [docs], searchRoots: ["/tmp/code"])
@@ -82,5 +83,66 @@ struct RepositoryDirectoryTests {
         #expect(after.scanned == 0, "already mapped repositories are skipped")
         let bounded = try await h.engine.detectCheckouts(for: [Fixture.repo(Fixture.github)], searchRoots: ["/tmp/code"], maxRepositories: 0)
         #expect(bounded.skipped == 1 && bounded.scanned == 0)
+    }
+
+    @Test("many repositories are matched by ONE scan pass; exact unique matches are mapped")
+    func singlePass() async throws {
+        let h = try await Harness.make(.init(mapCheckout: false))
+        let repos = (0..<50).map { Self.repository("r\($0)", "svc-\($0)") }
+        h.world.state.update { $0.repositories = repos }
+        _ = try await h.engine.accountRepositories(Fixture.github)
+        h.workspace.state.update { $0.suggestionConfidence = .exact }
+        let report = try await h.engine.detectCheckouts(for: repos.map(\.key), searchRoots: ["/tmp/code"])
+        #expect(h.workspace.state.get().scanCalls.count == 1)
+        #expect(h.workspace.state.get().scanCalls.first?.count == 50)
+        #expect(report.mapped.count == 50)
+        #expect(try await h.engine.mappings().count == 50)
+    }
+
+    @Test("search folders persist in the engine settings and feed the scan; nil restores the defaults")
+    func searchFolders() async throws {
+        let h = try await Harness.make(.init(mapCheckout: false))
+        let defaults = await h.engine.checkoutSearchFolders()
+        let saved = try await h.engine.setCheckoutSearchFolders(["/tmp/a", " /tmp/b/ ", "/tmp/a"])
+        #expect(saved == ["/tmp/a", "/tmp/b"])
+        #expect(try await h.db.setting("engine.checkout_search_folders", as: [String].self) == ["/tmp/a", "/tmp/b"])
+        #expect(await h.engine.checkoutSearchFolders() == ["/tmp/a", "/tmp/b"])
+        h.world.state.update { $0.repositories = [Self.repository("r9", "docs-site")] }
+        _ = try await h.engine.accountRepositories(Fixture.github)
+        let report = try await h.engine.detectCheckouts(for: [RepoKey(account: Fixture.github, remoteRepoID: "r9")])
+        #expect(report.suggestions.values.first?.map(\.checkoutPath) == ["/tmp/a/docs-site", "/tmp/b/docs-site"])
+        await #expect(throws: EngineError.self) { try await h.engine.setCheckoutSearchFolders(["relative/path"]) }
+        try await h.engine.setCheckoutSearchFolders(nil)
+        #expect(await h.engine.checkoutSearchFolders() == defaults)
+    }
+
+    @Test("Choose Folder maps an unstored repository too, resolving its remotes from the account instance")
+    func chooseFolderWithoutStoredRepository() async throws {
+        let h = try await Harness.make(.init(mapCheckout: false))
+        let key = RepoKey(account: Fixture.github, remoteRepoID: "not-listed")
+        let preview = try await h.engine.previewMapping(repo: key, repoFullPath: "acme/unlisted", checkoutPath: "/tmp/code/unlisted/")
+        #expect(preview.remotesExpected.contains("github.com/acme/unlisted"))
+        #expect(preview.suggestion.checkoutPath == "/tmp/code/unlisted")
+        let mapping = try await h.engine.addMapping(repo: key, repoFullPath: "acme/unlisted", checkoutPath: "/tmp/code/unlisted")
+        #expect(mapping.isConfirmed)
+        let again = try await h.engine.addMapping(repo: key, repoFullPath: "acme/unlisted", checkoutPath: "/tmp/code/unlisted")
+        #expect(again.id == mapping.id, "choosing the same folder again updates, never duplicates")
+        #expect(try await h.engine.mappings(repo: key).count == 1)
+    }
+
+    @Test("a mismatched folder that is not a checkout is refused; Map anyway confirms a real one")
+    func mismatchPolicy() async throws {
+        let h = try await Harness.make(.init(mapCheckout: false))
+        let key = RepoKey(account: Fixture.github, remoteRepoID: "x")
+        h.workspace.state.update { $0.matchConfidence = .mismatch }
+        await #expect(throws: EngineError.self) {
+            try await h.engine.addMapping(repo: key, repoFullPath: "acme/x", checkoutPath: "/tmp/not-a-repo")
+        }
+        #expect(try await h.engine.mappings(repo: key).isEmpty)
+        h.workspace.setCheckout("/tmp/other-clone", safety: .safe)
+        let preview = try await h.engine.previewMapping(repo: key, repoFullPath: "acme/x", checkoutPath: "/tmp/other-clone")
+        #expect(preview.canMapAnyway)
+        let forced = try await h.engine.addMapping(repo: key, repoFullPath: "acme/x", checkoutPath: "/tmp/other-clone", confirm: true)
+        #expect(forced.confidence == .mismatch && forced.isConfirmed)
     }
 }

@@ -206,6 +206,7 @@ enum SettingsKey {
     static let lastMaintenance = "engine.last_maintenance"
     static let agentReadAccess = "engine.agent_read_access"
     static let lastRefreshAt = "engine.last_refresh_at"
+    static let checkoutSearchFolders = "engine.checkout_search_folders"
     static func repositoryListFetchedAt(_ account: AccountKey) -> String { "engine.repository_list_fetched_at.\(account.id)" }
     static func performedAction(_ fingerprint: String) -> String { "engine.performed_action.\(fingerprint)" }
     static func eventTask(_ eventID: String) -> String { "engine.event_task.\(eventID)" }

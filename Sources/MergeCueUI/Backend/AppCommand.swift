@@ -158,6 +158,11 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
 
     // MARK: Repository mappings
     case addMapping(repo: RepoKey, repoFullPath: String, checkoutPath: String)
+    /// "Choose Folder…": inspects the folder (a subfolder maps its checkout's top level) and matches its remotes.
+    /// Exact → saved and confirmed; probable → saved, needs Confirm; mismatch or not a checkout → nothing saved,
+    /// the result carries `mappingPreview` (remotes found vs expected). `mapAnyway` saves a mismatched checkout
+    /// confirmed (only offered when `MappingPreview.canMapAnyway`).
+    case mapCheckoutFolder(repo: RepoKey, repoFullPath: String, checkoutPath: String, mapAnyway: Bool)
     case confirmMapping(id: String)
     case removeMapping(id: String)
 
@@ -189,6 +194,10 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
     /// Searches the default folders for checkouts of these (unmapped) repositories, in order, bounded; exact remote
     /// matches are mapped automatically. Runs in the background; progress is in `AppState.checkoutScan`.
     case scanCheckouts([RepoKey])
+    /// Stops the running checkout scan (nothing is mapped by a cancelled scan).
+    case cancelCheckoutScan
+    /// Settings ▸ Repositories ▸ Search folders (nil restores the defaults).
+    case setCheckoutSearchFolders([String]?)
 
     // MARK: App and data
     case setLaunchAtLogin(Bool)
@@ -231,6 +240,9 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
         case .disconnectAccount: "disconnectAccount"
         case .setWritesEnabled: "setWritesEnabled"
         case .addMapping: "addMapping"
+        case .mapCheckoutFolder(_, _, _, let anyway): "mapCheckoutFolder(anyway: \(anyway))"
+        case .cancelCheckoutScan: "cancelCheckoutScan"
+        case .setCheckoutSearchFolders(let folders): "setCheckoutSearchFolders(\(folders?.count ?? -1))"
         case .confirmMapping: "confirmMapping"
         case .removeMapping: "removeMapping"
         case .copyHandoffCommand: "copyHandoffCommand"
@@ -273,6 +285,10 @@ public nonisolated struct AppCommandResult: Sendable {
     public var verification: AgentVerification?
     /// Set by `.findCheckouts`.
     public var mappingSuggestions: [MappingSuggestion]?
+    /// Set by `.mapCheckoutFolder` when nothing was saved (mismatch / not a checkout): what was found vs expected.
+    public var mappingPreview: MappingPreview?
+    /// Set by `.mapCheckoutFolder` when a mapping was saved.
+    public var savedMapping: RepoMapping?
     /// Banner tone for `message` (nil = derived: success for handoffs/new tasks, neutral otherwise). Recorded
     /// refusals (an approved action blocked by fresh state, a failed write) use `.critical`.
     public var tone: Tone?
@@ -287,8 +303,12 @@ public nonisolated struct AppCommandResult: Sendable {
         registrationPlan: MCPRegistrationPlan? = nil,
         verification: AgentVerification? = nil,
         mappingSuggestions: [MappingSuggestion]? = nil,
+        mappingPreview: MappingPreview? = nil,
+        savedMapping: RepoMapping? = nil,
         tone: Tone? = nil
     ) {
+        self.mappingPreview = mappingPreview
+        self.savedMapping = savedMapping
         self.message = message
         self.preview = preview
         self.handoffCommand = handoffCommand

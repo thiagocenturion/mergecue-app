@@ -127,6 +127,8 @@ extension EngineBackend {
             let mapping = try await engine.addMapping(repo: repo, repoFullPath: path, checkoutPath: checkoutPath)
             let confirmation = mapping.isConfirmed ? "confirmed (exact remote match)" : "\(mapping.confidence.rawValue) match — confirm it to use it"
             return AppCommandResult(message: "Mapped \(path) to \(UIFormat.abbreviatedPath(checkoutPath)): \(confirmation)")
+        case .mapCheckoutFolder(let repo, let path, let checkoutPath, let mapAnyway):
+            return try await mapCheckoutFolder(repo: repo, repoFullPath: path, checkoutPath: checkoutPath, mapAnyway: mapAnyway)
         case .confirmMapping(let id):
             _ = try await engine.confirmMapping(id: id)
             return AppCommandResult(message: "Mapping confirmed")
@@ -142,6 +144,13 @@ extension EngineBackend {
             return .none
         case .scanCheckouts(let repos):
             return startCheckoutScan(repos) ? .none : AppCommandResult(message: "A checkout search is already running.")
+        case .cancelCheckoutScan:
+            return cancelCheckoutScan() ? .none : AppCommandResult(message: "No checkout search is running.")
+        case .setCheckoutSearchFolders(let folders):
+            let saved = try await engine.setCheckoutSearchFolders(folders)
+            return AppCommandResult(message: folders == nil
+                ? "Search folders reset to the defaults (\(saved.count))"
+                : "Search folders saved (\(saved.count))")
 
         // MARK: Handoff and links
         case .copyHandoffCommand(let id, let agent):

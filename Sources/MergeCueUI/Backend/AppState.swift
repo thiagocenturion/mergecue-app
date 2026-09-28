@@ -173,6 +173,8 @@ public nonisolated struct AppState: Sendable, Hashable {
     public var repositoryLists: [AccountKey: RepositoryListState]
     /// The local checkout scan (`.scanCheckouts`).
     public var checkoutScan: CheckoutScanState
+    /// Settings ▸ Repositories ▸ Search folders (engine setting; the scan walks these).
+    public var checkoutSearchFolders: [String]
     /// Settings ▸ Agents ▸ "Agent read access" (engine setting).
     public var agentReadAccess: AgentReadAccess
 
@@ -195,10 +197,12 @@ public nonisolated struct AppState: Sendable, Hashable {
         worktreeCleanupCandidates: [WorktreeCleanupCandidate] = [],
         repositoryLists: [AccountKey: RepositoryListState] = [:],
         checkoutScan: CheckoutScanState = .idle,
+        checkoutSearchFolders: [String] = [],
         agentReadAccess: AgentReadAccess = .default
     ) {
         self.repositoryLists = repositoryLists
         self.checkoutScan = checkoutScan
+        self.checkoutSearchFolders = checkoutSearchFolders
         self.accounts = accounts
         self.attention = attention
         self.tasks = tasks

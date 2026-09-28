@@ -35,21 +35,20 @@ extension EngineBackend {
         notifyLocalChange()
     }
 
-    /// Starts the bounded checkout scan unless one is running. Returns false when one already runs.
+    /// Starts the single-pass checkout scan unless one is running. Returns false when one already runs.
     func startCheckoutScan(_ repos: [RepoKey]) -> Bool {
         guard scanTask == nil else { return false }
         scanGeneration += 1
         let generation = scanGeneration
-        let total = min(repos.count, MergeCueEngine.maxDetectedRepositories)
-        checkoutScan = CheckoutScanState(isRunning: true, done: 0, total: total, suggestions: checkoutScan.suggestions)
+        checkoutScan = CheckoutScanState(isRunning: true, suggestions: checkoutScan.suggestions)
         notifyLocalChange()
         let engine = runtime.engine
         scanTask = Task { [weak self] in
             guard let self else { return }
             let result: Result<CheckoutDetectionReport, AppBackendError>
             do {
-                let report = try await engine.detectCheckouts(for: repos) { done, total in
-                    Task { await self.updateScanProgress(generation, done: done, total: total) }
+                let report = try await engine.detectCheckouts(for: repos) { progress in
+                    Task { await self.updateScanProgress(generation, progress) }
                 }
                 result = .success(report)
             } catch {
@@ -60,10 +59,18 @@ extension EngineBackend {
         return true
     }
 
-    private func updateScanProgress(_ generation: Int, done: Int, total: Int) {
+    /// Cancels the running scan (its task finishes with `wasCancelled`).
+    func cancelCheckoutScan() -> Bool {
+        guard let scanTask else { return false }
+        scanTask.cancel()
+        return true
+    }
+
+    private func updateScanProgress(_ generation: Int, _ progress: CheckoutScanProgress) {
         guard generation == scanGeneration, checkoutScan.isRunning else { return }
-        checkoutScan.done = max(checkoutScan.done, done)
-        checkoutScan.total = total
+        checkoutScan.directoriesScanned = max(checkoutScan.directoriesScanned, progress.directoriesScanned)
+        checkoutScan.checkoutsFound = max(checkoutScan.checkoutsFound, progress.checkoutsFound)
+        checkoutScan.isMatching = checkoutScan.isMatching || progress.isMatching
         notifyLocalChange()
     }
 
@@ -71,12 +78,18 @@ extension EngineBackend {
         guard generation == scanGeneration else { return }
         var state = checkoutScan
         state.isRunning = false
+        state.isMatching = false
         state.finishedAt = Date()
         switch result {
         case .success(let report):
-            state.done = state.total
+            state.directoriesScanned = report.directoriesScanned
+            state.checkoutsFound = report.checkoutsFound
             state.mappedCount = report.mapped.count
-            state.suggestions.merge(report.suggestions) { _, new in new }
+            state.wasCancelled = report.wasCancelled
+            state.isTruncated = report.isTruncated
+            if !report.wasCancelled {
+                state.suggestions = report.suggestions
+            }
             state.errorMessage = nil
         case .failure(let error):
             state.errorMessage = error.errorDescription
@@ -91,5 +104,32 @@ extension EngineBackend {
         while let task = scanTask ?? repositoryTasks.values.first {
             await task.value
         }
+    }
+}
+
+extension EngineBackend {
+    /// "Choose Folder…": preview first (nothing saved for a mismatch unless `mapAnyway`, never for a folder that is
+    /// not a checkout), then save and read the mapping back so a failed write can never pass silently.
+    func mapCheckoutFolder(repo: RepoKey, repoFullPath: String, checkoutPath: String, mapAnyway: Bool) async throws -> AppCommandResult {
+        let engine = runtime.engine
+        let preview = try await engine.previewMapping(repo: repo, repoFullPath: repoFullPath, checkoutPath: checkoutPath)
+        guard preview.isRepository else {
+            return AppCommandResult(mappingPreview: preview)
+        }
+        if preview.suggestion.confidence == .mismatch && !mapAnyway {
+            return AppCommandResult(mappingPreview: preview)
+        }
+        let mapping = try await engine.addMapping(repo: repo, repoFullPath: repoFullPath, checkoutPath: checkoutPath, confirm: mapAnyway)
+        guard try await engine.mappings(repo: repo).contains(where: { $0.id == mapping.id }) else {
+            throw AppBackendError.failed("The mapping of \(repoFullPath) could not be saved. Try again, or check that MergeCue can write to its data folder.")
+        }
+        let place = UIFormat.abbreviatedPath(mapping.checkoutPath)
+        let moved = mapping.checkoutPath != preview.chosenPath ? " (the checkout containing the folder you chose)" : ""
+        let message: String = switch mapping.confidence {
+        case .exact: "Mapped \(repoFullPath) to \(place)\(moved): exact remote match, confirmed."
+        case .probable: "Mapped \(repoFullPath) to \(place)\(moved) — probable match. Click Confirm to use it."
+        case .mismatch: "Mapped \(repoFullPath) to \(place)\(moved) anyway (remotes don't match), confirmed by you."
+        }
+        return AppCommandResult(message: message, savedMapping: mapping, tone: mapping.confidence == .probable ? .attention : .success)
     }
 }
