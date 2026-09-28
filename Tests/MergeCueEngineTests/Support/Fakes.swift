@@ -280,6 +280,8 @@ final class FakeWorkspace: WorkspaceInspecting, @unchecked Sendable {
         /// Pins passed to the pinned `changes` (S2).
         var pinnedCalls: [(gitDirs: WorktreeGitDirs?, checkoutPath: String?)] = []
         var gitDirTampered = false
+        /// Single-pass scans requested (`scanCheckouts`) and the repositories each one matched.
+        var scanCalls: [[RepoKey]] = []
     }
 
     let state = Locked(State())
@@ -314,6 +316,19 @@ final class FakeWorkspace: WorkspaceInspecting, @unchecked Sendable {
 
     func suggestMappings(for repo: Repository, searchRoots: [String]) async -> [MappingSuggestion] {
         searchRoots.map { MappingSuggestion(checkoutPath: $0 + "/" + repo.name, confidence: state.get().suggestionConfidence, reason: "name match") }
+    }
+
+    func scanCheckouts(
+        for repos: [Repository], searchRoots: [String], progress: @escaping @Sendable (CheckoutScanProgress) -> Void
+    ) async -> CheckoutScanResult {
+        state.update { $0.scanCalls.append(repos.map(\.key)) }
+        progress(CheckoutScanProgress(directoriesScanned: 7, checkoutsFound: repos.count))
+        var suggestions: [RepoKey: [MappingSuggestion]] = [:]
+        for repo in repos {
+            suggestions[repo.key] = await suggestMappings(for: repo, searchRoots: searchRoots)
+        }
+        progress(CheckoutScanProgress(directoriesScanned: 7, checkoutsFound: repos.count, isMatching: true))
+        return CheckoutScanResult(suggestions: suggestions, directoriesScanned: 7, checkoutsFound: repos.count)
     }
 
     func match(repo: Repository, checkoutPath: String) async -> MappingSuggestion {

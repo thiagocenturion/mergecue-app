@@ -3,63 +3,72 @@ import SwiftUI
 
 /// Repositories of every connected account, for mapping (onboarding and Settings › Repositories): per account the
 /// repositories with open PRs/MRs first, then a searchable list of the account's other repositories. The local
-/// checkout scan runs once the listings settle; exact remote matches are mapped automatically.
+/// checkout scan never starts by itself: one "Find Checkouts" button walks the search folders once and maps exact
+/// remote matches automatically; every row also offers "Choose Folder…".
 struct AccountRepositoriesSection: View {
     let model: AppModel
-    @State private var scanStarted = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            CheckoutScanStatus(model: model) { startScan(force: true) }
+            CheckoutScanBar(model: model)
             ForEach(model.state.accounts) { account in
                 AccountRepositoriesCard(model: model, account: account)
             }
         }
         .task { await model.loadMissingRepositoryLists() }
-        .onChange(of: model.repositoryListsSettled, initial: true) { _, settled in
-            if settled { startScan(force: false) }
-        }
-    }
-
-    private func startScan(force: Bool) {
-        guard force || !scanStarted, !model.state.checkoutScan.isRunning else { return }
-        let candidates = model.checkoutScanCandidates
-        guard !candidates.isEmpty else { return }
-        scanStarted = true
-        Task { await model.send(.scanCheckouts(candidates)) }
     }
 }
 
-/// Progress and outcome of the local checkout scan.
-private struct CheckoutScanStatus: View {
+/// The screen-level "Find Checkouts" button with the scan's progress (folders checked) and outcome.
+struct CheckoutScanBar: View {
     let model: AppModel
-    var rescan: () -> Void
 
     var body: some View {
         let scan = model.state.checkoutScan
-        HStack(spacing: 10) {
-            if scan.isRunning {
-                ProgressView(value: Double(scan.done), total: Double(max(scan.total, 1)))
-                    .frame(width: 120)
-                Text("Looking for checkouts in your usual folders… \(scan.done) of \(scan.total)")
-            } else if let error = scan.errorMessage {
-                Image(systemName: "exclamationmark.triangle").foregroundStyle(Theme.attention)
-                Text("Checkout search failed: \(error)")
-            } else if scan.finishedAt != nil {
-                Image(systemName: "checkmark.circle").foregroundStyle(Theme.mint)
-                Text(scan.mappedCount == 0
-                     ? "No exact checkout matches found in your usual folders. Use Find Checkouts or Choose Folder… per repository."
-                     : "Mapped \(scan.mappedCount) repositor\(scan.mappedCount == 1 ? "y" : "ies") to exact remote matches automatically.")
+        let candidates = model.checkoutScanCandidates
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                if scan.isRunning {
+                    ProgressView().controlSize(.small)
+                    Text(scan.progressText)
+                        .monospacedDigit()
+                    Spacer()
+                    Button("Cancel") { Task { await model.send(.cancelCheckoutScan) } }
+                        .accessibilityLabel("Cancel the checkout search")
+                } else {
+                    Text(candidates.isEmpty
+                         ? "Every listed repository is mapped."
+                         : "Find local clones of \(candidates.count) unmapped repositor\(candidates.count == 1 ? "y" : "ies") in your search folders.")
+                    Spacer()
+                    Button(scan.finishedAt == nil ? "Find Checkouts" : "Find Again") {
+                        Task { await model.send(.scanCheckouts(candidates)) }
+                    }
+                    .buttonStyle(GradientButtonStyle(size: .small))
+                    .disabled(candidates.isEmpty)
+                    .help("Walks \(searchFoldersHelp) once (4 levels deep) and matches every unmapped repository by its remotes")
+                    .accessibilityLabel("Find checkouts for unmapped repositories")
+                }
             }
-            Spacer()
-            if !scan.isRunning && scan.finishedAt != nil {
-                Button("Search Again", action: rescan)
-                    .help("Looks in ~/Developer, ~/Projects, ~/Code, ~/src and ~/Documents/GitHub")
+            if !scan.isRunning, let summary = scan.summaryText {
+                HStack(spacing: 6) {
+                    if scan.errorMessage != nil {
+                        Image(systemName: "exclamationmark.triangle").foregroundStyle(Theme.attention)
+                    } else if !scan.wasCancelled {
+                        Image(systemName: "checkmark.circle").foregroundStyle(Theme.mint)
+                    }
+                    Text(summary)
+                        .foregroundStyle(scan.errorMessage != nil ? Theme.attentionText : Theme.textSecondary)
+                }
             }
         }
         .scaledFont(.callout)
         .foregroundStyle(Theme.textSecondary)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var searchFoldersHelp: String {
+        let folders = model.state.checkoutSearchFolders
+        return folders.isEmpty ? "your search folders" : folders.map(UIFormat.abbreviatedPath).joined(separator: ", ")
     }
 }
 

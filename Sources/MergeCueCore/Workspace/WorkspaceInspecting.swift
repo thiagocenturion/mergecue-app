@@ -8,6 +8,12 @@ public protocol WorkspaceInspecting: Sendable {
     func inspect(path: String) async throws -> CheckoutInfo
     func suggestMappings(for repo: Repository, searchRoots: [String]) async -> [MappingSuggestion]
     func match(repo: Repository, checkoutPath: String) async -> MappingSuggestion
+    /// One bounded, cancellable walk of `searchRoots` that indexes every git checkout (canonical remotes → paths)
+    /// and matches all `repos` against it. Default implementation (CheckoutScan.swift): per-repository
+    /// `suggestMappings`.
+    func scanCheckouts(
+        for repos: [Repository], searchRoots: [String], progress: @escaping @Sendable (CheckoutScanProgress) -> Void
+    ) async -> CheckoutScanResult
     func prepareWorktree(_ request: WorktreeRequest) async throws -> PreparedWorktree
     func changes(inWorktree path: String, since baseSHA: String, maxBytes: Int) async throws -> WorkspaceChanges
     /// `changes` pinned to the worktree's recorded git directories (S2): refuses with `worktreeGitDirChanged` when

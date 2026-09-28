@@ -8,6 +8,8 @@ extension GitWorkspaceInspector {
     /// - `probable`: same host and repository name under another namespace (a fork remote), the same path on
     ///   another host (mirror / SSH alias), or — with no usable remote — a folder named like the repository.
     /// - `mismatch`: anything else, including missing paths and non-repositories.
+    ///
+    /// The suggestion's `checkoutPath` is the checkout's top level, so choosing a subfolder maps the whole checkout.
     public func match(repo: Repository, checkoutPath: String) async -> MappingSuggestion {
         let outcome: InspectOutcome
         do {
@@ -47,11 +49,15 @@ extension GitWorkspaceInspector {
     // MARK: Classification
 
     static func classify(repo: Repository, context: RepoContext) -> MappingSuggestion {
-        let wanted = CanonicalRemote.candidates(for: repo)
-        let path = context.info.path
-        let note = safetyNote(context.info)
+        classify(repo: repo, topLevel: context.topLevel, rawRemotes: context.rawRemotes, note: safetyNote(context.info))
+    }
 
-        for remote in context.rawRemotes {
+    /// Classification from the remotes alone (shared by `match` and the single-pass `scanCheckouts`).
+    static func classify(repo: Repository, topLevel: String, rawRemotes: [RawRemote], note: String = "") -> MappingSuggestion {
+        let wanted = CanonicalRemote.candidates(for: repo)
+        let path = topLevel
+
+        for remote in rawRemotes {
             for (url, canonical) in [remote.fetchURL, remote.pushURL].compactMap({ $0 }).compactMap({ url in
                 CanonicalRemote.parse(url).map { (url, $0) }
             }) where wanted.contains(canonical) {
@@ -61,7 +67,7 @@ extension GitWorkspaceInspector {
                 )
             }
         }
-        for remote in context.rawRemotes {
+        for remote in rawRemotes {
             for canonical in remote.canonicals {
                 if let target = wanted.first(where: { $0.host == canonical.host && $0.name == canonical.name }) {
                     return MappingSuggestion(
@@ -79,17 +85,17 @@ extension GitWorkspaceInspector {
                 }
             }
         }
-        let folder = (context.topLevel as NSString).lastPathComponent.lowercased()
-        if context.rawRemotes.allSatisfy({ $0.canonicals.isEmpty }), folder == repo.name.lowercased() {
+        let folder = (topLevel as NSString).lastPathComponent.lowercased()
+        if rawRemotes.allSatisfy({ $0.canonicals.isEmpty }), folder == repo.name.lowercased() {
             return MappingSuggestion(
                 checkoutPath: path, confidence: .probable,
                 reason: "No remote identifies the repository, but the folder is named '\(repo.name)'. Confirm before "
                     + "using this checkout.\(note)"
             )
         }
-        let remotes = context.rawRemotes.isEmpty
+        let remotes = rawRemotes.isEmpty
             ? "no remotes"
-            : context.rawRemotes.prefix(3).map { remote in
+            : rawRemotes.prefix(3).map { remote in
                 "\(remote.name) → \(remote.canonicals.first?.description ?? CanonicalRemote.sanitizedURL(remote.fetchURL))"
             }.joined(separator: ", ")
         return MappingSuggestion(
@@ -105,7 +111,7 @@ extension GitWorkspaceInspector {
         }
     }
 
-    private static func sorted(_ suggestions: [MappingSuggestion]) -> [MappingSuggestion] {
+    static func sorted(_ suggestions: [MappingSuggestion]) -> [MappingSuggestion] {
         suggestions.sorted { lhs, rhs in
             if lhs.confidence != rhs.confidence { return lhs.confidence == .exact }
             return lhs.checkoutPath < rhs.checkoutPath
@@ -130,26 +136,61 @@ extension GitWorkspaceInspector {
     /// `root`. Does not follow symlinks, skips hidden and dependency/build folders, does not descend into
     /// repositories, and is bounded in visited directories.
     static func findRepositories(under root: String, maxDepth: Int) -> [String] {
+        var walk = CheckoutWalk(maxDepth: maxDepth, maxDirectories: maxScannedDirectories, maxCheckouts: maxRepositoriesPerRoot)
+        walk.walk(root: root)
+        return walk.found
+    }
+}
+
+/// The bounded directory walk behind `findRepositories` and `scanCheckouts`: breadth-first, no symlinks, no hidden
+/// or dependency/build folders, never inside a checkout. Directories already visited from another root (e.g.
+/// `~/Documents/GitHub` under `~/Documents`) are not walked twice.
+struct CheckoutWalk {
+    let maxDepth: Int
+    let maxDirectories: Int
+    let maxCheckouts: Int
+    private(set) var found: [String] = []
+    private(set) var visited = 0
+    private(set) var isTruncated = false
+    private(set) var wasCancelled = false
+    private var seen = Set<String>()
+
+    init(maxDepth: Int, maxDirectories: Int, maxCheckouts: Int) {
+        self.maxDepth = maxDepth
+        self.maxDirectories = maxDirectories
+        self.maxCheckouts = maxCheckouts
+    }
+
+    /// Walks one root; `report` is called every `reportEvery` directories.
+    mutating func walk(root: String, reportEvery: Int = 250, report: (Int, Int) -> Void = { _, _ in }) {
         let fileManager = FileManager.default
-        let start = absolutePath(root)
-        guard pathKind(start) == .directory else { return [] }
+        let start = GitWorkspaceInspector.absolutePath(root)
+        guard GitWorkspaceInspector.pathKind(start) == .directory else { return }
         var queue: [(path: String, depth: Int)] = [(start, 0)]
-        var found: [String] = []
-        var visited = 0
         var head = 0
-        while head < queue.count, visited < maxScannedDirectories, found.count < maxRepositoriesPerRoot {
+        while head < queue.count {
+            if Task.isCancelled {
+                wasCancelled = true
+                return
+            }
+            guard visited < maxDirectories, found.count < maxCheckouts else {
+                isTruncated = true
+                return
+            }
             let (directory, depth) = queue[head]
             head += 1
+            guard seen.insert(GitWorkspaceInspector.canonicalPath(directory)).inserted else { continue }
             visited += 1
+            if visited % reportEvery == 0 { report(visited, found.count) }
             let gitMarker = (directory as NSString).appendingPathComponent(".git")
-            if pathKind(gitMarker) != .missing {
+            if GitWorkspaceInspector.pathKind(gitMarker) != .missing {
                 found.append(directory)
                 continue
             }
             guard depth < maxDepth,
                   let entries = try? fileManager.contentsOfDirectory(atPath: directory)
             else { continue }
-            for name in entries.sorted() where !name.hasPrefix(".") && !skippedDirectoryNames.contains(name) {
+            for name in entries.sorted() where !name.hasPrefix(".") && !GitWorkspaceInspector.skippedDirectoryNames.contains(name) {
                 let child = (directory as NSString).appendingPathComponent(name)
                 guard let attributes = try? fileManager.attributesOfItem(atPath: child),
                       attributes[.type] as? FileAttributeType == .typeDirectory
@@ -157,6 +198,5 @@ extension GitWorkspaceInspector {
                 queue.append((child, depth + 1))
             }
         }
-        return found
     }
 }
