@@ -174,6 +174,13 @@ extension PreviewBackend {
                                                                     roundTrip: "Not run (preview data)", checkedAt: now))
         case .findCheckouts:
             return AppCommandResult(message: "Preview data: no folders were scanned.", mappingSuggestions: [])
+        case .loadRepositories(let key, _):
+            state.repositoryLists[key] = .loaded(RepositoryDirectory.openRepositories(state.changeRequests, account: key),
+                                                 fetchedAt: now, isTruncated: false)
+            return .none
+        case .scanCheckouts:
+            state.checkoutScan = CheckoutScanState(finishedAt: now)
+            return AppCommandResult(message: "Preview data: no folders were scanned.")
         case .setLaunchAtLogin:
             return AppCommandResult(message: "Preview data: the login item was not changed.")
         case .requestNotificationPermission:

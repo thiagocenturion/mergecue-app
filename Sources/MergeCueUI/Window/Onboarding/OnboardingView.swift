@@ -261,30 +261,16 @@ struct RepositoriesStep: View {
     let model: AppModel
 
     var body: some View {
-        let repos = model.knownRepositories
-        let mapped = Set(model.state.mappings.map(\.repo))
         StepScaffold(title: "Map your repositories",
                      subtitle: "Point each repository to its local checkout. Agents then work in an isolated worktree created from it; MergeCue never edits your checkout directly. Exact remote matches are confirmed automatically; anything less needs your confirmation.") {
             VStack(alignment: .leading, spacing: 12) {
-                if repos.isEmpty {
-                    HStack(spacing: 10) {
-                        if !model.state.accounts.isEmpty { ProgressView().controlSize(.small) }
-                        Text(model.state.accounts.isEmpty
-                             ? "Connect an account first — repositories with open PRs/MRs appear here."
-                             : "Syncing your PRs/MRs… repositories appear here as they arrive. You can also map them later in Settings › Repositories.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                ForEach(repos, id: \.key) { repo in
-                    Card {
-                        if let mapping = model.state.mappings.first(where: { $0.repo == repo.key }), mapped.contains(repo.key) {
-                            MappingRow(model: model, mapping: mapping)
-                        } else {
-                            UnmappedRepositoryRow(model: model, repo: repo)
-                        }
-                    }
+                if model.state.accounts.isEmpty {
+                    Text("Connect an account first — then every repository it can access appears here. You can also map them later in Settings › Repositories.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    AccountRepositoriesSection(model: model)
                 }
             }
         }

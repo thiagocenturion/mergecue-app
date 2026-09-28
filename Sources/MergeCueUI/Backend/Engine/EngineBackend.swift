@@ -59,6 +59,12 @@ public actor EngineBackend: AppBackend {
     var registrations: [AgentKind: AgentRegistrationStatus] = [:]
     var verifications: [AgentKind: VerificationRecord] = [:]
     private var agentsTask: Task<Void, Never>?
+    // Repository directory and checkout scan (EngineBackend+Repositories.swift).
+    var repositoryLists: [AccountKey: RepositoryListState] = [:]
+    var repositoryTasks: [AccountKey: Task<Void, Never>] = [:]
+    var checkoutScan = CheckoutScanState.idle
+    var scanTask: Task<Void, Never>?
+    var scanGeneration = 0
 
     public init(runtime: MergeCueRuntime, options: Options = Options()) {
         self.runtime = runtime
@@ -93,10 +99,13 @@ public actor EngineBackend: AppBackend {
     public func loadState() async -> AppState {
         do {
             let snapshot = try await runtime.engine.snapshot()
-            let state = await Self.makeState(
+            var state = await Self.makeState(
                 snapshot, agents: agentStatuses(), runtime: runtimeInfo(),
                 instructionFileNames: options.instructionFileNames
             )
+            let accounts = Set(state.accounts.map(\.id))
+            state.repositoryLists = repositoryLists.filter { accounts.contains($0.key) }
+            state.checkoutScan = checkoutScan
             lastState = state
             return state
         } catch {
@@ -135,6 +144,8 @@ public actor EngineBackend: AppBackend {
 
     public func shutdown() async {
         agentsTask?.cancel()
+        scanTask?.cancel()
+        repositoryTasks.values.forEach { $0.cancel() }
         await runtime.stop()
     }
 
