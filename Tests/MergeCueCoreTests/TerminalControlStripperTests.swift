@@ -105,8 +105,8 @@ struct TerminalControlStripperTests {
         #expect(SecretRedactor.redact(input) == input)
     }
 
-    /// Redaction of hostile coloured input stays linear (DECISIONS D21): 4× the input may take at most ~8× the
-    /// time (quadratic would be 16×), plus a generous absolute bound. Best of three runs damps machine load.
+    /// Redaction of hostile coloured input stays linear (DECISIONS D21): 8× the input may take at most ~24× the
+    /// time (linear is 8×, quadratic 64×), plus a generous absolute bound. Best of three runs damps machine load.
     @Test(arguments: ["\u{1B}[1m", "\u{1B}[1mghp_", "sk-proj-", "\u{1B}[;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;m", "AIza", "npm_x"])
     func colouredHostileInputStaysFast(_ unit: String) {
         func best(_ bytes: Int) -> Duration {
@@ -119,9 +119,9 @@ struct TerminalControlStripperTests {
             }.min() ?? .zero
         }
         let small = best(16 * 1024)
-        let large = best(64 * 1024)
-        #expect(large < small * 8 + .milliseconds(30), "\(unit.debugDescription): 16 KB \(small), 64 KB \(large)")
-        #expect(large < .seconds(2), "\(unit.debugDescription): \(large)")
+        let large = best(128 * 1024)
+        #expect(large < small * 24 + .milliseconds(50), "\(unit.debugDescription): 16 KB \(small), 128 KB \(large)")
+        #expect(large < .seconds(4), "\(unit.debugDescription): \(large)")
     }
 }
 
