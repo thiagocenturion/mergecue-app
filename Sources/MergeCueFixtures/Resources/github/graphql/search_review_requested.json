@@ -1,0 +1,69 @@
+{
+  "data": {
+    "viewer": {
+      "login": "mona-dev",
+      "databaseId": 583231,
+      "name": "Mona Dev",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/583231?v=4"
+    },
+    "search": {
+      "issueCount": 1,
+      "pageInfo": {
+        "hasNextPage": false,
+        "endCursor": null
+      },
+      "nodes": [
+        {
+          "__typename": "PullRequest",
+          "id": "PR_kwDOATpX1c50000007",
+          "fullDatabaseId": "3100000007",
+          "number": 7,
+          "title": "Redesign the checkout page",
+          "url": "https://github.com/acme/web/pull/7",
+          "state": "OPEN",
+          "isDraft": false,
+          "createdAt": "2026-09-19T09:00:00Z",
+          "updatedAt": "2026-09-20T16:00:00Z",
+          "headRefName": "feature/checkout-redesign",
+          "baseRefName": "main",
+          "headRefOid": "7777aaaabbbbccccddddeeeeffff000011112222",
+          "baseRefOid": "70707070a1a1a1a1b2b2b2b2c3c3c3c3d4d4d4d4",
+          "isCrossRepository": false,
+          "author": {
+            "__typename": "User",
+            "login": "carol-reviews",
+            "avatarUrl": "https://avatars.githubusercontent.com/u/700101?v=4",
+            "databaseId": 700101,
+            "name": "Carol Reviewer"
+          },
+          "repository": {
+            "databaseId": 1296300,
+            "name": "web",
+            "nameWithOwner": "acme/web",
+            "url": "https://github.com/acme/web",
+            "sshUrl": "git@github.com:acme/web.git",
+            "isPrivate": true,
+            "owner": {
+              "login": "acme"
+            },
+            "defaultBranchRef": {
+              "name": "main"
+            }
+          },
+          "headCommit": {
+            "nodes": [
+              {
+                "commit": {
+                  "oid": "7777aaaabbbbccccddddeeeeffff000011112222",
+                  "statusCheckRollup": {
+                    "state": "SUCCESS"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

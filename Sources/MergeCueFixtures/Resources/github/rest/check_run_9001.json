@@ -1,0 +1,21 @@
+{
+  "id": 9001,
+  "name": "unit-tests",
+  "head_sha": "4d2c1a9e8b7f6a5d4c3b2a1908f7e6d5c4b3a291",
+  "status": "completed",
+  "conclusion": "failure",
+  "html_url": "https://github.com/acme/payments-api/actions/runs/7001/job/9001",
+  "details_url": "https://github.com/acme/payments-api/actions/runs/7001/job/9001",
+  "started_at": "2026-09-19T08:00:00Z",
+  "completed_at": "2026-09-19T08:06:00Z",
+  "output": {
+    "title": "Process completed with exit code 1.",
+    "summary": "2 tests failed in ChargeServiceTests",
+    "text": "ChargeServiceTests.testRetryUsesIdempotencyKey failed\nChargeServiceTests.testTimeoutThenRetry failed",
+    "annotations_count": 2
+  },
+  "app": {
+    "slug": "github-actions",
+    "name": "GitHub Actions"
+  }
+}

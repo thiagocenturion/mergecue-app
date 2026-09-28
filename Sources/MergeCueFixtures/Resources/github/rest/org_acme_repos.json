@@ -1,0 +1,59 @@
+[
+  {
+    "id": 1296269,
+    "node_id": "R_kgDO1296269",
+    "name": "payments-api",
+    "full_name": "acme/payments-api",
+    "private": true,
+    "owner": {
+      "login": "acme",
+      "id": 9919,
+      "type": "Organization"
+    },
+    "html_url": "https://github.com/acme/payments-api",
+    "fork": false,
+    "archived": false,
+    "clone_url": "https://github.com/acme/payments-api.git",
+    "ssh_url": "git@github.com:acme/payments-api.git",
+    "default_branch": "main",
+    "updated_at": "2026-09-20T10:00:00Z"
+  },
+  {
+    "id": 1296300,
+    "node_id": "R_kgDO1296300",
+    "name": "web",
+    "full_name": "acme/web",
+    "private": true,
+    "owner": {
+      "login": "acme",
+      "id": 9919,
+      "type": "Organization"
+    },
+    "html_url": "https://github.com/acme/web",
+    "fork": false,
+    "archived": false,
+    "clone_url": "https://github.com/acme/web.git",
+    "ssh_url": "git@github.com:acme/web.git",
+    "default_branch": "main",
+    "updated_at": "2026-09-20T10:00:00Z"
+  },
+  {
+    "id": 1296301,
+    "node_id": "R_kgDO1296301",
+    "name": "old-billing",
+    "full_name": "acme/old-billing",
+    "private": true,
+    "owner": {
+      "login": "acme",
+      "id": 9919,
+      "type": "Organization"
+    },
+    "html_url": "https://github.com/acme/old-billing",
+    "fork": false,
+    "archived": true,
+    "clone_url": "https://github.com/acme/old-billing.git",
+    "ssh_url": "git@github.com:acme/old-billing.git",
+    "default_branch": "main",
+    "updated_at": "2026-09-20T10:00:00Z"
+  }
+]

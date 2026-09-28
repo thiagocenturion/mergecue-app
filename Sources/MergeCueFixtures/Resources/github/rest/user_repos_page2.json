@@ -1,0 +1,40 @@
+[
+  {
+    "id": 1296301,
+    "node_id": "R_kgDO1296301",
+    "name": "old-billing",
+    "full_name": "acme/old-billing",
+    "private": true,
+    "owner": {
+      "login": "acme",
+      "id": 9919,
+      "type": "Organization"
+    },
+    "html_url": "https://github.com/acme/old-billing",
+    "fork": false,
+    "archived": true,
+    "clone_url": "https://github.com/acme/old-billing.git",
+    "ssh_url": "git@github.com:acme/old-billing.git",
+    "default_branch": "main",
+    "updated_at": "2026-09-20T10:00:00Z"
+  },
+  {
+    "id": 5550001,
+    "node_id": "R_kgDO5550001",
+    "name": "payments-api",
+    "full_name": "mona-dev/payments-api",
+    "private": true,
+    "owner": {
+      "login": "mona-dev",
+      "id": 583231,
+      "type": "User"
+    },
+    "html_url": "https://github.com/mona-dev/payments-api",
+    "fork": true,
+    "archived": false,
+    "clone_url": "https://github.com/mona-dev/payments-api.git",
+    "ssh_url": "git@github.com:mona-dev/payments-api.git",
+    "default_branch": "main",
+    "updated_at": "2026-09-20T10:00:00Z"
+  }
+]

@@ -1,0 +1,193 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "id": "PR_kwDOATpX1c50000012",
+        "fullDatabaseId": "3100000012",
+        "number": 12,
+        "title": "Fix currency rounding for JPY",
+        "body": "Zero-decimal currencies must not be multiplied by 100.\n\n_Demo fixture._",
+        "url": "https://github.com/acme/payments-api/pull/12",
+        "state": "OPEN",
+        "isDraft": false,
+        "createdAt": "2026-09-16T10:00:00Z",
+        "updatedAt": "2026-09-19T15:00:00Z",
+        "headRefName": "fix/jpy-rounding",
+        "baseRefName": "main",
+        "headRefOid": "1212abababcdcdcdefefefef0101010123232323",
+        "baseRefOid": "0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+        "isCrossRepository": true,
+        "mergeStateStatus": "CLEAN",
+        "mergeable": "MERGEABLE",
+        "reviewDecision": "APPROVED",
+        "author": {
+          "__typename": "User",
+          "login": "mona-dev",
+          "avatarUrl": "https://avatars.githubusercontent.com/u/583231?v=4",
+          "databaseId": 583231,
+          "name": "Mona Dev"
+        },
+        "repository": {
+          "databaseId": 1296269,
+          "name": "payments-api",
+          "nameWithOwner": "acme/payments-api",
+          "url": "https://github.com/acme/payments-api",
+          "sshUrl": "git@github.com:acme/payments-api.git",
+          "isPrivate": true,
+          "owner": {
+            "login": "acme"
+          },
+          "defaultBranchRef": {
+            "name": "main"
+          }
+        },
+        "headRepository": {
+          "databaseId": 5550001,
+          "name": "payments-api",
+          "nameWithOwner": "mona-dev/payments-api",
+          "url": "https://github.com/mona-dev/payments-api",
+          "sshUrl": "git@github.com:mona-dev/payments-api.git",
+          "isPrivate": true,
+          "owner": {
+            "login": "mona-dev"
+          },
+          "defaultBranchRef": {
+            "name": "main"
+          }
+        },
+        "reviewRequests": {
+          "nodes": []
+        },
+        "latestReviews": {
+          "nodes": [
+            {
+              "state": "APPROVED",
+              "author": {
+                "__typename": "User",
+                "login": "dave-sec",
+                "avatarUrl": "https://avatars.githubusercontent.com/u/700102?v=4",
+                "databaseId": 700102,
+                "name": "Dave Security"
+              }
+            }
+          ]
+        },
+        "reviews": {
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": null
+          },
+          "nodes": [
+            {
+              "id": "PRR_kwDOATpX1c6AAAD1",
+              "fullDatabaseId": "2600000401",
+              "body": "",
+              "state": "APPROVED",
+              "submittedAt": "2026-09-19T14:00:00Z",
+              "url": "https://github.com/acme/payments-api/pull/12#pullrequestreview-2600000401",
+              "author": {
+                "__typename": "User",
+                "login": "dave-sec",
+                "avatarUrl": "https://avatars.githubusercontent.com/u/700102?v=4",
+                "databaseId": 700102,
+                "name": "Dave Security"
+              },
+              "commit": {
+                "oid": "1212abababcdcdcdefefefef0101010123232323"
+              }
+            }
+          ]
+        },
+        "comments": {
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": null
+          },
+          "nodes": []
+        },
+        "reviewThreads": {
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": null
+          },
+          "nodes": []
+        },
+        "commits": {
+          "nodes": [
+            {
+              "commit": {
+                "oid": "1212abababcdcdcdefefefef0101010123232323",
+                "messageHeadline": "Handle zero-decimal currencies",
+                "authoredDate": "2026-09-16T09:55:00Z",
+                "author": {
+                  "name": "Mona Dev",
+                  "user": {
+                    "login": "mona-dev"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "files": {
+          "totalCount": 1,
+          "nodes": [
+            {
+              "path": "Sources/Payments/Currency.swift",
+              "additions": 8,
+              "deletions": 2,
+              "changeType": "MODIFIED"
+            }
+          ]
+        },
+        "headCommit": {
+          "nodes": [
+            {
+              "commit": {
+                "oid": "1212abababcdcdcdefefefef0101010123232323",
+                "statusCheckRollup": {
+                  "state": "SUCCESS",
+                  "contexts": {
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": null
+                    },
+                    "nodes": [
+                      {
+                        "__typename": "CheckRun",
+                        "databaseId": 9301,
+                        "name": "unit-tests",
+                        "status": "COMPLETED",
+                        "conclusion": "SUCCESS",
+                        "detailsUrl": "https://github.com/acme/payments-api/actions/runs/7201/job/9301",
+                        "url": "https://github.com/acme/payments-api/runs/9301",
+                        "title": "All tests passed",
+                        "summary": null,
+                        "startedAt": "2026-09-16T10:05:00Z",
+                        "completedAt": "2026-09-16T10:11:00Z",
+                        "isRequired": true,
+                        "checkSuite": {
+                          "app": {
+                            "slug": "github-actions",
+                            "name": "GitHub Actions"
+                          },
+                          "workflowRun": {
+                            "databaseId": 7201,
+                            "runNumber": 80,
+                            "workflow": {
+                              "name": "CI"
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

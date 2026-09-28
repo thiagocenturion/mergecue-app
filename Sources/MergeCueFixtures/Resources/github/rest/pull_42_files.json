@@ -1,0 +1,39 @@
+[
+  {
+    "sha": "2222222",
+    "filename": "README.md",
+    "status": "modified",
+    "additions": 1,
+    "deletions": 0,
+    "changes": 1,
+    "patch": "@@ -1,4 +1,5 @@\n # payments-api\n+Payments service for ACME checkout.\n "
+  },
+  {
+    "sha": "4444444",
+    "filename": "Sources/Payments/ChargeService.swift",
+    "status": "modified",
+    "additions": 12,
+    "deletions": 3,
+    "changes": 15,
+    "patch": "@@ -80,7 +80,9 @@ final class ChargeService {\n     func charge(_ request: ChargeRequest) async throws -> Receipt {\n-        let response = try await gateway.post(request)\n+        let response = try await gateway.post(request, retries: 3)\n+        log.info(\"charged \\(request.cardNumber)\")\n         return Receipt(response)"
+  },
+  {
+    "sha": "6666666",
+    "filename": "Sources/Payments/Gateway.swift",
+    "status": "modified",
+    "additions": 1,
+    "deletions": 1,
+    "changes": 2,
+    "patch": "@@ -27,4 +27,4 @@ final class Gateway {\n-    let timeout: TimeInterval = 10\n+    let timeout: TimeInterval = 30"
+  },
+  {
+    "sha": "7777777",
+    "filename": "Sources/Payments/RetryPolicy.swift",
+    "previous_filename": "Sources/Payments/Retry.swift",
+    "status": "renamed",
+    "additions": 24,
+    "deletions": 0,
+    "changes": 24,
+    "patch": "@@ -8,6 +8,8 @@ struct RetryPolicy {\n     var baseDelay: TimeInterval = 0.5\n+    // TODO: read from config\n+    let maxRetries = 3"
+  }
+]

@@ -1,0 +1,19 @@
+{
+  "id": 2600000301,
+  "node_id": "PRR_kwDOATpX1c6AAAC1",
+  "user": {
+    "login": "carol-reviews",
+    "id": 700101,
+    "node_id": "U_kgDO700101",
+    "avatar_url": "https://avatars.githubusercontent.com/u/700101?v=4",
+    "html_url": "https://github.com/carol-reviews",
+    "type": "User",
+    "site_admin": false
+  },
+  "body": "A few blocking issues around idempotency and logging. Can you add a regression test for the retry path?",
+  "state": "CHANGES_REQUESTED",
+  "html_url": "https://github.com/acme/payments-api/pull/42#pullrequestreview-2600000301",
+  "submitted_at": "2026-09-18T10:05:00Z",
+  "commit_id": "4d2c1a9e8b7f6a5d4c3b2a1908f7e6d5c4b3a291",
+  "author_association": "MEMBER"
+}

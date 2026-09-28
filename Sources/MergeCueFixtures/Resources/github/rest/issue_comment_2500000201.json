@@ -1,0 +1,18 @@
+{
+  "id": 2500000201,
+  "node_id": "IC_kwDOATpX1c6AAAB1",
+  "html_url": "https://github.com/acme/payments-api/pull/42#issuecomment-2500000201",
+  "body": "Heads-up: the staging deploy for this branch failed. The unit-tests job looks related.",
+  "user": {
+    "login": "dave-sec",
+    "id": 700102,
+    "node_id": "U_kgDO700102",
+    "avatar_url": "https://avatars.githubusercontent.com/u/700102?v=4",
+    "html_url": "https://github.com/dave-sec",
+    "type": "User",
+    "site_admin": false
+  },
+  "created_at": "2026-09-18T12:00:00Z",
+  "updated_at": "2026-09-18T12:00:00Z",
+  "author_association": "MEMBER"
+}
