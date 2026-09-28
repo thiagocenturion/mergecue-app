@@ -22,11 +22,15 @@ public enum SecretRedactor {
     /// `ghp_` or `password=` for context). Idempotent.
     public static func redact(_ text: String) -> String {
         guard !text.isEmpty else { return text }
-        if text.utf8.contains(0x1B), let ansiTokenBoundary {
-            // Redact the pieces between "ESC[…m" and a token prefix separately, so the prefix rules see a boundary.
-            let ns = text as NSString
-            let cuts = ansiTokenBoundary.matches(in: text, range: NSRange(location: 0, length: ns.length)).map { $0.range.upperBound }
-            if !cuts.isEmpty {
+        if text.utf8.contains(0x1B) {
+            switch maskingANSIFinals(text) {
+            case .masked(let masked):
+                // The final letter of each "ESC[…m" directly before a token prefix was swapped for a private-use
+                // placeholder (not alphanumeric, so the prefix rules see a boundary); swap it back afterwards.
+                return restoringANSIFinals(applyRules(masked))
+            case .placeholderConflict(let cuts):
+                // The text already uses the placeholder scalars: redact the pieces between the cuts instead.
+                let ns = text as NSString
                 var pieces: [String] = []
                 var start = 0
                 for cut in cuts {
@@ -35,9 +39,53 @@ public enum SecretRedactor {
                 }
                 pieces.append(ns.substring(from: start))
                 return pieces.map(applyRules).joined()
+            case .none:
+                break
             }
         }
         return applyRules(text)
+    }
+
+    private enum ANSIMasking {
+        case none
+        case masked(String)
+        case placeholderConflict(cuts: [Int])
+    }
+
+    /// First placeholder scalar; the 54 possible CSI final characters (`A-Z a-z @ ~`) map to U+F8C0…U+F8F5.
+    private static let placeholderBase: UInt32 = 0xF8C0
+    private static let csiFinals = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz@~".unicodeScalars)
+
+    /// `text` with the final character of every `ansiTokenBoundary` match replaced by its placeholder.
+    private static func maskingANSIFinals(_ text: String) -> ANSIMasking {
+        guard let ansiTokenBoundary else { return .none }
+        let ns = text as NSString
+        let matches = ansiTokenBoundary.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        guard !matches.isEmpty else { return .none }
+        let placeholderRange = placeholderBase...(placeholderBase + UInt32(csiFinals.count))
+        guard !text.unicodeScalars.contains(where: { placeholderRange.contains($0.value) }) else {
+            return .placeholderConflict(cuts: matches.map(\.range.upperBound))
+        }
+        var units = Array(text.utf16)
+        for match in matches {
+            let index = match.range.upperBound - 1
+            guard let final = Unicode.Scalar(units[index]), let offset = csiFinals.firstIndex(of: final) else { continue }
+            units[index] = UInt16(placeholderBase + UInt32(offset))
+        }
+        return .masked(String(decoding: units, as: UTF16.self))
+    }
+
+    private static func restoringANSIFinals(_ text: String) -> String {
+        var scalars = String.UnicodeScalarView()
+        for scalar in text.unicodeScalars {
+            let offset = Int(scalar.value) - Int(placeholderBase)
+            if offset >= 0, offset < csiFinals.count {
+                scalars.append(csiFinals[offset])
+            } else {
+                scalars.append(scalar)
+            }
+        }
+        return String(scalars)
     }
 
     private static func applyRules(_ text: String) -> String {
@@ -105,7 +153,7 @@ public enum SecretRedactor {
 
     /// Distinctive token prefixes: not preceded by an alphanumeric character, or right after a percent-escape
     /// (`%3Aghs_…` in URL-encoded text). A token right after an ANSI SGR/CSI sequence (`ESC[1mghp_…`, where the
-    /// `m` counts as a preceding letter) is handled by `redact` splitting the text there (`ansiTokenBoundary`).
+    /// `m` counts as a preceding letter) is handled by `redact` masking that letter (`ansiTokenBoundary`).
     private static let prefixStart = #"(?:(?<![A-Za-z0-9])|(?<=%[0-9A-Fa-f]{2}))"#
 
     /// End of a CSI sequence immediately followed by a distinctive token prefix. Anchored on the ESC byte, so it

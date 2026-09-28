@@ -116,3 +116,15 @@ struct TerminalControlStripperTests {
         #expect(elapsed < .milliseconds(500), "\(unit.debugDescription): \(elapsed)")
     }
 }
+
+extension TerminalControlStripperTests {
+    @Test func colouredTokensAreMaskedEvenWhenTheTextUsesPlaceholderScalars() {
+        let token = "ghp_1234567890abcdefghijABCDEFGHIJ1234"
+        let text = "logo \u{F8C0} then \u{1B}[1m\(token)\u{1B}[0m and \u{1B}[31mplain"
+        let output = SecretRedactor.redact(text)
+        #expect(!output.contains("1234567890abcdefghij"))
+        #expect(output.contains("\u{F8C0}"))
+        #expect(output.contains("\u{1B}[31mplain"))
+        #expect(SecretRedactor.redact("\u{1B}[1m\(token)\u{1B}[0m ok") == "\u{1B}[1mghp_[REDACTED]\u{1B}[0m ok")
+    }
+}
