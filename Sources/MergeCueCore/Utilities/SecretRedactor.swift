@@ -22,6 +22,25 @@ public enum SecretRedactor {
     /// `ghp_` or `password=` for context). Idempotent.
     public static func redact(_ text: String) -> String {
         guard !text.isEmpty else { return text }
+        if text.utf8.contains(0x1B), let ansiTokenBoundary {
+            // Redact the pieces between "ESC[…m" and a token prefix separately, so the prefix rules see a boundary.
+            let ns = text as NSString
+            let cuts = ansiTokenBoundary.matches(in: text, range: NSRange(location: 0, length: ns.length)).map { $0.range.upperBound }
+            if !cuts.isEmpty {
+                var pieces: [String] = []
+                var start = 0
+                for cut in cuts {
+                    pieces.append(ns.substring(with: NSRange(location: start, length: cut - start)))
+                    start = cut
+                }
+                pieces.append(ns.substring(from: start))
+                return pieces.map(applyRules).joined()
+            }
+        }
+        return applyRules(text)
+    }
+
+    private static func applyRules(_ text: String) -> String {
         var result = text
         for rule in rules {
             result = rule.apply(to: result)
@@ -84,10 +103,16 @@ public enum SecretRedactor {
     /// A match may only start where the previous character is not part of the same key run.
     private static let runStart = #"(?<![\#(keyRunClass)])"#
 
-    /// Distinctive token prefixes: not preceded by an alphanumeric character, right after a percent-escape
-    /// (`%3Aghs_…` in URL-encoded text), or right after an ANSI SGR/CSI sequence (`ESC[1mghp_…` in coloured CI
-    /// output — the `m` of the sequence would otherwise count as a preceding letter). The look-behind is bounded.
-    private static let prefixStart = #"(?:(?<![A-Za-z0-9])|(?<=%[0-9A-Fa-f]{2})|(?<=\x{1B}\[[0-9;:?<=>]{0,32}[A-Za-z@~]))"#
+    /// Distinctive token prefixes: not preceded by an alphanumeric character, or right after a percent-escape
+    /// (`%3Aghs_…` in URL-encoded text). A token right after an ANSI SGR/CSI sequence (`ESC[1mghp_…`, where the
+    /// `m` counts as a preceding letter) is handled by `redact` splitting the text there (`ansiTokenBoundary`).
+    private static let prefixStart = #"(?:(?<![A-Za-z0-9])|(?<=%[0-9A-Fa-f]{2}))"#
+
+    /// End of a CSI sequence immediately followed by a distinctive token prefix. Anchored on the ESC byte, so it
+    /// costs nothing on text without escapes.
+    private static let ansiTokenBoundary: NSRegularExpression? = try? NSRegularExpression(
+        pattern: #"\x{1B}\[[0-9;:?<=>]{0,32}[A-Za-z@~](?=gh[pousr]_|github_pat_|gl[a-z]{2,7}-|AT[AC]TT|ATBB|sk-|[sr]k_(?:live|test)_|npm_|dckr_pat_|AIza|xox[a-z]-|A[A-Z]{3}[A-Z0-9]{16})"#
+    )
 
     /// `prefixStart`, evaluated only where the next character can start the token (`firstCharacters` is a regex
     /// character-class body). The cheap look-ahead fails at almost every position, so the bounded look-behinds run
