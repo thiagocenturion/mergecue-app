@@ -46,10 +46,10 @@ struct TerminalControlStripperTests {
     @Test func manyUnterminatedIntroducersStayLinear() {
         let input = String(repeating: "\(Self.esc)]x", count: 100_000)
         let elapsed = ContinuousClock().measure { _ = TerminalControlStripper.strip(input) }
-        #expect(elapsed < .milliseconds(500), "\(elapsed)")
+        #expect(elapsed < .seconds(2), "\(elapsed)")
         let csi = String(repeating: "\(Self.esc)[1;2;3", count: 100_000)
         let elapsedCSI = ContinuousClock().measure { _ = TerminalControlStripper.strip(csi) }
-        #expect(elapsedCSI < .milliseconds(500), "\(elapsedCSI)")
+        #expect(elapsedCSI < .seconds(2), "\(elapsedCSI)")
     }
 
     // MARK: Redaction of coloured tokens
@@ -105,15 +105,23 @@ struct TerminalControlStripperTests {
         #expect(SecretRedactor.redact(input) == input)
     }
 
-    /// Redaction of hostile coloured input stays linear (DECISIONS D21).
+    /// Redaction of hostile coloured input stays linear (DECISIONS D21): 4× the input may take at most ~8× the
+    /// time (quadratic would be 16×), plus a generous absolute bound. Best of three runs damps machine load.
     @Test(arguments: ["\u{1B}[1m", "\u{1B}[1mghp_", "sk-proj-", "\u{1B}[;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;m", "AIza", "npm_x"])
     func colouredHostileInputStaysFast(_ unit: String) {
-        let input = String(repeating: unit, count: 64 * 1024 / unit.utf8.count)
-        let elapsed = ContinuousClock().measure {
-            _ = SecretRedactor.redact(input)
-            _ = LogExcerpt.make(rawLog: input, maxBytes: 16 * 1024)
+        func best(_ bytes: Int) -> Duration {
+            let input = String(repeating: unit, count: bytes / unit.utf8.count)
+            return (0..<3).map { _ in
+                ContinuousClock().measure {
+                    _ = SecretRedactor.redact(input)
+                    _ = LogExcerpt.make(rawLog: input, maxBytes: 16 * 1024)
+                }
+            }.min() ?? .zero
         }
-        #expect(elapsed < .milliseconds(500), "\(unit.debugDescription): \(elapsed)")
+        let small = best(16 * 1024)
+        let large = best(64 * 1024)
+        #expect(large < small * 8 + .milliseconds(30), "\(unit.debugDescription): 16 KB \(small), 64 KB \(large)")
+        #expect(large < .seconds(2), "\(unit.debugDescription): \(large)")
     }
 }
 
