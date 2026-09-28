@@ -658,6 +658,13 @@ Server authenticates every connection: `getpeereid` uid must equal the server ui
 the correct token; optional `PeerValidator` checks the peer executable's code signature/path (enforced when the
 app is signed with a Team ID). Stale socket files are unlinked on start; the socket is removed on shutdown.
 
+**Trust boundary (S8).** The same-uid check plus the 0600 token file are the actual boundary: anything running as
+the user can read the token and connect. Peer code-signature validation is **defence in depth only** — a same-user
+process can inject into or impersonate a signed helper (DYLD/debugger/`task_for_pid` on unhardened builds, or
+simply by reading the token), so it must never be treated as separating mutually distrusting processes of one
+user. Agents are therefore limited by what the IPC methods allow (task-scoped reads, leases, approvals in the app),
+not by who they are.
+
 ```swift
 public enum IPCMethod: String, Codable, Sendable, CaseIterable { case ping, listAttention = "list_attention", getTask = "get_task", getChangeContext = "get_change_context", getThread = "get_thread", getCIFailure = "get_ci_failure", getDiff = "get_diff", claimTask = "claim_task", heartbeat, updateTask = "update_task", reportChanges = "report_changes", reportTests = "report_tests", submitResult = "submit_result", failTask = "fail_task", proposeRule = "propose_rule", listRules = "list_rules", listTasks = "list_tasks" }
 public struct IPCClientInfo: Codable, Sendable { var name: String; var version: String; var pid: Int32 }
@@ -731,9 +738,16 @@ Implemented additions and semantics (integration pass; see doc comments in `Sour
   `GetDiffResult(_: DiffPayload)` / `GetDiffResult(_: WorkspaceChanges, baseSHA:)`, `RuleSummaryDTO(_:)`.
 - Handlers: `IPCClosureHandler { method, params, client in … }`; return `IPCCoding.result(dto)`. Requests on one
   connection are handled in order; connections run concurrently. The server replaces `client.pid` with the
-  kernel-reported peer pid; error precedence is `protocol_version` → `unauthorized` (connection closed) →
-  `unsupported` → `invalid_params`. Error messages are redacted before sending; an over-4 MiB result becomes
-  `internal_error`. Idle connections close after 10 s (`Configuration.handshakeTimeout`).
+  kernel-reported peer pid; error precedence is `unauthorized` (checked first, connection closed — nothing, not
+  even the protocol version, is answered before authentication; malformed frames also close) → `protocol_version`
+  → `unsupported` → `invalid_params`. Error messages are redacted before sending; an over-4 MiB result becomes
+  `internal_error`. A connection that sends nothing closes after 10 s (`Configuration.handshakeTimeout`); after its
+  first frame, one with no request in flight closes after 60 s of silence (`Configuration.idleTimeout`).
+- Agent text (S5): lengths are counted in Unicode scalars (grapheme clusters can be inflated with combining marks);
+  every agent string rejects C0/C1 controls, DEL and the bidi overrides U+202A–202E / U+2066–2069 (multiline fields
+  — `message`, `note`, `command`, `summary`, `proposed_reply`, `known_risks`, `reason`, `no_changes_reason` — allow
+  `\n`/`\t`); `agent_name` is ASCII letters/digits plus ` ._-()+/@:`, `run_id` ASCII letters/digits plus
+  `._-:/@=+`. `report_tests.output` is free-form but stripped of terminal controls and redacted when stored.
 - `IPCServerError`: `insecureDirectory`, `insecureSocketPath`, `socketPathTooLong`, `alreadyRunning` (a live listener
   owns the socket), `system(operation:code:)`. `stop()` removes socket/token only if they are still ours.
 - Peer validation: `PeerValidator.validate(_ peer: IPCPeerCredentials) throws`; `CodeSignaturePeerValidator.make(

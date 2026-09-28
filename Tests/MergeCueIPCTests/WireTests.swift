@@ -177,6 +177,43 @@ struct WireTests {
         #expect(code(ReportChangesParams(taskID: Fixtures.taskID, leaseID: "l", expectedVersion: 1, worktreePath: "/w", baseSHA: "", changedPaths: [])) == .invalidParams)
     }
 
+    /// S5: lengths count Unicode scalars; control characters and bidi overrides are rejected; agent_name/run_id
+    /// use a strict charset.
+    @Test func agentTextIsBoundedByScalarsAndSanitized() {
+        func code<P: IPCMethodParams>(_ params: P) -> IPCErrorCode? {
+            do throws(IPCError) {
+                try params.validate()
+                return nil
+            } catch {
+                return error.code
+            }
+        }
+        func submit(_ summary: String, reply: String? = nil) -> SubmitResultParams {
+            SubmitResultParams(taskID: Fixtures.taskID, leaseID: "l", expectedVersion: 1, summary: summary, proposedReply: reply)
+        }
+        // One grapheme cluster, 5 001 scalars: counted as 5 001.
+        let graphemeBomb = "a" + String(repeating: "\u{0301}", count: 5_000)
+        #expect(graphemeBomb.count == 1)
+        #expect(code(submit(graphemeBomb)) == .invalidParams)
+        #expect(code(submit("Fixed.\nAll tests pass.\tok")) == nil)
+        #expect(code(submit("Fixed \u{1B}]52;c;ZXZpbA==\u{07}")) == .invalidParams)
+        #expect(code(submit("ok \u{9B}31m")) == .invalidParams)
+        #expect(code(submit("ok \u{202E}evil")) == .invalidParams)
+        #expect(code(submit("ok", reply: "Thanks \u{2066}hidden\u{2069}")) == .invalidParams)
+        #expect(code(UpdateTaskParams(taskID: Fixtures.taskID, leaseID: "l\n", expectedVersion: 1, phase: .planning, message: "x")) == .invalidParams)
+
+        func claim(_ name: String, run: String? = nil) -> ClaimTaskParams {
+            ClaimTaskParams(taskID: Fixtures.taskID, agentName: name, runID: run, expectedVersion: 1)
+        }
+        #expect(code(claim("Claude Code")) == nil)
+        #expect(code(claim("codex-cli/0.153 (gpt)", run: "0f4c2a9e-7b1d-4c3e-9a55-1d2f3b4c5d6e")) == nil)
+        #expect(code(claim("Claude\nCode")) == .invalidParams)
+        #expect(code(claim("Claude\u{202E}edoC")) == .invalidParams)
+        #expect(code(claim("Clàude")) == .invalidParams)
+        #expect(code(claim("Claude", run: "run 1")) == .invalidParams)
+        #expect(code(claim("Claude", run: "run\u{0}")) == .invalidParams)
+    }
+
     @Test func reportTestsCannotSelfCertify() {
         func code(status: TestRunStatus, exitCode: Int, failed: Int? = nil, output: String = "") -> IPCErrorCode? {
             let params = ReportTestsParams(taskID: Fixtures.taskID, leaseID: "l", expectedVersion: 1, command: "swift test", exitCode: exitCode, status: status, failed: failed, output: output)

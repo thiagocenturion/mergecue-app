@@ -23,6 +23,9 @@ public actor IPCServer {
         public var maxConnections: Int
         /// A connection that sends nothing within this window is closed.
         public var handshakeTimeout: TimeInterval
+        /// After its first frame, a connection with no request in flight is closed when no new frame arrives
+        /// within this window (the MCP helper opens one connection per call).
+        public var idleTimeout: TimeInterval
         /// Reading from a connection pauses while this many requests wait for the handler.
         public var maxQueuedRequestsPerConnection: Int
         /// `listen(2)` backlog.
@@ -32,12 +35,14 @@ public actor IPCServer {
             maxFrameBytes: Int = IPCProtocol.maxFrameBytes,
             maxConnections: Int = 64,
             handshakeTimeout: TimeInterval = 10,
+            idleTimeout: TimeInterval = 60,
             maxQueuedRequestsPerConnection: Int = 16,
             backlog: Int32 = 64
         ) {
             self.maxFrameBytes = max(1024, maxFrameBytes)
             self.maxConnections = max(1, maxConnections)
             self.handshakeTimeout = max(0.05, handshakeTimeout)
+            self.idleTimeout = max(0.05, idleTimeout)
             self.maxQueuedRequestsPerConnection = max(1, maxQueuedRequestsPerConnection)
             self.backlog = max(1, backlog)
         }

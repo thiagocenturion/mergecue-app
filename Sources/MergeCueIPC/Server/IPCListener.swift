@@ -173,6 +173,8 @@ final class IPCServerConnection: @unchecked Sendable {
     // Confined to `queue`.
     private var queuedFrames = 0
     private var receivedAnyFrame = false
+    /// Bumped on every frame and completed request; a pending idle check only fires if it is still current.
+    private var activityGeneration: UInt64 = 0
 
     init(
         id: UInt64,
@@ -248,6 +250,7 @@ final class IPCServerConnection: @unchecked Sendable {
 
     private func receive(_ event: SocketChannel.Event) {
         receivedAnyFrame = true
+        activityGeneration &+= 1
         switch event {
         case .frame(let data):
             queuedFrames += 1
@@ -266,6 +269,18 @@ final class IPCServerConnection: @unchecked Sendable {
             if self.queuedFrames < self.configuration.maxQueuedRequestsPerConnection {
                 self.channel.setReadingPausedOnQueue(false)
             }
+            self.scheduleIdleCheckOnQueue()
+        }
+    }
+
+    /// Closes the connection if nothing happens within `idleTimeout` after the last completed request.
+    private func scheduleIdleCheckOnQueue() {
+        activityGeneration &+= 1
+        let generation = activityGeneration
+        queue.asyncAfter(deadline: .now() + configuration.idleTimeout) { [weak self] in
+            guard let self, generation == self.activityGeneration, self.queuedFrames == 0 else { return }
+            self.log.notice("IPC: closing a connection idle for \(self.configuration.idleTimeout) s")
+            self.channel.closeNow(.local)
         }
     }
 }
