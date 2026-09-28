@@ -162,7 +162,8 @@ struct SecretRedactorTests {
     func adversarialInputStaysFast(_ name: String) throws {
         let input = try #require(Self.adversarialInput(name))
         let clock = ContinuousClock()
-        let elapsed = clock.measure { _ = SecretRedactor.redact(input) }
+        // Best of three: a loaded machine (parallel test runs) must not make a linear redactor look slow.
+        let elapsed = (0..<3).map { _ in clock.measure { _ = SecretRedactor.redact(input) } }.min() ?? .zero
         // ~1 ms each today; the old `\b`-anchored rules needed minutes for 64 KB of "a-".
         #expect(elapsed < .milliseconds(250), "\(name): \(elapsed) for \(input.utf8.count) bytes")
     }
