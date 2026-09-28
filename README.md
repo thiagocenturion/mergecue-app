@@ -109,7 +109,8 @@ opens the item in MergeCue. Pause and quiet hours: Settings ▸ Notifications or
 switches (review comments, CI failures, reviewer questions, review requests, approvals, agent results) are stored by
 the engine and only silence alerts of that kind — the items still appear in the inbox.
 
-PRs/MRs you reviewed or commented on stay tracked after the provider drops your review request (GitHub does once
+With Settings ▸ General ▸ **Tracking** set to include PRs/MRs you reviewed or commented on (live accounts track
+only your own PRs/MRs by default), they stay tracked after the provider drops your review request (GitHub does once
 you submit a review), so replies to your comments still reach the inbox; they show as **Reviewed** in PRs & MRs and
 count as **Reviewing** in filters. Only threads you took part in create inbox items.
 
@@ -146,7 +147,7 @@ Test coverage and the per-provider verification status: `docs/TESTING.md`.
 - Not notarized (no Developer ID certificate): on other Macs, Gatekeeper asks you to confirm the first launch.
 - Tracking PRs/MRs you only reviewed or commented on is bounded: updated within 30 days; GitHub at most 100 search
   results; GitLab from your latest 100 comment events in up to 20 projects; Bitbucket per repository (selected, or 30
-  recently updated ones).
+  recently updated ones, open PRs filtered client-side because Bitbucket cannot filter on participants).
 
 ### Blocked by access or platform
 

@@ -41,7 +41,7 @@ Additional coverage added after the matrix:
 
 | Scenario | Covered by |
 | --- | --- |
-| Replies to the user's review comment after GitHub drops the review request (involved scope) | `MergeCueSyncTests/InvolvedScopeTests` (all), adapter queries: `ListingAndHydrateTests › involvedListingSearchesInvolvesButNotAuthored`, `GitLabParsingTests › involvedListingUsesOwnCommentEventsThenProjectIIDs`, `ListingTests › involvedUsesPerRepositoryParticipantBBQL` |
+| Replies to the user's review comment after GitHub drops the review request (involved scope) | `MergeCueSyncTests/InvolvedScopeTests` (all), adapter queries: `ListingAndHydrateTests › involvedListingSearchesInvolvesButNotAuthored`, `GitLabParsingTests › involvedListingUsesOwnCommentEventsThenProjectIIDs`, `ListingTests › involvedFiltersParticipantsClientSide` |
 | "Notify me about" switches gate alerts per category, items unaffected | `NotificationGrouperTests › switchedOffCategoriesAreSilentPerReason`, `› reviewRequestsAndApprovalsFollowTheirSwitches`; `SyncCoordinatorTests › notificationPreferencesAndGlobalQuietHoursFilterAlertsOnly`; `AccountsInboxDataTests › notificationPreferences`, `› agentResultAlertIsGated`; `EngineBackendTests › accountsRulesMappingsAndSettings` |
 | Retention and worktree cleanup (bounded growth) | `MergeCueEngineTests/MaintenanceTests` (all), `MergeCueStoreTests/MaintenanceTests › pruneHistory…` |
 | IPC peer authentication | `MergeCueIPCTests/IPCSecurityTests` (uid, token, code requirement), signed build: `docs/evidence/ipc-peer-validation.md` |

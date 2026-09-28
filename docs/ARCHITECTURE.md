@@ -773,7 +773,8 @@ Provider specifics (see §5.2–5.4 and each provider's current REST docs):
   Rate limit headers `RateLimit-*`.
 - **Bitbucket Cloud** — REST 2.0. Authored PRs per workspace (`/workspaces/{ws}/pullrequests/{user_uuid}`), reviewer
   PRs via per-repository BBQL queries on selected repositories (`q=reviewers.uuid="{uuid}" AND state="OPEN"`);
-  involved = the same repositories with `participants.user.uuid="{uuid}" AND state="OPEN"`, own PRs excluded.
+  involved = the same repositories with `state="OPEN"` + `fields=+values.participants`, filtered client-side to PRs of
+  others where the user is a participant (BBQL rejects filtering on `participants`).
   Comments with `parent` / `inline` (from/to/path) / `resolution`; tasks; `participants` (approved, state
   `changes_requested`); `/statuses` (commit statuses) and pipelines + steps + step `/log`. Paginate via `next`.
   `fetchHeadSpec` → source repository clone URL + `refs/heads/<source branch>` (forks use the fork's clone URL).
