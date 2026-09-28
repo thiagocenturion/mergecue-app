@@ -482,6 +482,11 @@ public enum EngineChange: Sendable, Hashable { case accounts, syncStatus, attent
 - `SecretRedactor.redact(_:)` — masks GitHub (`ghp_`, `gho_`, `ghu_`, `ghs_`, `github_pat_`), GitLab (`glpat-`, `gloas-`, `glrt-`), Atlassian (`ATATT…`, `ATCTT…`), Slack `xox?-`, AWS `AKIA…`, JWTs, `Authorization:`/`Bearer`/`Basic` values, secret headers (`PRIVATE-TOKEN`, `X-…-Token`, `Cookie`), `password=` / `token: …` / `"secret": 123` / `:api_key => …` pairs, `--password value` flags, PEM/PGP private keys, URL userinfo credentials (passwords, and bare ≥ 16-char tokens as the user). Runs in **linear time** on hostile input (no `\b`-anchored lazy prefixes); separators never cross a line break. Also OpenAI/Anthropic `sk-…`, Stripe `sk_/rk_live|test_`, `npm_`, `dckr_pat_`, `AIza…`, Slack webhook URLs; token prefixes also match right after an ANSI CSI/SGR sequence.
 - `TerminalControlStripper.strip(_:)` — removes ANSI CSI/OSC/DCS/… sequences (7- and 8-bit), C0/C1 controls and DEL (keeps `\n`/`\t`; `\r` → `\n`) in linear time. `LogExcerpt.make` and `UntrustedText.bounded` strip **before** redacting, so coloured tokens are masked and OSC 52/OSC 8 payloads never reach an agent's terminal.
 - `BoundedText.truncate(_:maxBytes:keepTail:)` (UTF-8 safe, never splits a scalar and backs off to a grapheme-cluster boundary), `BoundedText.logExcerpt(_:maxBytes:)` (prefers lines around `error|fail|panic|exception` and the tail; splits on `\n` bytes so CRLF logs work).
+- `WebLinkPolicy` — provider links are untrusted. `webURL(_:)` keeps only absolute http(s) URLs with a host and no
+  userinfo (adapters apply it to check `details_url`s / GitLab `web_url`s; `CheckRun.init` and `LogExcerpt.make`
+  apply it too). `decision(for:instances:)` is the UI's only way to open a link (`AppModel.openLink`): https to a
+  connected instance host or a known CI host opens, other https hosts need a confirmation naming the host, http only
+  to a self-managed instance configured with http, everything else is rejected.
 - `MergeCuePaths` (all paths derive from `MERGECUE_HOME` env or `~/Library/Application Support/MergeCue`):
   `root`, `database` (`mergecue.sqlite`), `ipcDirectory` (`ipc/`, 0700), `socket` (`ipc/mergecue.sock`; if the
   path exceeds 100 bytes, fall back to `/tmp/mergecue-<uid>/mergecue.sock` with a 0700 dir), `ipcToken`

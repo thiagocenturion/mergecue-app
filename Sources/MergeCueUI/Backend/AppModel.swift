@@ -96,6 +96,18 @@ public nonisolated struct HandoffOffer: Sendable, Hashable {
     }
 }
 
+/// A provider link to an unfamiliar host, waiting for the user to confirm before it opens (`WebLinkPolicy`).
+public nonisolated struct LinkConfirmation: Sendable, Hashable, Identifiable {
+    public var url: URL
+    public var host: String
+    public var id: String { url.absoluteString }
+
+    public init(url: URL, host: String) {
+        self.url = url
+        self.host = host
+    }
+}
+
 /// The rule being edited in the rule editor sheet.
 public nonisolated struct RuleEditorContext: Sendable, Hashable, Identifiable {
     public var rule: Rule
@@ -182,6 +194,8 @@ public final class AppModel {
     /// Presented as the approval sheet.
     public var pendingPreview: ActionPreview?
     public var handoffOffer: HandoffOffer?
+    /// A link to an unfamiliar host, presented as a confirmation alert before it opens.
+    public var pendingLinkConfirmation: LinkConfirmation?
     public var ruleEditor: RuleEditorContext?
     /// Presented as the connect-account sheet.
     public var connectSheetKind: ProviderKind?
@@ -299,12 +313,39 @@ public final class AppModel {
         }
     }
 
+    /// The single choke point for opening links in the browser: only https (http only to a connected instance
+    /// configured with http); the account instances and well-known CI hosts open directly, any other host needs
+    /// confirmation (`pendingLinkConfirmation`), everything else is refused with a banner.
+    public func openLink(_ url: URL) {
+        switch WebLinkPolicy.decision(for: url, instances: state.accounts.map(\.account.instance)) {
+        case .open(let safe):
+            environment.openURL(safe)
+        case .confirm(let safe, let host):
+            pendingLinkConfirmation = LinkConfirmation(url: safe, host: host)
+        case .reject(let reason):
+            showBanner(.attention, reason)
+        }
+    }
+
+    /// Opens the link the user confirmed (re-checked: it must still be a web link).
+    public func confirmPendingLink() {
+        guard let pending = pendingLinkConfirmation else { return }
+        pendingLinkConfirmation = nil
+        guard let url = WebLinkPolicy.webURL(pending.url) else { return }
+        environment.openURL(url)
+    }
+
+    /// Drops the pending link without opening it.
+    public func cancelPendingLink() {
+        pendingLinkConfirmation = nil
+    }
+
     private func handle(_ result: AppCommandResult, for command: AppCommand) {
         if let command = result.handoffCommand {
             environment.copyToPasteboard(command)
         }
         if let url = result.urlToOpen {
-            environment.openURL(url)
+            openLink(url)
         }
         if let preview = result.preview {
             pendingPreview = preview

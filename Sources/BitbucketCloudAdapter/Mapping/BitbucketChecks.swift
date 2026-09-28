@@ -67,7 +67,7 @@ struct BitbucketChecksMapper: Sendable {
                 state = .stale
             }
             var locator = [Locator.statusKey: key]
-            if let url = status.url { locator[Locator.url] = url }
+            if let url = WebLinkPolicy.webURL(string: status.url) { locator[Locator.url] = url.absoluteString }
             return CheckRun(
                 key: CheckKey(changeRequest: changeRequest, source: .bitbucketStatus, remoteID: key),
                 name: status.name ?? key,
@@ -75,7 +75,7 @@ struct BitbucketChecksMapper: Sendable {
                 isRequired: nil,
                 startedAt: status.createdOn,
                 completedAt: state.isTerminal ? status.updatedOn : nil,
-                detailsURL: status.url.flatMap(URL.init(string:)),
+                detailsURL: WebLinkPolicy.webURL(string: status.url),
                 commitSHA: commit ?? headSHA,
                 summary: status.description,
                 logLocator: locator

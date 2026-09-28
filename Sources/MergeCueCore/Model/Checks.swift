@@ -65,6 +65,7 @@ public struct CheckRun: Codable, Sendable, Hashable, Identifiable {
     public var isRequired: Bool?
     public var startedAt: Date?
     public var completedAt: Date?
+    /// Always an http(s) URL (`WebLinkPolicy.webURL`); other schemes are dropped by `init`.
     public var detailsURL: URL?
     public var commitSHA: String?
     public var attempt: Int?
@@ -92,7 +93,7 @@ public struct CheckRun: Codable, Sendable, Hashable, Identifiable {
         self.isRequired = isRequired
         self.startedAt = startedAt
         self.completedAt = completedAt
-        self.detailsURL = detailsURL
+        self.detailsURL = WebLinkPolicy.webURL(detailsURL)
         self.commitSHA = commitSHA
         self.attempt = attempt
         self.summary = summary

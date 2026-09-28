@@ -83,7 +83,7 @@ public nonisolated enum Presentation {
             headline = latestAuthor.map { "New reply from \($0)" } ?? "New reply"
         case .ciFailed:
             headline = "CI failed"
-            if let check { subtitle = check.summary.map { "\(check.name) · \($0)" } ?? "\(check.name) failed" }
+            if let check { subtitle = check.summary.map { "\(check.name) · \(UIFormat.untrustedDisplay($0))" } ?? "\(check.name) failed" }
             else { subtitle = item.summary }
         case .reviewRequested:
             headline = snapshot.map { "\(shortName($0.summary.author)) requested your review" } ?? "Review requested"
@@ -114,7 +114,7 @@ public nonisolated enum Presentation {
 
     /// The first non-empty line of untrusted text, without Markdown fences, shortened to `limit` characters.
     static func firstLine(_ text: String, limit: Int) -> String {
-        let line = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+        let line = UIFormat.untrustedDisplay(text).split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
             .first { !$0.isEmpty && !$0.hasPrefix("```") } ?? ""
         return line.count > limit ? String(line.prefix(limit - 1)) + "…" : line
     }

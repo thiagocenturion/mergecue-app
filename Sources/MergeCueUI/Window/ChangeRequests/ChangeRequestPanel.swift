@@ -446,7 +446,7 @@ struct ChangeRequestTimelineTab: View {
             case .dismissed: ("had a review dismissed", Theme.textSecondary)
             }
             events.append(Event(id: "r-" + review.remoteID, date: date, symbol: "person.crop.circle.badge.checkmark", color: color,
-                                title: "\(review.author.displayLabel) \(verb)", detail: review.body))
+                                title: "\(review.author.displayLabel) \(verb)", detail: review.body.map(UIFormat.untrustedDisplay)))
         }
         for thread in snapshot.threads {
             for comment in thread.comments {

@@ -15,14 +15,14 @@ public struct LogExcerpt: Codable, Sendable, Hashable {
     }
 
     /// Strips terminal control sequences (`TerminalControlStripper`), redacts secrets, then bounds the result with
-    /// `BoundedText.logExcerpt` (error context + tail).
+    /// `BoundedText.logExcerpt` (error context + tail). A `fullLogURL` that is not http(s) is dropped.
     public static func make(rawLog: String, maxBytes: Int, fullLogURL: URL? = nil) -> LogExcerpt {
         let redacted = SecretRedactor.redact(TerminalControlStripper.strip(rawLog))
         let bounded = BoundedText.logExcerpt(redacted, maxBytes: maxBytes)
         return LogExcerpt(
             text: bounded.text,
             truncated: bounded.isTruncated,
-            fullLogURL: fullLogURL,
+            fullLogURL: WebLinkPolicy.webURL(fullLogURL),
             totalBytes: rawLog.utf8.count
         )
     }

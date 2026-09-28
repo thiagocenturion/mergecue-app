@@ -3,6 +3,12 @@ import MergeCueCore
 
 /// Deterministic text formatting against an explicit `now` (so previews and snapshots are reproducible).
 public nonisolated enum UIFormat {
+    /// Untrusted provider text (comment bodies, review summaries, check summaries) as it may be displayed and
+    /// selected: terminal control sequences stripped and secrets redacted (S9).
+    public static func untrustedDisplay(_ text: String) -> String {
+        SecretRedactor.redact(TerminalControlStripper.strip(text))
+    }
+
     /// "now", "6m", "2h", "3d", "5w".
     public static func compactAge(from date: Date, now: Date) -> String {
         let seconds = max(0, now.timeIntervalSince(date))
