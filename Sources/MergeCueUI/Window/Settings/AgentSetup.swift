@@ -13,8 +13,8 @@ struct AgentsSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("MergeCue hands tasks to the coding agent you already use. It never runs a model itself and never edits your agent's configuration without your consent and a backup.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                .scaledFont(.callout)
+                .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             AgentSetupList(model: model)
             AgentReadAccessCard(model: model)
@@ -35,7 +35,7 @@ struct AgentBackupsCard: View {
                 Text(count == 0
                      ? "No backups of your agents' configuration are kept."
                      : "\(count) backup\(count == 1 ? "" : "s") of your agents' configuration (the last \(AgentConfigBackups.keepPerAgent) per agent are kept).")
-                    .font(.callout)
+                    .scaledFont(.callout)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 Button("Delete Backups…") { confirmDelete = true }
@@ -65,8 +65,8 @@ struct AgentReadAccessCard: View {
                 }
                 .pickerStyle(.radioGroup)
                 Text(model.state.agentReadAccess.explanation)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .scaledFont(.caption)
+                    .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -99,8 +99,8 @@ struct AgentSetupList: View {
             if let home = model.state.runtime?.helperHome {
                 Label("This MergeCue uses MERGECUE_HOME=\(home). Agents must run the helper with the same variable to reach it.",
                       systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(Theme.waiting)
+                    .scaledFont(.caption)
+                    .foregroundStyle(Theme.waitingText)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -126,8 +126,8 @@ struct AgentSetupCard: View {
                     verify(agent)
                 } else {
                     Text("\(kind.displayName) wasn't found on this Mac (login shell PATH and the usual install locations). Install it, then detect again — or copy the command and run it yourself.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .scaledFont(.callout)
+                        .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                     CommandBlock(text: genericCommand)
                     Button("Copy command") { model.copyToPasteboard(genericCommand, confirmation: "Command copied") }
@@ -142,8 +142,8 @@ struct AgentSetupCard: View {
             AgentMark(kind: kind, size: 26)
                 .frame(width: 32)
             VStack(alignment: .leading, spacing: 1) {
-                Text("\(kind.displayName)\(agent?.version.map { " \($0)" } ?? "")").font(.headline)
-                Text(agent?.path ?? "Not detected").font(.caption.monospaced()).foregroundStyle(.secondary)
+                Text("\(kind.displayName)\(agent?.version.map { " \($0)" } ?? "")").scaledFont(.headline)
+                Text(agent?.path ?? "Not detected").scaledFont(.caption.monospaced()).foregroundStyle(Theme.textSecondary)
             }
             Spacer()
             if let agent {
@@ -186,8 +186,8 @@ struct AgentSetupCard: View {
                 Text(agent.mcpRegistration.isRegistered
                      ? "Registered with this Mac's MergeCue helper (user scope)."
                      : "MergeCue adds a user-scope MCP server named “mergecue” with \(kind.displayName)'s own CLI. You review the exact command, the config it writes and the backup location first.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .scaledFont(.callout)
+                    .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 8) {
                     if agent.mcpRegistration.isRegistered {
@@ -239,22 +239,22 @@ struct AgentSetupCard: View {
         VStack(alignment: .leading, spacing: 8) {
             StepTitle(number: "2", title: "Verify the connection", done: agent.mcpRegistration.isVerified)
             Text("Starts the bundled mergecue-mcp like \(kind.displayName) does, lists its tools and makes one read-only call. Nothing is written.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                .scaledFont(.callout)
+                .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             if let verification {
                 VStack(alignment: .leading, spacing: 3) {
                     Label(verification.succeeded ? "Connected" : "Not connected",
                           systemImage: verification.succeeded ? "checkmark.seal.fill" : "xmark.octagon")
                         .foregroundStyle(verification.succeeded ? Theme.mint : Theme.critical)
-                        .font(.callout.weight(.semibold))
+                        .scaledFont(.callout.weight(.semibold))
                     Text("tools/list: \(verification.toolCount) tools\(verification.missingTools.isEmpty ? "" : " (missing \(verification.missingTools.joined(separator: ", ")))") · \(verification.roundTrip)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .scaledFont(.caption)
+                        .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } else if case .registered(let verifiedAt?) = agent.mcpRegistration {
-                Text("Verified \(UIFormat.relative(from: verifiedAt, now: model.now)).").font(.caption).foregroundStyle(.secondary)
+                Text("Verified \(UIFormat.relative(from: verifiedAt, now: model.now)).").scaledFont(.caption).foregroundStyle(Theme.textSecondary)
             }
             Button("Verify") {
                 busy = true
@@ -289,23 +289,23 @@ struct PlanReview: View {
             labeled(plan.action == .register ? "Configuration it adds" : "Configuration it removes") { CommandBlock(text: plan.configSnippet) }
             labeled("Files it changes") {
                 Text(plan.filesTouched.map { UIFormat.abbreviatedPath(MergeCuePaths.fileSystemPath($0)) }.joined(separator: "\n"))
-                    .font(.caption.monospaced())
+                    .scaledFont(.caption.monospaced())
                     .textSelection(.enabled)
             }
             labeled("Backed up first to") {
                 Text(UIFormat.abbreviatedPath(MergeCuePaths.fileSystemPath(plan.backupDirectory)))
-                    .font(.caption.monospaced())
+                    .scaledFont(.caption.monospaced())
                     .textSelection(.enabled)
                 Text("MergeCue keeps the last \(AgentConfigBackups.keepPerAgent) backups per agent; delete them any time in Settings › Agents.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .scaledFont(.caption)
+                    .foregroundStyle(Theme.textSecondary)
             }
         }
     }
 
     private func labeled(_ title: String, @ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            Text(title).scaledFont(.caption.weight(.semibold)).foregroundStyle(Theme.textSecondary)
             content()
         }
     }
@@ -317,7 +317,7 @@ struct CommandBlock: View {
 
     var body: some View {
         Text(text)
-            .font(.caption.monospaced())
+            .scaledFont(.caption.monospaced())
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
             .padding(8)
@@ -335,12 +335,12 @@ struct StepTitle: View {
     var body: some View {
         HStack(spacing: 8) {
             Text(number)
-                .font(.caption.weight(.bold))
+                .scaledFont(.caption.weight(.bold))
                 .foregroundStyle(.white)
                 .frame(width: 20, height: 20)
                 .background(Circle().fill(done ? Theme.mint : Theme.blue))
-            Text(title).font(.callout.weight(.semibold))
-            if done { Image(systemName: "checkmark").foregroundStyle(Theme.mint).font(.caption.weight(.bold)) }
+            Text(title).scaledFont(.callout.weight(.semibold))
+            if done { Image(systemName: "checkmark").foregroundStyle(Theme.mint).scaledFont(.caption.weight(.bold)) }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Step \(number): \(title)\(done ? ", done" : "")")

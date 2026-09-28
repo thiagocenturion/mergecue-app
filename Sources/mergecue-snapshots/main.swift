@@ -14,7 +14,7 @@
 // Window scenes render the real `MainWindowView` at the window size and composite the title bar controls of a titled
 // window configured exactly like the app's (full-size content, transparent title bar), so the traffic lights are in
 // the picture and any overlap with the sidebar is visible. Scene names starting with 1-4 correspond to the owner's
-// mockups in Design/mockups/.
+// mockups in Design/mockups/; a11y-* scenes show the minimum window size and the "Larger" text size.
 
 import AppKit
 import Darwin
@@ -167,6 +167,32 @@ let scenes: [Scene] = [
     Scene(name: "window-settings-about", size: windowSize, configure: { model in
         model.screen = .settings
         model.settingsTab = .about
+    }, kind: window),
+    // Accessibility: the smallest window (icon-only sidebar), Settings › Text size "Larger", Settings › General.
+    Scene(name: "a11y-window-minimum-size", size: MainWindowMetrics.minimumSize, configure: { model in
+        model.screen = .inbox
+        model.selectedAttentionID = model.state.attention.first {
+            $0.providerKind == .github && $0.number == 42 && $0.reason == .changesRequested
+        }?.id
+    }, kind: window),
+    Scene(name: "a11y-inbox-larger-text", size: windowSize, configure: { model in
+        model.textSize = .larger
+        model.screen = .inbox
+        model.selectedAttentionID = model.state.attention.first {
+            $0.providerKind == .github && $0.number == 42 && $0.reason == .changesRequested
+        }?.id
+    }, kind: window),
+    Scene(name: "a11y-popover-larger-text", configure: { model in
+        model.textSize = .larger
+        model.movePopoverSelection(by: 1)
+    }, kind: popover),
+    Scene(name: "a11y-settings-general", size: windowSize, configure: { model in
+        model.screen = .settings
+        model.settingsTab = .general
+    }, kind: window),
+    Scene(name: "a11y-settings-notifications", size: windowSize, configure: { model in
+        model.screen = .settings
+        model.settingsTab = .notifications
     }, kind: window),
     Scene(name: "sheet-approve-reply-blocked", kind: .view { model in
         AnyView(MergeCuePreview.approvalSheet(model: model, preview: samplePreview(model, .postReply)))

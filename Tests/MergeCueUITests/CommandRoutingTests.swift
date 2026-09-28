@@ -236,7 +236,7 @@ struct CommandRoutingTests {
         let visibleRows = 7 // 3 needs you + 2 waiting + 1 working + 1 ready
         #expect(model.popoverRows.count == visibleRows)
 
-        // Return on the first row ("Fix with AI") creates a task.
+        // ⌘↩ on the first row ("Fix with AI") creates a task (Return and Space open details, see KeyboardNavigationTests).
         model.popoverSelection = first.id
         await model.activatePopoverSelection()
         #expect(model.handoffOffer != nil)

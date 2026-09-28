@@ -57,8 +57,8 @@ private struct CheckoutScanStatus: View {
                     .help("Looks in ~/Developer, ~/Projects, ~/Code, ~/src and ~/Documents/GitHub")
             }
         }
-        .font(.callout)
-        .foregroundStyle(.secondary)
+        .scaledFont(.callout)
+        .foregroundStyle(Theme.textSecondary)
         .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -94,22 +94,22 @@ private struct AccountRepositoriesCard: View {
                 ProgressView().controlSize(.small)
                 Text("Syncing @\(account.account.username)'s \(account.kind.changeRequestAbbreviation)s… repositories with open ones appear here.")
             }
-            .font(.callout).foregroundStyle(.secondary)
+            .scaledFont(.callout).foregroundStyle(Theme.textSecondary)
         case .synced(let count) where count == 0:
             Label("No open \(account.kind.changeRequestAbbreviation)s for @\(account.account.username) yet. You can still map any repository below.",
                   systemImage: "tray")
-                .font(.callout).foregroundStyle(.secondary)
+                .scaledFont(.callout).foregroundStyle(Theme.textSecondary)
         case .synced:
             EmptyView()
         case .problem(let title, let message):
             VStack(alignment: .leading, spacing: 2) {
                 Label(title, systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(Theme.color(UIFormat.tone(of: account.status.state)))
+                    .foregroundStyle(Theme.textColor(UIFormat.tone(of: account.status.state)))
                 if let message {
-                    Text(message).font(.caption).foregroundStyle(.secondary)
+                    Text(message).scaledFont(.caption).foregroundStyle(Theme.textSecondary)
                 }
             }
-            .font(.callout)
+            .scaledFont(.callout)
         }
     }
 
@@ -118,10 +118,10 @@ private struct AccountRepositoriesCard: View {
         let list = model.state.repositoryLists[account.id]
         let others = RepositoryDirectory.otherRepositories(list?.repositories ?? [], excluding: excluding, search: search)
         HStack(spacing: 8) {
-            Text("Other repositories").font(.callout.weight(.medium))
+            Text("Other repositories").scaledFont(.callout.weight(.medium))
             if list?.isLoading ?? true {
                 ProgressView().controlSize(.small)
-                Text("Loading…").font(.caption).foregroundStyle(.secondary)
+                Text("Loading…").scaledFont(.caption).foregroundStyle(Theme.textSecondary)
             }
             Spacer()
             Button("Reload") { Task { await model.send(.loadRepositories(account.id, forceRefresh: true)) } }
@@ -130,25 +130,25 @@ private struct AccountRepositoriesCard: View {
         }
         if let error = list?.errorMessage {
             Label("Couldn't list repositories: \(error)", systemImage: "exclamationmark.triangle")
-                .font(.caption)
-                .foregroundStyle(Theme.attention)
+                .scaledFont(.caption)
+                .foregroundStyle(Theme.attentionText)
                 .fixedSize(horizontal: false, vertical: true)
         }
         if !(list?.repositories.isEmpty ?? true) {
             SearchField(text: $search, prompt: "Search repositories")
             if others.isEmpty {
                 Text(search.isEmpty ? "No other repositories." : "No repository matches “\(search)”.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .scaledFont(.caption).foregroundStyle(Theme.textSecondary)
             }
             ForEach(others.prefix(Self.visibleLimit), id: \.key) { repo in
                 row(repo, hasOpenPRs: false)
             }
             if others.count > Self.visibleLimit {
                 Text("Showing \(Self.visibleLimit) of \(others.count) — search to narrow the list.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .scaledFont(.caption).foregroundStyle(Theme.textSecondary)
             }
         } else if case .loaded? = list {
-            Text("No repositories found for this account.").font(.caption).foregroundStyle(.secondary)
+            Text("No repositories found for this account.").scaledFont(.caption).foregroundStyle(Theme.textSecondary)
         }
     }
 

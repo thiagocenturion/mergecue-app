@@ -29,18 +29,18 @@ struct ReviewersCard: View {
         Card("Reviewers", systemImage: "person.2") {
             VStack(alignment: .leading, spacing: 9) {
                 if snapshot.reviewers.isEmpty {
-                    Text("No reviewers requested").font(Theme.body).foregroundStyle(Theme.textSecondary)
+                    Text("No reviewers requested").scaledFont(Theme.body).foregroundStyle(Theme.textSecondary)
                 }
                 ForEach(snapshot.reviewers, id: \.person.remoteID) { reviewer in
                     HStack(spacing: 10) {
                         Avatar(name: reviewer.person.displayLabel, size: 26)
                         VStack(alignment: .leading, spacing: 0) {
-                            Text(reviewer.person.displayLabel).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.textPrimary)
-                            Text("@" + reviewer.person.username).font(.system(size: 11.5)).foregroundStyle(Theme.textSecondary)
+                            Text(reviewer.person.displayLabel).scaledFont(.system(size: 13, weight: .medium)).foregroundStyle(Theme.textPrimary)
+                            Text("@" + reviewer.person.username).scaledFont(.system(size: 11.5)).foregroundStyle(Theme.textSecondary)
                         }
                         Spacer()
                         if reviewer.isRequired == true {
-                            Text("Required").font(.system(size: 11.5)).foregroundStyle(Theme.textTertiary)
+                            Text("Required").scaledFont(.system(size: 11.5)).foregroundStyle(Theme.textTertiary)
                         }
                         ReviewStateChip(state: reviewer.state)
                     }
@@ -48,7 +48,7 @@ struct ReviewersCard: View {
                 }
                 ThemeDivider()
                 Text(approvalText)
-                    .font(.system(size: 12))
+                    .scaledFont(.system(size: 12))
                     .foregroundStyle(snapshot.approvals.isSatisfied == true ? Theme.mint : Theme.textSecondary)
             }
         }
@@ -75,15 +75,15 @@ struct ChangedFileList: View {
                         .frame(width: 16)
                         .accessibilityLabel(file.status.rawValue)
                     Text(file.path)
-                        .font(Theme.monoSmall)
+                        .scaledFont(Theme.monoSmall)
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
                         .truncationMode(.head)
                     Spacer(minLength: 6)
-                    if let additions = file.additions { Text("+\(additions)").foregroundStyle(Theme.mint) }
-                    if let deletions = file.deletions { Text("−\(deletions)").foregroundStyle(Theme.critical) }
+                    if let additions = file.additions { Text("+\(additions)").foregroundStyle(Theme.mintText) }
+                    if let deletions = file.deletions { Text("−\(deletions)").foregroundStyle(Theme.criticalText) }
                 }
-                .font(.system(size: 12, weight: .medium).monospacedDigit())
+                .scaledFont(.system(size: 12, weight: .medium).monospacedDigit())
                 .accessibilityElement(children: .combine)
             }
         }

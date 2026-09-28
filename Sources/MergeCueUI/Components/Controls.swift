@@ -2,11 +2,12 @@ import SwiftUI
 
 // MARK: - Buttons
 
-/// Size of the MergeCue button styles.
+/// Size of the MergeCue button styles. Heights are minimums: larger text (Settings › General › Text size) grows
+/// the control instead of clipping its label.
 enum ButtonSize {
     case small, compact, regular, tall, large
 
-    var font: Font {
+    var font: ThemeFont {
         switch self {
         case .small: .system(size: 12.5, weight: .semibold)
         case .compact: .system(size: 12.5, weight: .semibold)
@@ -35,92 +36,91 @@ enum ButtonSize {
         case .large: 22
         }
     }
+
+    /// Vertical padding that only matters once scaled text is taller than `height`.
+    var verticalPadding: CGFloat { 5 }
 }
 
-/// Primary action: the brand gradient (#38C8F5 → #3B82F6 → #8B5CF6) with white text.
+/// Primary action: the text-safe brand gradient (#087EA3 → #1B6DF5 → #8452F5, ≥ 4.5:1 with white) with white text.
 struct GradientButtonStyle: ButtonStyle {
     var size: ButtonSize = .regular
     var fullWidth = false
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.controlRadius + (size == .large ? 2 : 0), style: .continuous)
         configuration.label
-            .font(size.font)
-            .foregroundStyle(.white.opacity(isEnabled ? 1 : 0.7))
+            .scaledFont(size.font)
+            .foregroundStyle(isEnabled ? Color.white : Theme.textSecondary)
             .padding(.horizontal, size.horizontalPadding)
-            .frame(height: size.height)
+            .padding(.vertical, size.verticalPadding)
+            .frame(minHeight: size.height)
             .frame(maxWidth: fullWidth ? .infinity : nil)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.controlRadius + (size == .large ? 2 : 0), style: .continuous)
-                    .fill(isEnabled ? AnyShapeStyle(Theme.brandGradient) : AnyShapeStyle(Theme.textTertiary.opacity(0.45)))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.controlRadius + (size == .large ? 2 : 0), style: .continuous)
-                    .strokeBorder(.white.opacity(isEnabled ? 0.22 : 0.08), lineWidth: 1)
-            )
+            .background(shape.fill(isEnabled ? AnyShapeStyle(Theme.actionGradient) : AnyShapeStyle(Theme.surfaceRaised)))
+            .overlay(shape.strokeBorder(isEnabled ? AnyShapeStyle(Color.white.opacity(0.22)) : AnyShapeStyle(Theme.controlBorder), lineWidth: 1))
             .shadow(color: Color(hex: 0x3B82F6).opacity(isEnabled ? 0.28 : 0), radius: 10, y: 3)
             .opacity(configuration.isPressed ? 0.82 : 1)
-            .contentShape(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
+            .contentShape(shape)
     }
 }
 
-/// Secondary action: a filled neutral control with a subtle border.
+/// Secondary action: a filled neutral control with a visible (≥ 3:1) boundary.
 struct SecondaryButtonStyle: ButtonStyle {
     var size: ButtonSize = .regular
     var fullWidth = false
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
         configuration.label
-            .font(size.font)
-            .foregroundStyle(isEnabled ? Theme.textPrimary : Theme.textTertiary)
+            .scaledFont(size.font)
+            .foregroundStyle(isEnabled ? Theme.textPrimary : Theme.textSecondary)
             .padding(.horizontal, size.horizontalPadding)
-            .frame(height: size.height)
+            .padding(.vertical, size.verticalPadding)
+            .frame(minHeight: size.height)
             .frame(maxWidth: fullWidth ? .infinity : nil)
-            .background(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
-                .fill(configuration.isPressed ? Theme.surfaceHover : Theme.surfaceRaised))
-            .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
-                .strokeBorder(Theme.borderStrong, lineWidth: 1))
-            .contentShape(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
+            .background(shape.fill(configuration.isPressed ? Theme.surfaceHover : Theme.surfaceRaised))
+            .overlay(shape.strokeBorder(Theme.controlBorder.opacity(isEnabled ? 1 : 0.5), lineWidth: 1))
+            .contentShape(shape)
     }
 }
 
-/// Outlined gradient action ("✦ Fix with AI" in the popover): dark fill, gradient border and text.
+/// Outlined gradient action ("✦ Fix with AI" in the popover): tinted fill, gradient border and text-safe gradient text.
 struct OutlinedGradientButtonStyle: ButtonStyle {
     var size: ButtonSize = .small
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
         configuration.label
-            .font(size.font)
-            .foregroundStyle(isEnabled ? AnyShapeStyle(LinearGradient(colors: [Theme.cyan, Color(hex: 0x6E8BFF)], startPoint: .leading, endPoint: .trailing))
-                                       : AnyShapeStyle(Theme.textTertiary))
+            .scaledFont(size.font)
+            .foregroundStyle(isEnabled ? AnyShapeStyle(Theme.actionTextGradient) : AnyShapeStyle(Theme.textSecondary))
             .padding(.horizontal, size.horizontalPadding)
-            .frame(height: size.height)
-            .background(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
-                .fill(Theme.blue.opacity(configuration.isPressed ? 0.18 : 0.08)))
-            .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
-                .strokeBorder(Theme.brandGradient, lineWidth: 1.2).opacity(isEnabled ? 1 : 0.4))
-            .contentShape(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
+            .padding(.vertical, size.verticalPadding)
+            .frame(minHeight: size.height)
+            .background(shape.fill(Theme.blue.opacity(configuration.isPressed ? 0.18 : 0.08)))
+            .overlay(shape.strokeBorder(Theme.brandGradient, lineWidth: 1.2).opacity(isEnabled ? 1 : 0.4))
+            .contentShape(shape)
     }
 }
 
-/// Tinted outline ("Review patch" in mint).
+/// Tinted outline ("Review patch" in mint): the status colour for the border and fill, its text variant for the label.
 struct TintedOutlineButtonStyle: ButtonStyle {
     var color: Color
+    var textColor: Color
     var size: ButtonSize = .small
 
     func makeBody(configuration: Configuration) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
         configuration.label
-            .font(size.font)
-            .foregroundStyle(color)
+            .scaledFont(size.font)
+            .foregroundStyle(textColor)
             .padding(.horizontal, size.horizontalPadding)
-            .frame(height: size.height)
-            .background(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
-                .fill(color.opacity(configuration.isPressed ? 0.2 : 0.09)))
-            .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
-                .strokeBorder(color.opacity(0.75), lineWidth: 1.1))
-            .contentShape(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
+            .padding(.vertical, size.verticalPadding)
+            .frame(minHeight: size.height)
+            .background(shape.fill(color.opacity(configuration.isPressed ? 0.2 : 0.09)))
+            .overlay(shape.strokeBorder(color, lineWidth: 1.1))
+            .contentShape(shape)
     }
 }
 
@@ -128,25 +128,29 @@ struct TintedOutlineButtonStyle: ButtonStyle {
 struct IconButtonStyle: ButtonStyle {
     var size: CGFloat = 30
     var filled = true
+    @Environment(\.textScale) private var textScale
 
     func makeBody(configuration: Configuration) -> some View {
+        let side = size * max(1, textScale)
+        let shape = RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
         configuration.label
-            .font(.system(size: size * 0.45, weight: .medium))
+            .scaledFont(.system(size: size * 0.45, weight: .medium))
             .foregroundStyle(Theme.textSecondary)
-            .frame(width: size, height: size)
-            .background(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-                .fill(filled ? (configuration.isPressed ? Theme.surfaceHover : Theme.surfaceRaised) : (configuration.isPressed ? Theme.surfaceHover : .clear)))
-            .overlay(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-                .strokeBorder(filled ? Theme.border : .clear, lineWidth: 1))
+            .frame(width: side, height: side)
+            .background(shape.fill(filled ? (configuration.isPressed ? Theme.surfaceHover : Theme.surfaceRaised) : (configuration.isPressed ? Theme.surfaceHover : .clear)))
+            .overlay(shape.strokeBorder(filled ? Theme.controlBorder : .clear, lineWidth: 1))
             .contentShape(Rectangle())
     }
 }
 
 /// Plain text/icon button that highlights on press (sidebar rows, footers).
 struct PlainRowButtonStyle: ButtonStyle {
+    /// Corner radius of the hit and focus shape (the system keyboard focus ring follows it).
+    var cornerRadius: CGFloat = 8
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .contentShape(Rectangle())
+            .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .opacity(configuration.isPressed ? 0.7 : 1)
     }
 }
@@ -157,35 +161,47 @@ struct SparkleIcon: View {
 
     var body: some View {
         Image(systemName: "sparkle")
-            .font(.system(size: size, weight: .semibold))
+            .scaledFont(.system(size: size, weight: .semibold))
             .accessibilityHidden(true)
     }
 }
 
 // MARK: - Pills, badges, dots
 
-/// Capsule status pill: coloured text, tinted fill and border, optional dot or symbol ("● Ready", "Waiting for agent").
+/// Capsule status pill: text in the status's text colour, tinted fill and border, optional dot or symbol
+/// ("● Ready", "Waiting for agent"). With Differentiate Without Color the dot becomes `cueSymbol`.
 struct StatusPill: View {
     var text: String
     var color: Color
+    /// Label colour; pass the status's `…Text` token (defaults to `Theme.textPrimary`).
+    var textColor: Color = Theme.textPrimary
     var symbol: String?
     var showsDot = false
     var size: CGFloat = 12.5
+    /// Symbol shown instead of the dot when the user asked to differentiate without colour.
+    var cueSymbol: String = "circle.fill"
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
 
     var body: some View {
         HStack(spacing: 6) {
             if showsDot {
-                Circle().fill(color).frame(width: size * 0.6, height: size * 0.6)
+                if differentiateWithoutColor {
+                    Image(systemName: cueSymbol)
+                        .scaledFont(.system(size: size * 0.8, weight: .semibold))
+                        .foregroundStyle(color)
+                } else {
+                    Circle().fill(color).frame(width: size * 0.6, height: size * 0.6)
+                }
             }
             if let symbol {
                 Image(systemName: symbol)
-                    .font(.system(size: size, weight: .semibold))
+                    .scaledFont(.system(size: size, weight: .semibold))
             }
             Text(text)
-                .font(.system(size: size, weight: .semibold))
+                .scaledFont(.system(size: size, weight: .semibold))
                 .lineLimit(1)
         }
-        .foregroundStyle(color)
+        .foregroundStyle(textColor)
         .padding(.horizontal, size * 0.85)
         .padding(.vertical, size * 0.38)
         .background(Capsule().fill(color.opacity(0.13)))
@@ -203,7 +219,7 @@ struct CountBadge: View {
 
     var body: some View {
         Text("\(count)")
-            .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
+            .scaledFont(.system(size: 11.5, weight: .semibold).monospacedDigit())
             .foregroundStyle(highlighted ? Theme.textPrimary : Theme.textSecondary)
             .padding(.horizontal, 7)
             .frame(minWidth: 22, minHeight: 20)
@@ -213,26 +229,30 @@ struct CountBadge: View {
     }
 }
 
-/// A coloured status glyph in a small filled circle ("!" for Needs you, "✓" for Ready).
+/// A coloured status glyph in a small filled circle ("!" for Needs you, "✓" for Ready). The glyph is white on the
+/// light-mode fills and deep navy on the bright dark-mode fills (≥ 3:1 either way).
 struct StatusGlyph: View {
     var symbol: String
     var color: Color
     var size: CGFloat = 18
+    @Environment(\.textScale) private var textScale
 
     var body: some View {
+        let side = size * textScale
         Image(systemName: symbol)
-            .font(.system(size: size * 0.55, weight: .heavy))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
+            .font(.system(size: side * 0.55, weight: .heavy))
+            .foregroundStyle(Theme.onStatusFill)
+            .frame(width: side, height: side)
             .background(Circle().fill(color))
             .accessibilityHidden(true)
     }
 }
 
-/// A thin circular progress ring (AI working). Static in snapshots, spinning in the app.
+/// A thin circular progress ring (AI working). Spins in the app; static in snapshots and with Reduce Motion.
 struct WorkingSpinner: View {
     var size: CGFloat = 26
     @State private var rotation: Double = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -241,14 +261,45 @@ struct WorkingSpinner: View {
                 .trim(from: 0, to: 0.7)
                 .stroke(AngularGradient(colors: [Theme.violet.opacity(0.1), Theme.violet, Theme.cyan], center: .center),
                         style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                .rotationEffect(.degrees(rotation))
+                .rotationEffect(.degrees(reduceMotion ? 0 : rotation))
         }
         .frame(width: size, height: size)
-        .onAppear {
-            withAnimation(.linear(duration: 1.4).repeatForever(autoreverses: false)) { rotation = 360 }
-        }
+        .onAppear { startSpinning() }
+        .onChange(of: reduceMotion) { _, _ in startSpinning() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("In progress")
+    }
+
+    private func startSpinning() {
+        guard !reduceMotion else {
+            rotation = 0
+            return
+        }
+        withAnimation(.linear(duration: 1.4).repeatForever(autoreverses: false)) { rotation = 360 }
+    }
+}
+
+/// A section's coloured dot, or its symbol when the user asked to differentiate without colour.
+struct SectionMarker: View {
+    var section: PopoverSection
+    var size: CGFloat = 10
+    var glow = false
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+
+    var body: some View {
+        Group {
+            if differentiateWithoutColor {
+                Image(systemName: Theme.symbol(section))
+                    .scaledFont(.system(size: size * 1.2, weight: .semibold))
+                    .foregroundStyle(Theme.color(section))
+            } else {
+                Circle()
+                    .fill(Theme.color(section))
+                    .frame(width: size, height: size)
+                    .shadow(color: glow ? Theme.color(section).opacity(0.5) : .clear, radius: 4)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -267,15 +318,16 @@ struct FilterChips<Value: Hashable>: View {
                     selection = option.0
                 } label: {
                     Text(option.1)
-                        .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                        .scaledFont(.system(size: 13, weight: isSelected ? .semibold : .medium))
                         .foregroundStyle(isSelected ? Color.white : Theme.textSecondary)
                         .padding(.horizontal, isSelected ? 22 : 18)
-                        .frame(height: 32)
-                        .background(Capsule().fill(isSelected ? AnyShapeStyle(LinearGradient(colors: [Color(hex: 0x2E6FF0), Color(hex: 0x2456C9)], startPoint: .top, endPoint: .bottom)) : AnyShapeStyle(Theme.surfaceRaised)))
-                        .overlay(Capsule().strokeBorder(isSelected ? Color(hex: 0x69A2FF).opacity(0.9) : Theme.borderStrong, lineWidth: 1))
+                        .padding(.vertical, 4)
+                        .frame(minHeight: 32)
+                        .background(Capsule().fill(isSelected ? AnyShapeStyle(LinearGradient(colors: Palette.selectedChipStops.map { Color(hex: $0) }, startPoint: .top, endPoint: .bottom)) : AnyShapeStyle(Theme.surfaceRaised)))
+                        .overlay(Capsule().strokeBorder(isSelected ? Color(hex: 0x69A2FF).opacity(0.9) : Theme.controlBorder, lineWidth: 1))
                         .shadow(color: isSelected ? Color(hex: 0x3B82F6).opacity(0.35) : .clear, radius: 8)
                 }
-                .buttonStyle(PlainRowButtonStyle())
+                .buttonStyle(PlainRowButtonStyle(cornerRadius: 16))
                 .accessibilityAddTraits(isSelected ? [.isSelected] : [])
             }
         }
@@ -300,7 +352,8 @@ struct SegmentedTrack<Value: Hashable, Label: View>: View {
                     label(option, isSelected)
                         .frame(maxWidth: equalWidths ? .infinity : nil)
                         .padding(.horizontal, 14)
-                        .frame(height: height)
+                        .padding(.vertical, 4)
+                        .frame(minHeight: height)
                         .background(
                             RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
                                 .fill(isSelected ? Theme.surfaceSelected : .clear)
@@ -337,7 +390,7 @@ struct UnderlineTabs<Value: Hashable>: View {
                         VStack(spacing: 9) {
                             HStack(spacing: 7) {
                                 Text(option.1)
-                                    .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
+                                    .scaledFont(.system(size: 14, weight: isSelected ? .semibold : .regular))
                                     .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textSecondary)
                                 if let count = option.2 {
                                     CountBadge(count: count)
@@ -370,10 +423,15 @@ struct SearchField: View {
     var showsShortcut = false
     var focus: FocusState<Bool>.Binding?
 
+    @FocusState private var ownFocus: Bool
+
+    private var isFieldFocused: Bool { focus?.wrappedValue ?? ownFocus }
+
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.controlRadius + 1, style: .continuous)
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 13, weight: .medium))
+                .scaledFont(.system(size: 13, weight: .medium))
                 .foregroundStyle(Theme.textSecondary)
                 .accessibilityHidden(true)
             field
@@ -382,7 +440,7 @@ struct SearchField: View {
                     text = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(Theme.textTertiary)
+                        .foregroundStyle(Theme.textSecondary)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
@@ -395,21 +453,27 @@ struct SearchField: View {
             }
         }
         .padding(.horizontal, 11)
-        .frame(height: 36)
-        .background(RoundedRectangle(cornerRadius: Theme.controlRadius + 1, style: .continuous).fill(Theme.surfaceRaised))
-        .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius + 1, style: .continuous).strokeBorder(Theme.borderStrong, lineWidth: 1))
+        .padding(.vertical, 6)
+        .frame(minHeight: 36)
+        .background(shape.fill(Theme.surfaceRaised))
+        .overlay(shape.strokeBorder(Theme.controlBorder, lineWidth: 1))
+        .overlay {
+            if isFieldFocused {
+                shape.inset(by: -3).strokeBorder(Theme.focusRing, lineWidth: 2).allowsHitTesting(false)
+            }
+        }
     }
 
     @ViewBuilder
     private var field: some View {
         let base = TextField("Search", text: $text, prompt: Text(prompt).foregroundStyle(Theme.textSecondary))
             .textFieldStyle(.plain)
-            .font(.system(size: 13.5))
+            .scaledFont(.system(size: 13.5))
             .foregroundStyle(Theme.textPrimary)
         if let focus {
             base.focused(focus)
         } else {
-            base
+            base.focused($ownFocus)
         }
     }
 }
@@ -420,7 +484,7 @@ struct KeyCap: View {
 
     var body: some View {
         Text(key)
-            .font(.system(size: 10.5, weight: .medium))
+            .scaledFont(.system(size: 10.5, weight: .medium))
             .foregroundStyle(Theme.textSecondary)
             .frame(minWidth: 18, minHeight: 18)
             .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(Theme.surfaceSunken))
@@ -447,14 +511,15 @@ struct FilterMenu<Content: View>: View {
         } label: {
             HStack(spacing: 4) {
                 Text(title).lineLimit(1)
-                Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+                Image(systemName: "chevron.down").scaledFont(.system(size: 9, weight: .semibold))
             }
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(isActive ? Theme.accent : Theme.textSecondary)
+            .scaledFont(.system(size: 12, weight: .medium))
+            .foregroundStyle(isActive ? Theme.accentText : Theme.textSecondary)
             .padding(.horizontal, 10)
-            .frame(height: 26)
+            .padding(.vertical, 3)
+            .frame(minHeight: 26)
             .background(Capsule().fill(isActive ? Theme.accent.opacity(0.12) : Theme.surfaceRaised))
-            .overlay(Capsule().strokeBorder(isActive ? Theme.accent.opacity(0.5) : Theme.border, lineWidth: 1))
+            .overlay(Capsule().strokeBorder(isActive ? Theme.accent : Theme.controlBorder, lineWidth: 1))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)

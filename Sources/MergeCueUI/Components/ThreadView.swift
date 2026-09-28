@@ -5,7 +5,7 @@ import SwiftUI
 /// Renders an untrusted comment body: inline Markdown (no links), fenced code and ```suggestion blocks.
 struct CommentBody: View {
     var text: String
-    var font: Font = .system(size: 13.5)
+    var font: ThemeFont = .system(size: 13.5)
 
     private struct Segment: Identifiable {
         var id: Int
@@ -54,14 +54,14 @@ struct CommentBody: View {
                     VStack(alignment: .leading, spacing: 0) {
                         if segment.language == "suggestion" {
                             Label("Suggested change", systemImage: "chevron.left.forwardslash.chevron.right")
-                                .font(.system(size: 11.5, weight: .semibold))
-                                .foregroundStyle(Theme.violet)
+                                .scaledFont(.system(size: 11.5, weight: .semibold))
+                                .foregroundStyle(Theme.violetText)
                                 .padding(.horizontal, 10)
                                 .padding(.top, 7)
                         }
                         ScrollView(.horizontal) {
                             Text(segment.text.replacingOccurrences(of: "\t", with: "    "))
-                                .font(Theme.mono)
+                                .scaledFont(Theme.mono)
                                 .foregroundStyle(Theme.textPrimary)
                                 .fixedSize(horizontal: true, vertical: false)
                                 .textSelection(.enabled)
@@ -73,7 +73,7 @@ struct CommentBody: View {
                     .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Theme.border))
                 } else {
                     Text(Self.inlineMarkdown(segment.text))
-                        .font(font)
+                        .scaledFont(font)
                         .foregroundStyle(Theme.textPrimary.opacity(0.92))
                         .lineSpacing(3)
                         .fixedSize(horizontal: false, vertical: true)
@@ -133,7 +133,7 @@ struct ThreadView: View {
                     .foregroundStyle(Theme.textSecondary)
                     .accessibilityHidden(true)
                 Text(anchor.path + (anchor.line.map { ":\($0)" } ?? ""))
-                    .font(.system(size: 12.5, weight: .medium, design: .monospaced))
+                    .scaledFont(.system(size: 12.5, weight: .medium, design: .monospaced))
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.head)
@@ -144,7 +144,7 @@ struct ThreadView: View {
                 }
             } else {
                 Label(thread.key.kind == .reviewSummary ? "Review summary" : "Conversation", systemImage: "bubble.left.and.bubble.right")
-                    .font(.system(size: 12.5, weight: .medium))
+                    .scaledFont(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(Theme.textSecondary)
             }
             Spacer(minLength: 8)
@@ -181,11 +181,11 @@ struct CommentCard: View {
             HStack(spacing: 12) {
                 Avatar(name: comment.author.displayLabel, size: 34)
                 Text(comment.author.displayName.flatMap(Presentation.firstName) ?? comment.author.username)
-                    .font(.system(size: 14, weight: .semibold))
+                    .scaledFont(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
                     .help("@\(comment.author.username)")
                 Text(UIFormat.relative(from: comment.createdAt, now: now))
-                    .font(.system(size: 12.5))
+                    .scaledFont(.system(size: 12.5))
                     .foregroundStyle(Theme.textSecondary)
                     .help(UIFormat.dateTime(comment.createdAt))
                 if comment.author.isBot { Chip(text: "Bot") }
@@ -201,8 +201,9 @@ struct CommentCard: View {
                 }
                 if let role {
                     Text(role)
-                        .font(.system(size: 11.5, weight: .medium))
+                        .scaledFont(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(Theme.textSecondary)
+                        .fixedSize()
                         .padding(.horizontal, 9)
                         .padding(.vertical, 3.5)
                         .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Theme.surfaceRaised))
@@ -218,7 +219,7 @@ struct CommentCard: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 13, weight: .semibold))
+                        .scaledFont(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.textSecondary)
                         .frame(width: 26, height: 22)
                 }
@@ -238,7 +239,7 @@ struct CommentCard: View {
                 RoundedRectangle(cornerRadius: 1.5).fill(Theme.accent).frame(width: 3).padding(.vertical, 12)
             }
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -254,12 +255,14 @@ struct CodeContextCard: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "doc")
-                    .font(.system(size: 14))
+                    .scaledFont(.system(size: 14))
                     .foregroundStyle(Theme.textSecondary)
                     .accessibilityHidden(true)
                 Text(anchor.path.split(separator: "/").last.map(String.init) ?? anchor.path)
-                    .font(.system(size: 13, weight: .semibold))
+                    .scaledFont(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                     .help(anchor.path)
                 if anchor.isOutdated {
                     Chip(text: "Outdated", symbol: "clock.arrow.circlepath", tone: .attention)
@@ -267,7 +270,7 @@ struct CodeContextCard: View {
                 Spacer(minLength: 8)
                 if let line = anchor.line {
                     Text("Line \(line)")
-                        .font(.system(size: 12.5))
+                        .scaledFont(.system(size: 12.5))
                         .foregroundStyle(Theme.textSecondary)
                 }
                 Button {
@@ -275,7 +278,7 @@ struct CodeContextCard: View {
                 } label: {
                     HStack(spacing: 6) {
                         Text("Open in editor")
-                        Image(systemName: "arrow.up.right.square").font(.system(size: 11))
+                        Image(systemName: "arrow.up.right.square").scaledFont(.system(size: 11))
                     }
                 }
                 .buttonStyle(SecondaryButtonStyle(size: .small))
@@ -326,16 +329,16 @@ struct CodeLineRow: View {
     var body: some View {
         HStack(spacing: 0) {
             Text((line.kind == .removed ? line.oldNumber : line.newNumber).map(String.init) ?? "")
-                .font(.system(size: 11.5, weight: isAnchor ? .semibold : .regular, design: .monospaced))
+                .scaledFont(.system(size: 11.5, weight: isAnchor ? .semibold : .regular, design: .monospaced))
                 .foregroundStyle(isAnchor ? Theme.textPrimary : Theme.textTertiary)
                 .frame(width: numberWidth, alignment: .trailing)
                 .padding(.trailing, 14)
             Text(marker)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .scaledFont(.system(size: 12, weight: .semibold, design: .monospaced))
                 .foregroundStyle(markerColor)
                 .frame(width: 18, alignment: .leading)
             Text(line.text.isEmpty ? " " : line.text)
-                .font(.system(size: 12, design: .monospaced))
+                .scaledFont(.system(size: 12, design: .monospaced))
                 .foregroundStyle(textColor)
                 .fixedSize(horizontal: true, vertical: false)
                 .textSelection(.enabled)
@@ -401,16 +404,16 @@ struct UntrustedQuote: View {
                     .foregroundStyle(Theme.textSecondary)
                     .accessibilityHidden(true)
                 Text(provenance)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .scaledFont(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(Theme.textSecondary)
                 Spacer()
                 Text("Untrusted — shown as data")
-                    .font(.system(size: 10.5))
+                    .scaledFont(.system(size: 10.5))
                     .foregroundStyle(Theme.textTertiary)
             }
             if quote.source == UntrustedText.Source.ciLog {
                 Text(quote.text)
-                    .font(Theme.monoSmall)
+                    .scaledFont(Theme.monoSmall)
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(12)
                     .textSelection(.enabled)

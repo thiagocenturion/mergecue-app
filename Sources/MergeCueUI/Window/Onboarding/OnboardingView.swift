@@ -36,6 +36,7 @@ enum OnboardingStep: Int, CaseIterable, Identifiable {
 struct OnboardingView: View {
     @Bindable var model: AppModel
     @State private var step: OnboardingStep
+    @Environment(\.textScale) private var textScale
 
     init(model: AppModel, initialStep: OnboardingStep = .welcome) {
         self.model = model
@@ -45,9 +46,10 @@ struct OnboardingView: View {
     var body: some View {
         HStack(spacing: 0) {
             rail
-                .frame(width: 200)
+                .frame(width: 200 * min(textScale, 1.2))
                 .background(Theme.sidebarBackground)
             Rectangle().fill(Theme.divider).frame(width: 1)
+            // The step scrolls; the footer (Back / Close / Continue) stays pinned at the bottom.
             VStack(spacing: 0) {
                 ScrollView {
                     content
@@ -61,8 +63,12 @@ struct OnboardingView: View {
             }
             .background(Theme.contentBackground)
         }
-        .frame(width: 900, height: 640)
+        .frame(minWidth: 680, idealWidth: 900 * min(textScale, 1.2), maxWidth: 1_200,
+               minHeight: 480, idealHeight: 640 * min(textScale, 1.2), maxHeight: 900)
         .overlay(alignment: .top) { BannerStack(model: model) }
+        .onChange(of: step) { _, step in
+            AccessibilityAnnouncer.announce("Step \(step.rawValue + 1) of \(OnboardingStep.allCases.count): \(step.title)")
+        }
     }
 
     // MARK: Rail
@@ -71,26 +77,37 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 10) {
                 AppMark(size: 34)
-                Text("MergeCue").font(.system(size: 17, weight: .semibold))
+                Text("MergeCue").scaledFont(.system(size: 17, weight: .semibold))
             }
             .padding(.bottom, 18)
+            .accessibilityElement(children: .combine)
             ForEach(OnboardingStep.allCases) { item in
                 HStack(spacing: 10) {
                     Image(systemName: item.rawValue < step.rawValue ? "checkmark.circle.fill" : item.symbol)
                         .foregroundStyle(item.rawValue < step.rawValue ? Theme.mint : (item == step ? Theme.accent : Theme.textTertiary))
                         .frame(width: 18)
                     Text(item.title)
-                        .font(.system(size: 13, weight: item == step ? .semibold : .regular))
+                        .scaledFont(.system(size: 13, weight: item == step ? .semibold : .regular))
                         .foregroundStyle(item == step ? Theme.textPrimary : Theme.textSecondary)
                 }
-                .frame(height: 30)
+                .padding(.vertical, 4)
+                .frame(minHeight: 30)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Step \(item.rawValue + 1) of \(OnboardingStep.allCases.count), \(item.title), \(stateText(item))")
                 .accessibilityAddTraits(item == step ? [.isSelected] : [])
             }
-            Spacer()
+            Spacer(minLength: 16)
             ModeBadge(mode: model.mode)
         }
         .padding(20)
         .frame(maxHeight: .infinity, alignment: .topLeading)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Setup steps")
+    }
+
+    private func stateText(_ item: OnboardingStep) -> String {
+        if item.rawValue < step.rawValue { return "completed" }
+        return item == step ? "current step" : "not started"
     }
 
     // MARK: Footer
@@ -104,7 +121,9 @@ struct OnboardingView: View {
             if step != .done {
                 Button("Close") { model.finishOnboarding() }
                     .buttonStyle(.link)
-                    .help("You can run the setup assistant again from Settings › General")
+                    .keyboardShortcut(.cancelAction)
+                    .help("You can run the setup assistant again from Settings › General (Esc)")
+                    .accessibilityHint("Closes the setup assistant. You can run it again from Settings, General")
             }
             Button(primaryTitle) {
                 if step == .done { model.finishOnboarding() } else { move(1) }
@@ -156,11 +175,11 @@ struct StepScaffold<Content: View>: View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(title)
-                    .font(.system(size: 24, weight: .bold))
+                    .scaledFont(.system(size: 24, weight: .bold))
                     .foregroundStyle(Theme.textPrimary)
                     .accessibilityAddTraits(.isHeader)
                 Text(subtitle)
-                    .font(.system(size: 13.5))
+                    .scaledFont(.system(size: 13.5))
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -182,10 +201,10 @@ struct WelcomeStep: View {
                 .frame(width: 120, height: 120)
                 .accessibilityLabel("MergeCue app icon")
             Text("MergeCue")
-                .font(.system(size: 34, weight: .bold))
+                .scaledFont(.system(size: 34, weight: .bold))
                 .foregroundStyle(Theme.textPrimary)
             Text("PRs move forward. You stay in flow.")
-                .font(.title3)
+                .scaledFont(.title3)
                 .foregroundStyle(Theme.textSecondary)
             VStack(alignment: .leading, spacing: 10) {
                 point("tray.full", "One inbox for GitHub, GitLab and Bitbucket Cloud: what needs you, what your agent is doing, what's ready.")
@@ -196,8 +215,8 @@ struct WelcomeStep: View {
             .padding(.top, 12)
             if model.mode == .demo {
                 Label(BackendMode.demo.explanation, systemImage: "info.circle")
-                    .font(.caption)
-                    .foregroundStyle(Theme.attention)
+                    .scaledFont(.caption)
+                    .foregroundStyle(Theme.attentionText)
             }
         }
         .frame(maxWidth: .infinity)
@@ -207,7 +226,7 @@ struct WelcomeStep: View {
     private func point(_ symbol: String, _ text: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: symbol).foregroundStyle(Theme.accent).frame(width: 22)
-            Text(text).font(.system(size: 13.5)).foregroundStyle(Theme.textPrimary).fixedSize(horizontal: false, vertical: true)
+            Text(text).scaledFont(.system(size: 13.5)).foregroundStyle(Theme.textPrimary).fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -234,14 +253,14 @@ struct AccountsStep: View {
                 HStack(spacing: 10) {
                     ProviderGlyph(kind: kind, size: 24)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(kind == .gitlab ? "GitLab.com" : kind.displayName).font(.headline)
+                        Text(kind == .gitlab ? "GitLab.com" : kind.displayName).scaledFont(.headline)
                         if connected.isEmpty {
-                            Text("Not connected").font(.caption).foregroundStyle(.secondary)
+                            Text("Not connected").scaledFont(.caption).foregroundStyle(Theme.textSecondary)
                         }
                         ForEach(connected) { account in
                             Text("@\(account.account.username) · \(UIFormat.syncText(account.status, now: model.now))")
-                                .font(.caption)
-                                .foregroundStyle(Theme.color(UIFormat.tone(of: account.status.state)))
+                                .scaledFont(.caption)
+                                .foregroundStyle(Theme.textColor(UIFormat.tone(of: account.status.state)))
                         }
                     }
                     Spacer()
@@ -266,8 +285,8 @@ struct RepositoriesStep: View {
             VStack(alignment: .leading, spacing: 12) {
                 if model.state.accounts.isEmpty {
                     Text("Connect an account first — then every repository it can access appears here. You can also map them later in Settings › Repositories.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .scaledFont(.callout)
+                        .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     AccountRepositoriesSection(model: model)
@@ -289,17 +308,19 @@ struct NotificationsStep: View {
                     Task {
                         let result = await model.send(.requestNotificationPermission)
                         answer = result?.message
+                        await model.refreshNotificationPermission()
                     }
                 } label: {
                     Label("Allow Notifications…", systemImage: "bell.badge")
                 }
                 .buttonStyle(GradientButtonStyle(size: .small))
                 Text("macOS asks you once. Clicking a notification opens the item in MergeCue.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .scaledFont(.caption)
+                    .foregroundStyle(Theme.textSecondary)
                 if let answer {
-                    Text(answer).font(.callout).foregroundStyle(Theme.textPrimary)
+                    Text(answer).scaledFont(.callout).foregroundStyle(Theme.textPrimary)
                 }
+                NotificationPermissionCard(model: model)
             }
         }
     }
@@ -320,8 +341,8 @@ struct DoneStep: View {
                 summary("terminal", agents.isEmpty ? "No agent verified yet — Copy command still works with any MCP-capable agent"
                                                    : "\(agents.map(\.name).joined(separator: " and ")) connected", ok: !agents.isEmpty)
                 Text("Run this assistant again any time from Settings › General.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .scaledFont(.caption)
+                    .foregroundStyle(Theme.textSecondary)
                     .padding(.top, 6)
             }
         }
@@ -332,7 +353,7 @@ struct DoneStep: View {
             Image(systemName: ok ? "checkmark.circle.fill" : symbol)
                 .foregroundStyle(ok ? Theme.mint : Theme.textTertiary)
                 .frame(width: 20)
-            Text(text).font(.system(size: 14))
+            Text(text).scaledFont(.system(size: 14))
         }
     }
 }

@@ -125,6 +125,14 @@ public struct AppEnvironment {
     public var tickInterval: Duration?
     /// The Mac user's full name for the greeting (`NSFullUserName()`); nil falls back to the account display name.
     public var userFullName: String?
+    /// Where UI preferences (text size, global shortcut) persist. In memory unless `withSystemServices()`.
+    public var preferences: PreferenceStore = .inMemory()
+    /// Speaks a message to assistive technologies (VoiceOver announcement). Inert unless `withSystemServices()`.
+    public var announce: (String, Tone) -> Void = { _, _ in }
+    /// Reads the app's notification permission from macOS; nil where it can't be known (no app bundle, tests).
+    public var notificationPermission: (() async -> NotificationPermission)?
+    /// Opens System Settings › Notifications › MergeCue.
+    public var openNotificationSettings: (() -> Void)?
 
     public init(now: @escaping () -> Date, copyToPasteboard: @escaping (String) -> Void, openURL: @escaping (URL) -> Void,
                 autoDismissBanners: Bool, tickInterval: Duration?, userFullName: String? = nil) {
@@ -155,6 +163,19 @@ public struct AppEnvironment {
     public static func fixed(now: Date, copied: ((String) -> Void)? = nil, userFullName: String? = nil) -> AppEnvironment {
         AppEnvironment(now: { now }, copyToPasteboard: copied ?? { _ in }, openURL: { _ in }, autoDismissBanners: false, tickInterval: nil,
                        userFullName: userFullName)
+    }
+}
+
+extension AppEnvironment {
+    /// `.system` plus the services only the installed app uses: persisted preferences, VoiceOver announcements and
+    /// the real notification permission.
+    public static func withSystemServices() -> AppEnvironment {
+        var environment = AppEnvironment.system
+        environment.preferences = .userDefaults
+        environment.announce = { message, tone in AccessibilityAnnouncer.announce(message, tone: tone) }
+        environment.notificationPermission = { await NotificationPermission.current() }
+        environment.openNotificationSettings = { NotificationPermission.openSystemSettings() }
+        return environment
     }
 }
 
@@ -212,6 +233,18 @@ public final class AppModel {
     public var collapsedPopoverSections: Set<PopoverSection> = []
     /// Presents the setup assistant (first live launch without accounts, or Settings › General).
     public var showsOnboarding = false
+    /// Settings › General › Text size (persisted; applied at the window and popover roots).
+    public var textSize: TextSizePreference = .standard {
+        didSet { environment.preferences.save(UIPreferenceKeys.textSize, textSize.rawValue) }
+    }
+    /// Settings › General › Global shortcut that opens the popover from anywhere (persisted).
+    public var globalHotKey: HotKeyPreset = .defaultPreset {
+        didSet { environment.preferences.save(UIPreferenceKeys.globalHotKey, globalHotKey.rawValue) }
+    }
+    /// Incremented whenever the popover is shown, so it resets keyboard focus each time.
+    public internal(set) var popoverPresentationCount = 0
+    /// The app's notification permission as macOS reports it (Settings › Notifications).
+    public internal(set) var notificationPermission: NotificationPermission = .unknown
 
     // MARK: Hooks installed by the app shell
     @ObservationIgnored public var openMainWindowHandler: (() -> Void)?
@@ -220,6 +253,10 @@ public final class AppModel {
     @ObservationIgnored public var switchModeHandler: ((BackendMode) -> Void)?
     /// Called when the owner finishes (or skips) the setup assistant.
     @ObservationIgnored public var onboardingCompletedHandler: (() -> Void)?
+    /// Quits the app (popover footer menu). Nil where quitting isn't possible (snapshots, tests).
+    @ObservationIgnored public var quitHandler: (() -> Void)?
+    /// Banners whose auto-dismiss timer is paused (pointer over them or keyboard focus inside).
+    @ObservationIgnored var heldBanners: Set<UUID> = []
 
     @ObservationIgnored let environment: AppEnvironment
     @ObservationIgnored private var changeTask: Task<Void, Never>?
@@ -236,6 +273,8 @@ public final class AppModel {
         self.indexes = Indexes(state)
         self.sections = PopoverDerivation.derive(from: state, now: now)
         self.isLoaded = initialState != nil
+        self.textSize = environment.preferences.load(UIPreferenceKeys.textSize).flatMap(TextSizePreference.init(rawValue:)) ?? .standard
+        self.globalHotKey = environment.preferences.load(UIPreferenceKeys.globalHotKey).flatMap(HotKeyPreset.init(rawValue:)) ?? .defaultPreset
     }
 
     // MARK: Lifecycle
@@ -389,20 +428,20 @@ public final class AppModel {
         showBanner(.success, confirmation)
     }
 
+    /// Shows a banner and announces it to VoiceOver. Critical banners stay until dismissed; others dismiss
+    /// themselves after `Banner.autoDismissDelay(for:)`, with the timer paused while the banner is held.
     public func showBanner(_ tone: Tone, _ message: String) {
         let banner = Banner(tone: tone, message: message)
         banners.append(banner)
         if banners.count > 3 { banners.removeFirst(banners.count - 3) }
-        guard environment.autoDismissBanners else { return }
-        let seconds: Int = tone == .critical ? 8 : 4
-        Task { [weak self] in
-            try? await Task.sleep(for: .seconds(seconds))
-            self?.dismissBanner(banner.id)
-        }
+        environment.announce(message, tone)
+        guard environment.autoDismissBanners, let delay = Banner.autoDismissDelay(for: tone) else { return }
+        Task { [weak self] in await self?.autoDismissBanner(banner.id, after: delay) }
     }
 
     public func dismissBanner(_ id: UUID) {
         banners.removeAll { $0.id == id }
+        heldBanners.remove(id)
     }
 
     // MARK: Lookups
@@ -503,7 +542,7 @@ public final class AppModel {
         popoverSelection = rows[min(max(index + delta, 0), rows.count - 1)].id
     }
 
-    /// Return key: runs the selected row's primary action.
+    /// ⌘↩: runs the selected row's primary action (Return and Space open its details, see `openPopoverSelection`).
     public func activatePopoverSelection() async {
         guard let id = popoverSelection, let row = popoverRows.first(where: { $0.id == id }) else { return }
         await perform(row.primaryAction)

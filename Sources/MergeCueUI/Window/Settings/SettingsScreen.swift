@@ -8,7 +8,7 @@ struct SettingsList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Settings")
-                .font(.system(size: 24, weight: .bold))
+                .scaledFont(.system(size: 24, weight: .bold))
                 .foregroundStyle(Theme.textPrimary)
                 .padding(.horizontal, 8)
                 .padding(.top, 8)
@@ -21,17 +21,18 @@ struct SettingsList: View {
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: tab.symbol)
-                            .font(.system(size: 14))
+                            .scaledFont(.system(size: 14))
                             .frame(width: 20)
                             .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textSecondary)
                         Text(tab.title)
-                            .font(.system(size: 13.5, weight: isSelected ? .semibold : .regular))
+                            .scaledFont(.system(size: 13.5, weight: isSelected ? .semibold : .regular))
                             .foregroundStyle(Theme.textPrimary)
                         Spacer()
                         if badge(tab) > 0 { CountBadge(count: badge(tab), highlighted: isSelected) }
                     }
                     .padding(.horizontal, 10)
-                    .frame(height: 36)
+                    .padding(.vertical, 4)
+                    .frame(minHeight: 36)
                     .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(isSelected ? Theme.surfaceSelected : .clear))
                     .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(isSelected ? Theme.accent.opacity(0.35) : .clear, lineWidth: 1))
                 }
@@ -68,10 +69,10 @@ struct SettingsDetail: View {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 8) {
                     Image(systemName: model.settingsTab.symbol)
-                        .font(.system(size: 20))
+                        .scaledFont(.system(size: 20))
                         .foregroundStyle(Theme.accent)
                     Text(model.settingsTab.title)
-                        .font(.system(size: 22, weight: .bold))
+                        .scaledFont(.system(size: 22, weight: .bold))
                         .foregroundStyle(Theme.textPrimary)
                     Spacer()
                     ModeBadge(mode: model.mode)
@@ -102,13 +103,13 @@ struct AccountsSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("MergeCue reads each provider's API directly with a token stored in your Keychain. Accounts sync independently — a problem with one never blocks the others.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                .scaledFont(.callout)
+                .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 Text("Connect")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .scaledFont(.callout)
+                    .foregroundStyle(Theme.textSecondary)
                 ForEach([ProviderKind.github, .gitlab, .bitbucketCloud], id: \.self) { kind in
                     Button {
                         model.connectSheetKind = kind
@@ -132,8 +133,8 @@ struct AccountsSettings: View {
             }
             if model.state.accounts.isEmpty {
                 Text("No accounts connected yet.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .scaledFont(.callout)
+                    .foregroundStyle(Theme.textSecondary)
                     .padding(.vertical, 20)
             }
             ForEach(model.state.accounts) { account in
@@ -156,32 +157,32 @@ struct AccountCard: View {
                     ProviderGlyph(kind: account.kind, size: 28)
                     VStack(alignment: .leading, spacing: 1) {
                         Text("\(account.account.displayName ?? account.account.username) · @\(account.account.username)")
-                            .font(.headline)
+                            .scaledFont(.headline)
                         Text("\(account.kind.displayName) · \(account.account.instance.host) · \(account.account.authMethod.displayName)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .scaledFont(.caption)
+                            .foregroundStyle(Theme.textSecondary)
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 2) {
                         Label(UIFormat.syncText(status, now: model.now), systemImage: status.state.isProblem ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                            .font(.callout)
-                            .foregroundStyle(Theme.color(UIFormat.tone(of: status.state)))
+                            .scaledFont(.callout)
+                            .foregroundStyle(Theme.textColor(UIFormat.tone(of: status.state)))
                         if let message = status.message, status.state.isProblem {
                             Text(SecretRedactor.redact(message))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .scaledFont(.caption)
+                                .foregroundStyle(Theme.textSecondary)
                         }
                     }
                 }
                 if !account.account.grantedScopes.isEmpty {
                     HStack(spacing: 4) {
-                        Text("Scopes").font(.caption).foregroundStyle(.secondary)
+                        Text("Scopes").scaledFont(.caption).foregroundStyle(Theme.textSecondary)
                         ForEach(account.account.grantedScopes, id: \.self) { scope in
                             Text(scope)
-                                .font(.caption.monospaced())
+                                .scaledFont(.caption.monospaced())
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1)
-                                .background(RoundedRectangle(cornerRadius: 4).fill(Color.secondary.opacity(0.12)))
+                                .background(RoundedRectangle(cornerRadius: 4).fill(Theme.textSecondary.opacity(0.12)))
                         }
                     }
                 }
@@ -194,8 +195,8 @@ struct AccountCard: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Allow remote writes")
                             Text("Replies and resolving threads, each only after you approve a preview. Off by default.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .scaledFont(.caption)
+                                .foregroundStyle(Theme.textSecondary)
                         }
                         Spacer(minLength: 12)
                     }
@@ -240,9 +241,9 @@ struct CapabilitySummary: View {
                     let support = manifest.support(for: capability)
                     GridRow {
                         Image(systemName: support.isUsable ? "checkmark.circle.fill" : "minus.circle")
-                            .foregroundStyle(support.isUsable ? Theme.mint : Color.secondary)
-                        Text(capability.displayName).font(.callout)
-                        Text(support.userFacingDescription).font(.caption).foregroundStyle(.secondary)
+                            .foregroundStyle(support.isUsable ? Theme.mint : Theme.textSecondary)
+                        Text(capability.displayName).scaledFont(.callout)
+                        Text(support.userFacingDescription).scaledFont(.caption).foregroundStyle(Theme.textSecondary)
                     }
                 }
             }
@@ -250,7 +251,7 @@ struct CapabilitySummary: View {
         } label: {
             let unusable = Capability.allCases.filter { !manifest.support(for: $0).isUsable }.count
             Text(unusable == 0 ? "All capabilities available" : "Capabilities · \(unusable) need write access or are unsupported")
-                .font(.callout)
+                .scaledFont(.callout)
         }
     }
 }

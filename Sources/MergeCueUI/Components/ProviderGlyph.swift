@@ -122,14 +122,14 @@ struct ChangeRequestRefLabel: View {
     var kind: ProviderKind
     var repoFullPath: String
     var number: Int
-    var font: Font = .subheadline
+    var font: ThemeFont = .subheadline
     var glyphSize: CGFloat = 14
 
     var body: some View {
         HStack(spacing: 6) {
             ProviderGlyph(kind: kind, size: glyphSize)
             Text("\(Text(repoFullPath).foregroundStyle(Theme.textSecondary)) \(Text(kind.formattedNumber(number)).fontWeight(.semibold).foregroundStyle(Theme.textPrimary))")
-                .font(font)
+                .scaledFont(font)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }

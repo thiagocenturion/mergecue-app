@@ -13,11 +13,11 @@ struct TaskList: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Tasks")
-                    .font(Theme.largeTitle)
+                    .scaledFont(Theme.largeTitle)
                     .foregroundStyle(Theme.textPrimary)
                     .accessibilityAddTraits(.isHeader)
                 Text("\(model.state.tasks.filter { !$0.task.isTerminal }.count) active · handed to your agent through MergeCue MCP")
-                    .font(.system(size: 15))
+                    .scaledFont(.system(size: 15))
                     .foregroundStyle(Theme.textSecondary)
             }
             .padding(.horizontal, 28)
@@ -31,7 +31,7 @@ struct TaskList: View {
                         ForEach(groups, id: \.0) { group, records in
                             if !records.isEmpty {
                                 Text("\(group.title)  ·  \(records.count)")
-                                    .font(.system(size: 14, weight: .medium))
+                                    .scaledFont(.system(size: 14, weight: .medium))
                                     .foregroundStyle(Theme.textSecondary)
                                     .padding(.top, 14)
                                     .accessibilityAddTraits(.isHeader)
@@ -69,27 +69,27 @@ struct TaskCard: View {
                 ProviderBadge(kind: task.origin.providerKind, size: 42, style: .tile)
                 VStack(alignment: .leading, spacing: 5) {
                     Text("\(task.origin.providerKind.shortName) · \(task.origin.changeRequestRef.repoFullPath) \(task.origin.providerKind.formattedNumber(task.origin.changeRequest.number)) · \(task.id.rawValue)")
-                        .font(.system(size: 12.5))
+                        .scaledFont(.system(size: 12.5))
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                     Text(Presentation.taskTitle(record, snapshot: snapshot))
-                        .font(.system(size: 15, weight: .semibold))
+                        .scaledFont(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
                     Text(Presentation.taskHeadline(record, snapshot: snapshot, now: model.now))
-                        .font(.system(size: 12.5))
+                        .scaledFont(.system(size: 12.5))
                         .foregroundStyle(task.state == .failed ? Theme.critical : Theme.textSecondary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 if record.hasRealClaim { WorkingSpinner(size: 22) }
-                StatusPill(text: TaskStateStyle.label(record), color: color, showsDot: true, size: 11.5)
+                StatusPill(text: TaskStateStyle.label(record), color: color, textColor: TaskStateStyle.textColor(record), showsDot: true, size: 11.5, cueSymbol: TaskStateStyle.symbol(record))
                 Text(UIFormat.compactAge(from: task.updatedAt, now: model.now))
-                    .font(.system(size: 12).monospacedDigit())
+                    .scaledFont(.system(size: 12).monospacedDigit())
                     .foregroundStyle(Theme.textTertiary)
                     .frame(width: 34, alignment: .trailing)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
+                    .scaledFont(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.textTertiary)
             }
             .padding(14)

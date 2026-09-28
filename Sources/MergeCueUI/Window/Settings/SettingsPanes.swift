@@ -11,12 +11,12 @@ struct RepositoriesSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Map repositories from any provider to local checkouts. Agents work in an isolated worktree created from the mapped checkout; MergeCue never edits a GitButler workspace or a dirty checkout directly.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                .scaledFont(.callout)
+                .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Card("Mapped", systemImage: "folder.badge.gearshape") {
                 if model.state.mappings.isEmpty {
-                    Text("No mappings yet").font(.callout).foregroundStyle(.secondary)
+                    Text("No mappings yet").scaledFont(.callout).foregroundStyle(Theme.textSecondary)
                 }
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(model.state.mappings.enumerated()), id: \.element.id) { index, mapping in
@@ -27,7 +27,7 @@ struct RepositoriesSettings: View {
             }
             if model.state.accounts.isEmpty {
                 Text("Connect an account in Settings › Accounts to list its repositories.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .scaledFont(.callout).foregroundStyle(Theme.textSecondary)
             } else {
                 AccountRepositoriesSection(model: model)
             }
@@ -52,8 +52,8 @@ struct UnmappedRepositoryRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 ProviderGlyph(kind: repo.providerKind, size: 16)
-                Text(repo.fullPath).font(.callout)
-                Text(repo.providerKind.displayName).font(.caption).foregroundStyle(.secondary)
+                Text(repo.fullPath).scaledFont(.callout)
+                Text(repo.providerKind.displayName).scaledFont(.caption).foregroundStyle(Theme.textSecondary)
                 if hasOpenPRs {
                     Chip(text: "has open \(repo.providerKind.changeRequestAbbreviation)s", symbol: "arrow.triangle.pull", tone: .neutral)
                 }
@@ -66,16 +66,16 @@ struct UnmappedRepositoryRow: View {
             }
             if let suggestions {
                 if suggestions.isEmpty {
-                    Text("No matching checkout found — choose the folder yourself.").font(.caption).foregroundStyle(.secondary)
+                    Text("No matching checkout found — choose the folder yourself.").scaledFont(.caption).foregroundStyle(Theme.textSecondary)
                 }
                 ForEach(suggestions, id: \.checkoutPath) { suggestion in
                     HStack(spacing: 8) {
                         ConfidenceChip(confidence: suggestion.confidence)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(UIFormat.abbreviatedPath(suggestion.checkoutPath)).font(.caption.monospaced())
+                            Text(UIFormat.abbreviatedPath(suggestion.checkoutPath)).scaledFont(.caption.monospaced())
                             Text(suggestion.matchedRemote.map { "\(suggestion.reason) · \($0)" } ?? suggestion.reason)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .scaledFont(.caption2)
+                                .foregroundStyle(Theme.textSecondary)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                         }
@@ -134,31 +134,34 @@ struct MappingRow: View {
             ProviderGlyph(kind: mapping.repo.kind, size: 18)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Text(mapping.repoFullPath).font(.callout.weight(.medium))
+                    Text(mapping.repoFullPath).scaledFont(.callout.weight(.medium))
                     ConfidenceChip(confidence: mapping.confidence, confirmed: mapping.isConfirmed)
                 }
                 Text(UIFormat.abbreviatedPath(mapping.checkoutPath))
-                    .font(.caption.monospaced())
+                    .scaledFont(.caption.monospaced())
                     .textSelection(.enabled)
                 if let remote = mapping.matchedRemote {
                     Text("Matched remote \(remote)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .scaledFont(.caption)
+                        .foregroundStyle(Theme.textSecondary)
                 }
                 if let files = model.state.instructionFiles[mapping.checkoutPath], !files.isEmpty {
                     Text("Project instructions: \(files.joined(separator: ", "))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .scaledFont(.caption)
+                        .foregroundStyle(Theme.textSecondary)
                 }
             }
             Spacer()
             if !mapping.isConfirmed {
                 Button("Confirm") { Task { await model.send(.confirmMapping(id: mapping.id)) } }
                     .buttonStyle(GradientButtonStyle(size: .small))
+                    .accessibilityLabel("Confirm mapping of \(mapping.repoFullPath)")
             }
             Button("Remove") { Task { await model.send(.removeMapping(id: mapping.id)) } }
+                .accessibilityLabel("Remove mapping of \(mapping.repoFullPath)")
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(mapping.repoFullPath), \(mapping.repo.kind.displayName), mapped to \(UIFormat.abbreviatedPath(mapping.checkoutPath))")
     }
 }
 
@@ -170,14 +173,15 @@ struct NotificationsSettings: View {
     var body: some View {
         let quiet = model.state.quietHours
         VStack(alignment: .leading, spacing: 14) {
+            NotificationPermissionCard(model: model)
             Card("Pause", systemImage: "bell.slash") {
                 HStack(spacing: 8) {
                     if let until = model.state.notificationsPausedUntil, model.notificationsPaused {
-                        Text("Paused until \(UIFormat.dateTime(until))").font(.callout)
+                        Text("Paused until \(UIFormat.dateTime(until))").scaledFont(.callout)
                         Spacer()
                         Button("Resume") { Task { await model.send(.pauseNotifications(until: nil)) } }
                     } else {
-                        Text("Notifications are on").font(.callout)
+                        Text("Notifications are on").scaledFont(.callout)
                         Spacer()
                         Button("Pause for 1 Hour") { Task { await model.send(.pauseNotifications(until: model.now.addingTimeInterval(3_600))) } }
                         Button("Until Tomorrow") { Task { await model.send(.pauseNotifications(until: PauseOptions.tomorrowMorning(after: model.now))) } }
@@ -201,8 +205,8 @@ struct NotificationsSettings: View {
                         }
                         .fixedSize()
                         Text("Items still appear in the inbox; only alerts are held back (\(quiet.timeZoneID)).")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .scaledFont(.caption)
+                            .foregroundStyle(Theme.textSecondary)
                     }
                 }
             }
@@ -212,8 +216,8 @@ struct NotificationsSettings: View {
                         Toggle(category.displayName, isOn: categoryBinding(category))
                     }
                     Text("One grouped notification per PR/MR. Your own comments and green re-runs never notify. Switching a kind off only silences its alerts — the items still appear in the inbox.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .scaledFont(.caption)
+                        .foregroundStyle(Theme.textSecondary)
                 }
             }
         }
@@ -235,6 +239,70 @@ struct NotificationsSettings: View {
                 Task { await model.send(.setQuietHours(updated)) }
             }
         )
+    }
+}
+
+/// The app's notification permission as macOS reports it, with a way to change it.
+struct NotificationPermissionCard: View {
+    let model: AppModel
+
+    var body: some View {
+        let permission = model.notificationPermission
+        Card("Permission", systemImage: "bell.badge") {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: symbol(permission))
+                        .foregroundStyle(Theme.color(permission.tone))
+                        .accessibilityHidden(true)
+                    Text("macOS: \(permission.title)")
+                        .scaledFont(.callout.weight(.medium))
+                        .foregroundStyle(Theme.textPrimary)
+                    Spacer(minLength: 8)
+                    if permission == .notDetermined {
+                        Button("Allow Notifications…") {
+                            Task {
+                                await model.send(.requestNotificationPermission)
+                                await model.refreshNotificationPermission()
+                            }
+                        }
+                        .buttonStyle(GradientButtonStyle(size: .small))
+                    }
+                    if model.canOpenNotificationSettings && permission != .unavailable {
+                        Button("Open System Settings…") { model.openNotificationSettings() }
+                            .help("System Settings › Notifications › MergeCue")
+                    }
+                }
+                .accessibilityElement(children: .contain)
+                Text(explanation(permission))
+                    .scaledFont(.caption)
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .task { await model.refreshNotificationPermission() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await model.refreshNotificationPermission() }
+        }
+    }
+
+    private func explanation(_ permission: NotificationPermission) -> String {
+        switch model.mode {
+        case .live: permission.explanation
+        case .demo: permission.explanation + " Demo notifications are titled “Demo · …”."
+        case .preview: permission == .unavailable
+            ? "Preview data: this build can't read or change macOS notification permission."
+            : permission.explanation + " (This is the app's real macOS setting; the items shown are preview data.)"
+        }
+    }
+
+    private func symbol(_ permission: NotificationPermission) -> String {
+        switch permission {
+        case .authorized: "checkmark.circle.fill"
+        case .denied: "bell.slash.fill"
+        case .provisional: "tray.full"
+        case .notDetermined: "questionmark.circle"
+        case .unknown, .unavailable: "minus.circle"
+        }
     }
 }
 
@@ -266,21 +334,21 @@ struct GeneralSettings: View {
                     .toggleStyle(.switch)
                     .disabled(loginItem == nil || loginItem == .unavailable)
                     Text(loginItemNote)
-                        .font(.caption)
-                        .foregroundStyle(loginItem == .requiresApproval ? Theme.waiting : .secondary)
+                        .scaledFont(.caption)
+                        .foregroundStyle(loginItem == .requiresApproval ? Theme.waitingText : Theme.textSecondary)
                 }
             }
             Card("Tracking", systemImage: "person.crop.circle.badge.checkmark") {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Your own PRs/MRs are always tracked.")
-                        .font(.callout)
+                        .scaledFont(.callout)
                     Toggle("Also track PRs/MRs that request my review", isOn: trackingBinding(\.includeReviewRequests))
                         .toggleStyle(.switch)
                     Toggle("Also track PRs/MRs I've reviewed or commented on", isOn: trackingBinding(\.includeInvolved))
                         .toggleStyle(.switch)
                     Text("Off by default: MergeCue then lists only pull/merge requests you authored. Other people's work appears only if you switch these on.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .scaledFont(.caption)
+                        .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -292,16 +360,16 @@ struct GeneralSettings: View {
                     Text(model.mode == .preview
                          ? "Preview data (development build). Launch without --preview to use your accounts."
                          : "Demo mode shows bundled fixture PRs/MRs through the real engine, always badged “Demo data”. Its data is kept separately from your accounts; switching relaunches MergeCue.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .scaledFont(.caption)
+                        .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Card("Setup", systemImage: "wand.and.rays") {
                 HStack {
                     Text("Accounts, repositories, agents and notifications, step by step.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .scaledFont(.callout)
+                        .foregroundStyle(Theme.textSecondary)
                     Spacer()
                     Button("Run Setup Assistant…") { model.showOnboarding() }
                 }
@@ -310,14 +378,49 @@ struct GeneralSettings: View {
                 Toggle("Show the “Needs you” count next to the icon", isOn: $model.showCountInMenuBar)
                     .toggleStyle(.switch)
             }
+            Card("Text size", systemImage: "textformat.size") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Picker("Text size", selection: $model.textSize) {
+                        ForEach(TextSizePreference.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    .accessibilityLabel("Text size")
+                    Text("Sizes text in the MergeCue window and popover. macOS has no system-wide text size for Mac apps, so MergeCue has its own.")
+                        .scaledFont(.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             Card("Keyboard", systemImage: "keyboard") {
-                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
-                    shortcut("⌘1 … ⌘5", "Inbox, PRs & MRs, Tasks, Rules, Settings")
-                    shortcut("⌘R", "Refresh all accounts")
-                    shortcut("⌘,", "Settings")
-                    shortcut("↑ ↓ ↩", "Move through the popover and run the primary action")
-                    shortcut("⌘↩", "Primary AI action of the selected inbox item")
-                    shortcut("Esc", "Close the popover")
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 10) {
+                        Text("Show the popover from any app")
+                            .scaledFont(.callout)
+                        Spacer(minLength: 8)
+                        Picker("Global shortcut", selection: $model.globalHotKey) {
+                            ForEach(HotKeyPreset.allCases) { preset in
+                                Text(preset.displayName).tag(preset)
+                                    .accessibilityLabel(preset.spokenName)
+                            }
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                        .accessibilityLabel("Global shortcut")
+                        .accessibilityValue(model.globalHotKey.spokenName)
+                    }
+                    Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
+                        shortcut(model.globalHotKey == .off ? "—" : model.globalHotKey.displayName, "Show or hide the popover (works in any app, no Accessibility permission needed)")
+                        shortcut("⌘1 … ⌘5", "Inbox, PRs & MRs, Tasks, Rules, Settings")
+                        shortcut("⌘R", "Refresh all accounts")
+                        shortcut("⌘,", "Settings")
+                        shortcut("⌘K", "Search the inbox")
+                        shortcut("↑ ↓", "Move through the popover, the inbox, pull requests and rules")
+                        shortcut("↩ or Space", "Open the selected item")
+                        shortcut("⌘↩", "Primary action of the selected item (Fix with AI, view task, edit rule)")
+                        shortcut("Esc", "Close the popover or a sheet")
+                    }
                 }
             }
         }
@@ -346,9 +449,10 @@ struct GeneralSettings: View {
 
     private func shortcut(_ keys: String, _ action: String) -> some View {
         GridRow {
-            Text(keys).font(.callout.monospaced()).foregroundStyle(.secondary)
-            Text(action).font(.callout)
+            Text(keys).scaledFont(.callout.monospaced()).foregroundStyle(Theme.textSecondary)
+            Text(action).scaledFont(.callout).fixedSize(horizontal: false, vertical: true)
         }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -372,13 +476,13 @@ struct DataSettings: View {
                         row("Logs", info.logsPath)
                         row("Agent socket", info.socketPath + (info.ipcRunning ? "" : " (not running)"))
                     } else {
-                        Text("Preview data lives only in memory.").font(.callout).foregroundStyle(.secondary)
+                        Text("Preview data lives only in memory.").scaledFont(.callout).foregroundStyle(Theme.textSecondary)
                     }
                     Text(model.mode == .demo
                          ? "Demo data is kept in its own folder, separate from your accounts. Demo tokens are fixtures held in memory."
                          : "Tokens live only in your Keychain, never in the database or logs. Nothing is sent anywhere except the providers you connect. No telemetry.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .scaledFont(.caption)
+                        .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -402,8 +506,8 @@ struct DataSettings: View {
                     Text(info == nil
                          ? "\(model.mode.badgeText ?? "Preview"): nothing is stored, so there is nothing to export or reset."
                          : "Export writes a copy of the database (no tokens). Reset deletes every stored token and all local data; your checkouts and agent configs are not touched.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .scaledFont(.caption)
+                        .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -443,8 +547,8 @@ struct DataSettings: View {
 
     private func row(_ label: String, _ value: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(label).font(.callout).foregroundStyle(.secondary).frame(width: 150, alignment: .leading)
-            Text(UIFormat.abbreviatedPath(value)).font(.caption.monospaced()).textSelection(.enabled)
+            Text(label).scaledFont(.callout).foregroundStyle(Theme.textSecondary).frame(width: 150, alignment: .leading)
+            Text(UIFormat.abbreviatedPath(value)).scaledFont(.caption.monospaced()).textSelection(.enabled)
         }
     }
 }
@@ -459,25 +563,25 @@ struct HousekeepingCard: View {
         let candidates = model.state.worktreeCleanupCandidates
         VStack(alignment: .leading, spacing: 8) {
             Text(Self.retentionText(model.state.lastMaintenance))
-                .font(.callout)
+                .scaledFont(.callout)
                 .fixedSize(horizontal: false, vertical: true)
             if candidates.isEmpty {
                 Text("No worktrees of finished tasks to clean up.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .scaledFont(.caption)
+                    .foregroundStyle(Theme.textSecondary)
             } else {
                 Text("Worktrees of finished tasks (unchanged for 14 days or more):")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .scaledFont(.caption)
+                    .foregroundStyle(Theme.textSecondary)
                 ForEach(candidates) { candidate in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(candidate.taskID.rawValue).font(.caption.monospaced())
+                        Text(candidate.taskID.rawValue).scaledFont(.caption.monospaced())
                         Text("\(candidate.repoFullPath) · \(candidate.title)")
-                            .font(.caption)
+                            .scaledFont(.caption)
                             .lineLimit(1)
                             .truncationMode(.middle)
                         Spacer(minLength: 4)
-                        Text(candidate.state.displayName).font(.caption).foregroundStyle(.secondary)
+                        Text(candidate.state.displayName).scaledFont(.caption).foregroundStyle(Theme.textSecondary)
                     }
                     .help(candidate.worktreePath)
                     .accessibilityElement(children: .combine)
@@ -511,23 +615,23 @@ struct AboutPane: View {
                 .frame(width: 112, height: 112)
                 .accessibilityLabel("MergeCue app icon")
             Text("MergeCue")
-                .font(.largeTitle.weight(.semibold))
+                .scaledFont(.largeTitle.weight(.semibold))
             Text("PRs move forward. You stay in flow.")
-                .font(.title3)
-                .foregroundStyle(.secondary)
+                .scaledFont(.title3)
+                .foregroundStyle(Theme.textSecondary)
             Text(version)
-                .font(.callout.monospacedDigit())
-                .foregroundStyle(.secondary)
+                .scaledFont(.callout.monospacedDigit())
+                .foregroundStyle(Theme.textSecondary)
             if model.mode != .live {
                 ModeBadge(mode: model.mode)
                 Text(model.mode.explanation)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .scaledFont(.caption)
+                    .foregroundStyle(Theme.textSecondary)
             }
             Text("GitHub, GitLab and Bitbucket Cloud in one place. See what needs you, and hand review comments and CI failures to the agent you already use.")
-                .font(.callout)
+                .scaledFont(.callout)
                 .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.textSecondary)
                 .frame(maxWidth: 440)
                 .padding(.top, 6)
         }

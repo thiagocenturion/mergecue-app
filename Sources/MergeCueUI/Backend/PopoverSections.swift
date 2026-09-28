@@ -142,7 +142,7 @@ public nonisolated struct PopoverItem: Sendable, Hashable, Identifiable {
     public func accessibilityLabel(now: Date) -> String {
         let noun = providerKind.changeRequestNoun
         let age = UIFormat.spokenAge(from: date, now: now)
-        return "\(providerKind.displayName) \(noun) \(repoFullPath) number \(number). \(title). \(reason). \(age)."
+        return "\(isUnread ? "Unread. " : "")\(providerKind.displayName) \(noun) \(repoFullPath) number \(number). \(title). \(reason). \(age)."
     }
 }
 

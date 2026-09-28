@@ -89,8 +89,9 @@ public final class MergeCueAppDelegate: NSObject, NSApplicationDelegate, UNUserN
             return
         }
         self.backend = backend
-        let model = AppModel(backend: backend)
+        let model = AppModel(backend: backend, environment: .withSystemServices())
         self.model = model
+        model.quitHandler = { NSApp.terminate(nil) }
 
         let windowController = MainWindowController(model: model)
         self.windowController = windowController

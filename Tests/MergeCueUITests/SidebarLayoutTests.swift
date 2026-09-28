@@ -36,9 +36,9 @@ struct SidebarLayoutTests {
 
     @Test func demoLabelsFitOnOneLineAtTheSidebarWidth() async {
         let model = await makeModel()
-        // Room left for the name column: horizontal padding, glyph, dot, chevron and the spacing between them.
+        // Room left for the name column: horizontal padding, glyph, status indicator, chevron and the spacing between them.
         let chevron = NSHostingView(rootView: Image(systemName: "chevron.right").font(.system(size: 10.5, weight: .semibold)).fixedSize()).fittingSize.width
-        let available = Self.rowWidth - 20 - 26 - 8 - chevron - 3 * SidebarAccountRow.spacing
+        let available = Self.rowWidth - 20 - 26 - AccountStatusIndicator.width - chevron - 3 * SidebarAccountRow.spacing
         for (kind, label) in [(ProviderKind.bitbucketCloud, "Bitbucket (demo)"), (.github, "GitHub (demo)"), (.gitlab, "GitLab (demo)")] {
             #expect(idealWidth(label) <= available, "\(label) needs \(idealWidth(label)) of \(available) pt")
             #expect(fittingHeight(account(kind, label: label), model: model) == SidebarAccountRow.minHeight,

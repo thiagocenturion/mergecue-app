@@ -11,22 +11,22 @@ struct ApprovalSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 14) {
                 Image(systemName: symbol)
-                    .font(.system(size: 20, weight: .semibold))
+                    .scaledFont(.system(size: 20, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 44, height: 44)
                     .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.brandGradientDiagonal))
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(preview.title)
-                        .font(.system(size: 17, weight: .semibold))
+                        .scaledFont(.system(size: 17, weight: .semibold))
                         .foregroundStyle(Theme.textPrimary)
                     Text(preview.target)
-                        .font(.system(size: 12.5))
+                        .scaledFont(.system(size: 12.5))
                         .foregroundStyle(Theme.textSecondary)
                         .textSelection(.enabled)
                     if let claimant = preview.claimant {
                         Text("Produced by \(claimant)")
-                            .font(.system(size: 12))
+                            .scaledFont(.system(size: 12))
                             .foregroundStyle(Theme.textSecondary)
                             .help("The agent that claimed this task, as it identified itself. Check it is the agent you handed the task to.")
                     }
@@ -41,7 +41,7 @@ struct ApprovalSheet: View {
                 .frame(maxHeight: 340)
             } else {
                 Text(preview.body)
-                    .font(Theme.body)
+                    .scaledFont(Theme.body)
                     .foregroundStyle(Theme.textPrimary)
                     .textSelection(.enabled)
                     .padding(14)
@@ -51,7 +51,7 @@ struct ApprovalSheet: View {
             VStack(alignment: .leading, spacing: 5) {
                 ForEach(preview.warnings, id: \.self) { warning in
                     Label(warning, systemImage: "info.circle")
-                        .font(.system(size: 12))
+                        .scaledFont(.system(size: 12))
                         .foregroundStyle(Theme.textSecondary)
                 }
             }
@@ -59,7 +59,7 @@ struct ApprovalSheet: View {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "hand.raised.fill").foregroundStyle(Theme.critical)
                     Text(reason)
-                        .font(.system(size: 13))
+                        .scaledFont(.system(size: 13))
                         .foregroundStyle(Theme.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer()
@@ -77,7 +77,7 @@ struct ApprovalSheet: View {
             }
             HStack(spacing: 10) {
                 Text("Fingerprint \(String(preview.fingerprint.prefix(12)))…")
-                    .font(Theme.monoSmall)
+                    .scaledFont(Theme.monoSmall)
                     .foregroundStyle(Theme.textTertiary)
                     .help("Your approval applies to exactly this content.")
                 Spacer()
