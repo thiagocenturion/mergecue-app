@@ -1,0 +1,28 @@
+[
+  {
+    "user": {
+      "id": 7001,
+      "username": "mona-dev",
+      "name": "Mona Dev",
+      "state": "active",
+      "locked": false,
+      "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/7001/avatar.png",
+      "web_url": "https://gitlab.com/mona-dev"
+    },
+    "state": "unreviewed",
+    "created_at": "2026-09-19T14:01:00.000Z"
+  },
+  {
+    "user": {
+      "id": 7004,
+      "username": "rev-bob",
+      "name": "Bob Reviewer",
+      "state": "active",
+      "locked": false,
+      "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/7004/avatar.png",
+      "web_url": "https://gitlab.com/rev-bob"
+    },
+    "state": "approved",
+    "created_at": "2026-09-19T14:01:00.000Z"
+  }
+]

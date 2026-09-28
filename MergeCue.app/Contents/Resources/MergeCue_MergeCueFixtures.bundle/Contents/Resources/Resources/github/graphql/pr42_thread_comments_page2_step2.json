@@ -1,0 +1,93 @@
+{
+  "data": {
+    "node": {
+      "__typename": "PullRequestReviewThread",
+      "comments": {
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": null
+        },
+        "nodes": [
+          {
+            "id": "PRRC_kwDOATpX1c6AAAE3",
+            "fullDatabaseId": "2400000103",
+            "body": "Please also cover the timeout-then-retry path with a test.",
+            "url": "https://github.com/acme/payments-api/pull/42#discussion_r2400000103",
+            "createdAt": "2026-09-18T10:00:00Z",
+            "updatedAt": "2026-09-18T10:00:00Z",
+            "diffHunk": "@@ -80,7 +80,9 @@ final class ChargeService {\n     func charge(_ request: ChargeRequest) async throws -> Receipt {\n-        let response = try await gateway.post(request)\n+        let response = try await gateway.post(request, retries: 3)\n+        log.info(\"charged \\(request.cardNumber)\")\n         return Receipt(response)",
+            "outdated": false,
+            "author": {
+              "__typename": "User",
+              "login": "carol-reviews",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/700101?v=4",
+              "databaseId": 700101,
+              "name": "Carol Reviewer"
+            },
+            "replyTo": {
+              "fullDatabaseId": "2400000101"
+            },
+            "commit": {
+              "oid": "4d2c1a9e8b7f6a5d4c3b2a1908f7e6d5c4b3a291"
+            },
+            "originalCommit": {
+              "oid": "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432"
+            }
+          },
+          {
+            "id": "PRRC_kwDOATpX1c6AAAE4",
+            "fullDatabaseId": "2400000104",
+            "body": "Will do in the next push.",
+            "url": "https://github.com/acme/payments-api/pull/42#discussion_r2400000104",
+            "createdAt": "2026-09-18T10:30:00Z",
+            "updatedAt": "2026-09-18T10:30:00Z",
+            "diffHunk": "@@ -80,7 +80,9 @@ final class ChargeService {\n     func charge(_ request: ChargeRequest) async throws -> Receipt {\n-        let response = try await gateway.post(request)\n+        let response = try await gateway.post(request, retries: 3)\n+        log.info(\"charged \\(request.cardNumber)\")\n         return Receipt(response)",
+            "outdated": false,
+            "author": {
+              "__typename": "User",
+              "login": "mona-dev",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/583231?v=4",
+              "databaseId": 583231,
+              "name": "Mona Dev"
+            },
+            "replyTo": {
+              "fullDatabaseId": "2400000101"
+            },
+            "commit": {
+              "oid": "4d2c1a9e8b7f6a5d4c3b2a1908f7e6d5c4b3a291"
+            },
+            "originalCommit": {
+              "oid": "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432"
+            }
+          },
+          {
+            "id": "PRRC_kwDOATpX1c6AAAE5",
+            "fullDatabaseId": "2400000105",
+            "body": "Thanks, the new test covers it. I'll resolve this once CI is green.",
+            "url": "https://github.com/acme/payments-api/pull/42#discussion_r2400000105",
+            "createdAt": "2026-09-22T08:30:00Z",
+            "updatedAt": "2026-09-22T08:30:00Z",
+            "diffHunk": "@@ -80,7 +80,9 @@ final class ChargeService {\n     func charge(_ request: ChargeRequest) async throws -> Receipt {\n-        let response = try await gateway.post(request)\n+        let response = try await gateway.post(request, retries: 3)\n+        log.info(\"charged \\(request.cardNumber)\")\n         return Receipt(response)",
+            "outdated": false,
+            "author": {
+              "__typename": "User",
+              "login": "carol-reviews",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/700101?v=4",
+              "databaseId": 700101,
+              "name": "Carol Reviewer"
+            },
+            "replyTo": {
+              "fullDatabaseId": "2400000101"
+            },
+            "commit": {
+              "oid": "4d2c1a9e8b7f6a5d4c3b2a1908f7e6d5c4b3a291"
+            },
+            "originalCommit": {
+              "oid": "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

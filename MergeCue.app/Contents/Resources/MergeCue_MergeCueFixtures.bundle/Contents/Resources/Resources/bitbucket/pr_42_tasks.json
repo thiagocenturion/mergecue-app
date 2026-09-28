@@ -1,0 +1,105 @@
+{
+  "pagelen": 100,
+  "values": [
+    {
+      "type": "pullrequest_task",
+      "id": 9001,
+      "created_on": "2026-09-27T15:59:00.000000+00:00",
+      "updated_on": "2026-09-27T15:59:00.000000+00:00",
+      "state": "UNRESOLVED",
+      "content": {
+        "type": "rendered",
+        "raw": "Add a test for partial refunds",
+        "markup": "markdown",
+        "html": ""
+      },
+      "creator": {
+        "display_name": "Lucía Moreno",
+        "links": {
+          "self": {
+            "href": "https://api.bitbucket.org/2.0/users/%7B3c1d9e7a-5b2f-4a6c-8d0e-1f2a3b4c5d61%7D"
+          },
+          "avatar": {
+            "href": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:1a2b3c4d-fixture-lucia/fixture/128"
+          },
+          "html": {
+            "href": "https://bitbucket.org/%7B3c1d9e7a-5b2f-4a6c-8d0e-1f2a3b4c5d61%7D/"
+          }
+        },
+        "type": "user",
+        "uuid": "{3c1d9e7a-5b2f-4a6c-8d0e-1f2a3b4c5d61}",
+        "account_id": "712020:1a2b3c4d-fixture-lucia",
+        "nickname": "lucia.m"
+      },
+      "pending": false,
+      "links": {
+        "self": {
+          "href": "https://api.bitbucket.org/2.0/repositories/acme/payments-api/pullrequests/42/tasks/9001"
+        },
+        "html": {
+          "href": "https://bitbucket.org/acme/payments-api/pull-requests/42"
+        }
+      }
+    },
+    {
+      "type": "pullrequest_task",
+      "id": 9002,
+      "created_on": "2026-09-27T16:07:00.000000+00:00",
+      "updated_on": "2026-09-27T16:07:00.000000+00:00",
+      "state": "RESOLVED",
+      "content": {
+        "type": "rendered",
+        "raw": "Update the refunds runbook",
+        "markup": "markdown",
+        "html": ""
+      },
+      "creator": {
+        "display_name": "Devon Park",
+        "links": {
+          "self": {
+            "href": "https://api.bitbucket.org/2.0/users/%7B6e2f8a1b-9c3d-4e5f-a6b7-c8d9e0f1a2b3%7D"
+          },
+          "avatar": {
+            "href": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:2b3c4d5e-fixture-devon/fixture/128"
+          },
+          "html": {
+            "href": "https://bitbucket.org/%7B6e2f8a1b-9c3d-4e5f-a6b7-c8d9e0f1a2b3%7D/"
+          }
+        },
+        "type": "user",
+        "uuid": "{6e2f8a1b-9c3d-4e5f-a6b7-c8d9e0f1a2b3}",
+        "account_id": "712020:2b3c4d5e-fixture-devon",
+        "nickname": "devon-p"
+      },
+      "pending": false,
+      "links": {
+        "self": {
+          "href": "https://api.bitbucket.org/2.0/repositories/acme/payments-api/pullrequests/42/tasks/9002"
+        },
+        "html": {
+          "href": "https://bitbucket.org/acme/payments-api/pull-requests/42"
+        }
+      },
+      "resolved_by": {
+        "display_name": "Mona Dev",
+        "links": {
+          "self": {
+            "href": "https://api.bitbucket.org/2.0/users/%7B8a6f0b4e-2c1d-4c8e-9f3a-5b7d1e2c3a40%7D"
+          },
+          "avatar": {
+            "href": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0f5b6c1e-fixture-mona/fixture/128"
+          },
+          "html": {
+            "href": "https://bitbucket.org/%7B8a6f0b4e-2c1d-4c8e-9f3a-5b7d1e2c3a40%7D/"
+          }
+        },
+        "type": "user",
+        "uuid": "{8a6f0b4e-2c1d-4c8e-9f3a-5b7d1e2c3a40}",
+        "account_id": "712020:0f5b6c1e-fixture-mona",
+        "nickname": "mona-dev"
+      },
+      "resolved_on": "2026-09-27T16:07:00.000000+00:00"
+    }
+  ],
+  "page": 1
+}

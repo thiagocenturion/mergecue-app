@@ -1,0 +1,38 @@
+{
+  "type": "repository",
+  "full_name": "acme/payments-api",
+  "links": {
+    "self": {
+      "href": "https://api.bitbucket.org/2.0/repositories/acme/payments-api"
+    },
+    "html": {
+      "href": "https://bitbucket.org/acme/payments-api"
+    },
+    "clone": [
+      {
+        "name": "https",
+        "href": "https://mona-dev@bitbucket.org/acme/payments-api.git"
+      },
+      {
+        "name": "ssh",
+        "href": "git@bitbucket.org:acme/payments-api.git"
+      }
+    ]
+  },
+  "name": "payments-api",
+  "slug": "payments-api",
+  "uuid": "{5d3c1a2b-7e8f-4a9b-b0c1-d2e3f4a5b6c7}",
+  "is_private": true,
+  "scm": "git",
+  "mainbranch": {
+    "name": "main",
+    "type": "branch"
+  },
+  "workspace": {
+    "type": "workspace",
+    "uuid": "{c0ffee00-1111-4222-8333-444455556666}",
+    "slug": "acme",
+    "name": "Acme Payments"
+  },
+  "updated_on": "2026-09-27T16:40:05.902114+00:00"
+}

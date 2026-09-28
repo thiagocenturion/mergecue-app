@@ -1,0 +1,106 @@
+[
+  {
+    "commit": {
+      "id": "ae44e8cc153cb128e982a7360b5171bdaed69d3c",
+      "short_id": "ae44e8cc",
+      "title": "Fixture commit",
+      "author_name": "Mona Dev",
+      "author_email": "mona-dev@example.com",
+      "created_at": "2026-09-21T11:20:00.000Z"
+    },
+    "coverage": null,
+    "archived": false,
+    "source": "merge_request_event",
+    "allow_failure": false,
+    "created_at": "2026-09-21T11:20:00.000Z",
+    "started_at": "2026-09-21T11:20:00.000Z",
+    "finished_at": "2026-09-21T11:26:00.000Z",
+    "erased_at": null,
+    "duration": 120.5,
+    "queued_duration": 1.2,
+    "artifacts_expire_at": null,
+    "tag_list": [
+      "saas-linux-small-amd64"
+    ],
+    "id": 7106,
+    "name": "unit-tests",
+    "pipeline": {
+      "id": 5003,
+      "project_id": 278964,
+      "ref": "refs/merge-requests/42/head",
+      "sha": "ae44e8cc153cb128e982a7360b5171bdaed69d3c",
+      "status": "success"
+    },
+    "ref": "refs/merge-requests/42/head",
+    "artifacts": [],
+    "runner": null,
+    "stage": "test",
+    "status": "success",
+    "tag": false,
+    "web_url": "https://gitlab.com/acme/payments-api/-/jobs/7106",
+    "project": {
+      "ci_job_token_scope_enabled": false
+    },
+    "user": {
+      "id": 7001,
+      "username": "mona-dev",
+      "name": "Mona Dev",
+      "state": "active",
+      "locked": false,
+      "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/7001/avatar.png",
+      "web_url": "https://gitlab.com/mona-dev"
+    }
+  },
+  {
+    "commit": {
+      "id": "ae44e8cc153cb128e982a7360b5171bdaed69d3c",
+      "short_id": "ae44e8cc",
+      "title": "Fixture commit",
+      "author_name": "Mona Dev",
+      "author_email": "mona-dev@example.com",
+      "created_at": "2026-09-21T11:20:00.000Z"
+    },
+    "coverage": null,
+    "archived": false,
+    "source": "merge_request_event",
+    "allow_failure": false,
+    "created_at": "2026-09-21T11:20:00.000Z",
+    "started_at": "2026-09-21T11:20:00.000Z",
+    "finished_at": "2026-09-21T11:26:00.000Z",
+    "erased_at": null,
+    "duration": 120.5,
+    "queued_duration": 1.2,
+    "artifacts_expire_at": null,
+    "tag_list": [
+      "saas-linux-small-amd64"
+    ],
+    "id": 7107,
+    "name": "lint",
+    "pipeline": {
+      "id": 5003,
+      "project_id": 278964,
+      "ref": "refs/merge-requests/42/head",
+      "sha": "ae44e8cc153cb128e982a7360b5171bdaed69d3c",
+      "status": "success"
+    },
+    "ref": "refs/merge-requests/42/head",
+    "artifacts": [],
+    "runner": null,
+    "stage": "test",
+    "status": "success",
+    "tag": false,
+    "web_url": "https://gitlab.com/acme/payments-api/-/jobs/7107",
+    "project": {
+      "ci_job_token_scope_enabled": false
+    },
+    "user": {
+      "id": 7001,
+      "username": "mona-dev",
+      "name": "Mona Dev",
+      "state": "active",
+      "locked": false,
+      "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/7001/avatar.png",
+      "web_url": "https://gitlab.com/mona-dev"
+    }
+  }
+]

@@ -1,0 +1,25 @@
+{
+  "type": "participant",
+  "user": {
+    "display_name": "Mona Dev",
+    "links": {
+      "self": {
+        "href": "https://api.bitbucket.org/2.0/users/%7B8a6f0b4e-2c1d-4c8e-9f3a-5b7d1e2c3a40%7D"
+      },
+      "avatar": {
+        "href": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0f5b6c1e-fixture-mona/fixture/128"
+      },
+      "html": {
+        "href": "https://bitbucket.org/%7B8a6f0b4e-2c1d-4c8e-9f3a-5b7d1e2c3a40%7D/"
+      }
+    },
+    "type": "user",
+    "uuid": "{8a6f0b4e-2c1d-4c8e-9f3a-5b7d1e2c3a40}",
+    "account_id": "712020:0f5b6c1e-fixture-mona",
+    "nickname": "mona-dev"
+  },
+  "role": "REVIEWER",
+  "approved": false,
+  "state": "changes_requested",
+  "participated_on": "2026-09-28T09:02:00.000000+00:00"
+}

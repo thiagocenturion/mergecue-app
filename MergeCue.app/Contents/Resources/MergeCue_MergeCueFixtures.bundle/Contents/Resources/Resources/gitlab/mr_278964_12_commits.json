@@ -1,0 +1,19 @@
+[
+  {
+    "id": "185441ce12ce92bc802525c9ecf17b4d761df3c3",
+    "short_id": "185441ce",
+    "created_at": "2026-09-20T15:25:00.000Z",
+    "parent_ids": [],
+    "title": "Fix currency rounding for JPY",
+    "message": "Fix currency rounding for JPY\n",
+    "author_name": "Mona Dev",
+    "author_email": "mona-dev@example.com",
+    "authored_date": "2026-09-20T15:25:00.000Z",
+    "committer_name": "Mona Dev",
+    "committer_email": "mona-dev@example.com",
+    "committed_date": "2026-09-20T15:25:00.000Z",
+    "trailers": {},
+    "extended_trailers": {},
+    "web_url": "https://gitlab.com/acme/payments-api/-/commit/185441ce12ce92bc802525c9ecf17b4d761df3c3"
+  }
+]

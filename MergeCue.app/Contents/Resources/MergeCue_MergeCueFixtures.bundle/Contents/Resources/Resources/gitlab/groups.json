@@ -1,0 +1,26 @@
+[
+  {
+    "id": 500,
+    "web_url": "https://gitlab.com/groups/acme",
+    "name": "Acme",
+    "path": "acme",
+    "description": "Fixture group (synthetic data)",
+    "visibility": "private",
+    "full_name": "Acme",
+    "full_path": "acme",
+    "parent_id": null,
+    "created_at": "2023-05-01T10:00:00.000Z"
+  },
+  {
+    "id": 501,
+    "web_url": "https://gitlab.com/groups/acme/platform",
+    "name": "Platform",
+    "path": "platform",
+    "description": "Fixture group (synthetic data)",
+    "visibility": "private",
+    "full_name": "Acme / Platform",
+    "full_path": "acme/platform",
+    "parent_id": 500,
+    "created_at": "2023-05-01T10:00:00.000Z"
+  }
+]

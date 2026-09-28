@@ -1,0 +1,177 @@
+{
+  "id": 88007,
+  "iid": 7,
+  "project_id": 278990,
+  "title": "Move checkout routes behind feature flag",
+  "description": "Routing change for the new checkout.",
+  "state": "opened",
+  "created_at": "2026-09-19T14:00:00.000Z",
+  "updated_at": "2026-09-19T15:10:00.000Z",
+  "merged_by": null,
+  "merge_user": null,
+  "merged_at": null,
+  "closed_by": null,
+  "closed_at": null,
+  "target_branch": "main",
+  "source_branch": "feat/checkout-flag",
+  "user_notes_count": 0,
+  "upvotes": 0,
+  "downvotes": 0,
+  "author": {
+    "id": 7002,
+    "username": "octo-lead",
+    "name": "Octo Lead",
+    "state": "active",
+    "locked": false,
+    "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/7002/avatar.png",
+    "web_url": "https://gitlab.com/octo-lead"
+  },
+  "assignees": [
+    {
+      "id": 7002,
+      "username": "octo-lead",
+      "name": "Octo Lead",
+      "state": "active",
+      "locked": false,
+      "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/7002/avatar.png",
+      "web_url": "https://gitlab.com/octo-lead"
+    }
+  ],
+  "assignee": {
+    "id": 7002,
+    "username": "octo-lead",
+    "name": "Octo Lead",
+    "state": "active",
+    "locked": false,
+    "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/7002/avatar.png",
+    "web_url": "https://gitlab.com/octo-lead"
+  },
+  "reviewers": [
+    {
+      "id": 7001,
+      "username": "mona-dev",
+      "name": "Mona Dev",
+      "state": "active",
+      "locked": false,
+      "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/7001/avatar.png",
+      "web_url": "https://gitlab.com/mona-dev"
+    },
+    {
+      "id": 7004,
+      "username": "rev-bob",
+      "name": "Bob Reviewer",
+      "state": "active",
+      "locked": false,
+      "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/7004/avatar.png",
+      "web_url": "https://gitlab.com/rev-bob"
+    }
+  ],
+  "source_project_id": 278990,
+  "target_project_id": 278990,
+  "labels": [
+    "backend"
+  ],
+  "draft": false,
+  "work_in_progress": false,
+  "milestone": null,
+  "merge_when_pipeline_succeeds": false,
+  "merge_status": "can_be_merged",
+  "detailed_merge_status": "mergeable",
+  "sha": "de617217db1767a951e3fd418aa820b9a7740066",
+  "merge_commit_sha": null,
+  "squash_commit_sha": null,
+  "discussion_locked": null,
+  "should_remove_source_branch": null,
+  "force_remove_source_branch": true,
+  "prepared_at": "2026-09-19T14:00:00.000Z",
+  "reference": "!7",
+  "references": {
+    "short": "!7",
+    "relative": "!7",
+    "full": "acme/platform/web!7"
+  },
+  "web_url": "https://gitlab.com/acme/platform/web/-/merge_requests/7",
+  "time_stats": {
+    "time_estimate": 0,
+    "total_time_spent": 0,
+    "human_time_estimate": null,
+    "human_total_time_spent": null
+  },
+  "squash": false,
+  "squash_on_merge": false,
+  "task_completion_status": {
+    "count": 0,
+    "completed_count": 0
+  },
+  "has_conflicts": false,
+  "blocking_discussions_resolved": true,
+  "subscribed": true,
+  "changes_count": "3",
+  "latest_build_started_at": "2026-09-19T15:00:00.000Z",
+  "latest_build_finished_at": "2026-09-19T15:04:00.000Z",
+  "first_deployed_to_production_at": null,
+  "pipeline": {
+    "id": 6001,
+    "iid": 1101,
+    "project_id": 278990,
+    "sha": "de617217db1767a951e3fd418aa820b9a7740066",
+    "ref": "refs/merge-requests/7/head",
+    "status": "success",
+    "source": "merge_request_event",
+    "created_at": "2026-09-19T15:00:00.000Z",
+    "updated_at": "2026-09-19T15:04:00.000Z",
+    "web_url": "https://gitlab.com/acme/platform/web/-/pipelines/6001"
+  },
+  "head_pipeline": {
+    "id": 6001,
+    "iid": 1101,
+    "project_id": 278990,
+    "sha": "de617217db1767a951e3fd418aa820b9a7740066",
+    "ref": "refs/merge-requests/7/head",
+    "status": "success",
+    "source": "merge_request_event",
+    "created_at": "2026-09-19T15:00:00.000Z",
+    "updated_at": "2026-09-19T15:04:00.000Z",
+    "web_url": "https://gitlab.com/acme/platform/web/-/pipelines/6001",
+    "before_sha": "0000000000000000000000000000000000000000",
+    "tag": false,
+    "yaml_errors": null,
+    "user": {
+      "id": 7001,
+      "username": "mona-dev",
+      "name": "Mona Dev",
+      "state": "active",
+      "locked": false,
+      "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/7001/avatar.png",
+      "web_url": "https://gitlab.com/mona-dev"
+    },
+    "started_at": "2026-09-19T15:00:00.000Z",
+    "finished_at": "2026-09-19T15:04:00.000Z",
+    "committed_at": null,
+    "duration": 312,
+    "queued_duration": 2,
+    "coverage": null,
+    "detailed_status": {
+      "icon": "status_success",
+      "text": "success",
+      "label": "success",
+      "group": "success",
+      "tooltip": "success",
+      "has_details": true,
+      "details_path": "/acme/platform/web/-/pipelines/6001",
+      "illustration": null,
+      "favicon": "/assets/ci_favicons/favicon_status_success.png"
+    }
+  },
+  "diff_refs": {
+    "base_sha": "692fd6fe604c83b17f43add580edf95526124794",
+    "head_sha": "de617217db1767a951e3fd418aa820b9a7740066",
+    "start_sha": "692fd6fe604c83b17f43add580edf95526124794"
+  },
+  "merge_error": null,
+  "first_contribution": false,
+  "user": {
+    "can_merge": true
+  },
+  "approvals_before_merge": null
+}

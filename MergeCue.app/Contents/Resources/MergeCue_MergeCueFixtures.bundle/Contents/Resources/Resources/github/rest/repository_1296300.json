@@ -1,0 +1,19 @@
+{
+  "id": 1296300,
+  "node_id": "R_kgDO1296300",
+  "name": "web",
+  "full_name": "acme/web",
+  "private": true,
+  "owner": {
+    "login": "acme",
+    "id": 9919,
+    "type": "Organization"
+  },
+  "html_url": "https://github.com/acme/web",
+  "fork": false,
+  "archived": false,
+  "clone_url": "https://github.com/acme/web.git",
+  "ssh_url": "git@github.com:acme/web.git",
+  "default_branch": "main",
+  "updated_at": "2026-09-20T10:00:00Z"
+}

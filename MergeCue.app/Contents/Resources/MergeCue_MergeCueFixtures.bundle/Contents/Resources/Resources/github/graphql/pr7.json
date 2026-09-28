@@ -1,0 +1,174 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "id": "PR_kwDOATpX1c50000007",
+        "fullDatabaseId": "3100000007",
+        "number": 7,
+        "title": "Redesign the checkout page",
+        "body": "New checkout layout behind a feature flag.\n\n_Demo fixture._",
+        "url": "https://github.com/acme/web/pull/7",
+        "state": "OPEN",
+        "isDraft": false,
+        "createdAt": "2026-09-19T09:00:00Z",
+        "updatedAt": "2026-09-20T16:00:00Z",
+        "headRefName": "feature/checkout-redesign",
+        "baseRefName": "main",
+        "headRefOid": "7777aaaabbbbccccddddeeeeffff000011112222",
+        "baseRefOid": "70707070a1a1a1a1b2b2b2b2c3c3c3c3d4d4d4d4",
+        "isCrossRepository": false,
+        "mergeStateStatus": "BLOCKED",
+        "mergeable": "MERGEABLE",
+        "reviewDecision": "REVIEW_REQUIRED",
+        "author": {
+          "__typename": "User",
+          "login": "carol-reviews",
+          "avatarUrl": "https://avatars.githubusercontent.com/u/700101?v=4",
+          "databaseId": 700101,
+          "name": "Carol Reviewer"
+        },
+        "repository": {
+          "databaseId": 1296300,
+          "name": "web",
+          "nameWithOwner": "acme/web",
+          "url": "https://github.com/acme/web",
+          "sshUrl": "git@github.com:acme/web.git",
+          "isPrivate": true,
+          "owner": {
+            "login": "acme"
+          },
+          "defaultBranchRef": {
+            "name": "main"
+          }
+        },
+        "headRepository": {
+          "databaseId": 1296300,
+          "name": "web",
+          "nameWithOwner": "acme/web",
+          "url": "https://github.com/acme/web",
+          "sshUrl": "git@github.com:acme/web.git",
+          "isPrivate": true,
+          "owner": {
+            "login": "acme"
+          },
+          "defaultBranchRef": {
+            "name": "main"
+          }
+        },
+        "reviewRequests": {
+          "nodes": [
+            {
+              "asCodeOwner": false,
+              "requestedReviewer": {
+                "__typename": "User",
+                "login": "mona-dev",
+                "databaseId": 583231,
+                "name": "Mona Dev",
+                "avatarUrl": "https://avatars.githubusercontent.com/u/583231?v=4"
+              }
+            }
+          ]
+        },
+        "latestReviews": {
+          "nodes": []
+        },
+        "reviews": {
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": null
+          },
+          "nodes": []
+        },
+        "comments": {
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": null
+          },
+          "nodes": []
+        },
+        "reviewThreads": {
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": null
+          },
+          "nodes": []
+        },
+        "commits": {
+          "nodes": [
+            {
+              "commit": {
+                "oid": "7777aaaabbbbccccddddeeeeffff000011112222",
+                "messageHeadline": "Redesign checkout",
+                "authoredDate": "2026-09-19T08:55:00Z",
+                "author": {
+                  "name": "Carol Reviewer",
+                  "user": {
+                    "login": "carol-reviews"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "files": {
+          "totalCount": 1,
+          "nodes": [
+            {
+              "path": "src/checkout/Checkout.tsx",
+              "additions": 120,
+              "deletions": 40,
+              "changeType": "MODIFIED"
+            }
+          ]
+        },
+        "headCommit": {
+          "nodes": [
+            {
+              "commit": {
+                "oid": "7777aaaabbbbccccddddeeeeffff000011112222",
+                "statusCheckRollup": {
+                  "state": "SUCCESS",
+                  "contexts": {
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": null
+                    },
+                    "nodes": [
+                      {
+                        "__typename": "CheckRun",
+                        "databaseId": 9201,
+                        "name": "build",
+                        "status": "COMPLETED",
+                        "conclusion": "SUCCESS",
+                        "detailsUrl": "https://github.com/acme/web/actions/runs/7101/job/9201",
+                        "url": "https://github.com/acme/web/runs/9201",
+                        "title": "Build succeeded",
+                        "summary": null,
+                        "startedAt": "2026-09-19T09:05:00Z",
+                        "completedAt": "2026-09-19T09:09:00Z",
+                        "isRequired": true,
+                        "checkSuite": {
+                          "app": {
+                            "slug": "github-actions",
+                            "name": "GitHub Actions"
+                          },
+                          "workflowRun": {
+                            "databaseId": 7101,
+                            "runNumber": 12,
+                            "workflow": {
+                              "name": "CI"
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

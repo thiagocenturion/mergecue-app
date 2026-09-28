@@ -1,0 +1,36 @@
+diff --git a/README.md b/README.md
+index 1111111..2222222 100644
+--- a/README.md
++++ b/README.md
+@@ -1,4 +1,5 @@
+ # payments-api
++Payments service for ACME checkout.
+
+diff --git a/Sources/Payments/ChargeService.swift b/Sources/Payments/ChargeService.swift
+index 3333333..4444444 100644
+--- a/Sources/Payments/ChargeService.swift
++++ b/Sources/Payments/ChargeService.swift
+@@ -80,7 +80,9 @@ final class ChargeService {
+     func charge(_ request: ChargeRequest) async throws -> Receipt {
+-        let response = try await gateway.post(request)
++        let response = try await gateway.post(request, retries: 3)
++        log.info("charged \(request.cardNumber)")
+         return Receipt(response)
+diff --git a/Sources/Payments/Gateway.swift b/Sources/Payments/Gateway.swift
+index 5555555..6666666 100644
+--- a/Sources/Payments/Gateway.swift
++++ b/Sources/Payments/Gateway.swift
+@@ -27,4 +27,4 @@ final class Gateway {
+-    let timeout: TimeInterval = 10
++    let timeout: TimeInterval = 30
+diff --git a/Sources/Payments/Retry.swift b/Sources/Payments/RetryPolicy.swift
+similarity index 60%
+rename from Sources/Payments/Retry.swift
+rename to Sources/Payments/RetryPolicy.swift
+index 0000000..7777777
+--- a/Sources/Payments/Retry.swift
++++ b/Sources/Payments/RetryPolicy.swift
+@@ -8,6 +8,8 @@ struct RetryPolicy {
+     var baseDelay: TimeInterval = 0.5
++    // TODO: read from config
++    let maxRetries = 3

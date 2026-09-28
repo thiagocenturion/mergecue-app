@@ -1,0 +1,28 @@
+[
+  {
+    "user": {
+      "id": 7003,
+      "username": "rev-alice",
+      "name": "Alice Reviewer",
+      "state": "active",
+      "locked": false,
+      "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/7003/avatar.png",
+      "web_url": "https://gitlab.com/rev-alice"
+    },
+    "state": "requested_changes",
+    "created_at": "2026-09-18T14:05:00.000Z"
+  },
+  {
+    "user": {
+      "id": 7004,
+      "username": "rev-bob",
+      "name": "Bob Reviewer",
+      "state": "active",
+      "locked": false,
+      "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/7004/avatar.png",
+      "web_url": "https://gitlab.com/rev-bob"
+    },
+    "state": "reviewed",
+    "created_at": "2026-09-18T14:05:00.000Z"
+  }
+]

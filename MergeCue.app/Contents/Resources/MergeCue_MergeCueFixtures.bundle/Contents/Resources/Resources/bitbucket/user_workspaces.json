@@ -1,0 +1,43 @@
+{
+  "pagelen": 100,
+  "values": [
+    {
+      "type": "workspace_access",
+      "administrator": false,
+      "workspace": {
+        "type": "workspace",
+        "uuid": "{c0ffee00-1111-4222-8333-444455556666}",
+        "slug": "acme",
+        "name": "Acme Payments",
+        "links": {
+          "self": {
+            "href": "https://api.bitbucket.org/2.0/workspaces/acme"
+          },
+          "html": {
+            "href": "https://bitbucket.org/acme/"
+          }
+        }
+      }
+    },
+    {
+      "type": "workspace_access",
+      "administrator": true,
+      "workspace": {
+        "type": "workspace",
+        "uuid": "{8a6f0b4e-2c1d-4c8e-9f3a-5b7d1e2c3a40}",
+        "slug": "mona-dev",
+        "name": "Mona Dev",
+        "links": {
+          "self": {
+            "href": "https://api.bitbucket.org/2.0/workspaces/mona-dev"
+          },
+          "html": {
+            "href": "https://bitbucket.org/mona-dev/"
+          }
+        }
+      }
+    }
+  ],
+  "page": 1,
+  "size": 2
+}

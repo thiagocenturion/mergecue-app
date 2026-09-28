@@ -1,0 +1,40 @@
+{
+  "pagelen": 100,
+  "values": [
+    {
+      "type": "commit",
+      "hash": "b7e4c1a9d2f35e6a7b8c9d0e1f2a3b4c5d6e7f80",
+      "date": "2026-09-24T13:38:00+00:00",
+      "message": "Lazy-load checkout images",
+      "author": {
+        "type": "author",
+        "raw": "Devon Park <devon-p@example.com>",
+        "user": {
+          "display_name": "Devon Park",
+          "links": {
+            "self": {
+              "href": "https://api.bitbucket.org/2.0/users/%7B6e2f8a1b-9c3d-4e5f-a6b7-c8d9e0f1a2b3%7D"
+            },
+            "avatar": {
+              "href": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:2b3c4d5e-fixture-devon/fixture/128"
+            },
+            "html": {
+              "href": "https://bitbucket.org/%7B6e2f8a1b-9c3d-4e5f-a6b7-c8d9e0f1a2b3%7D/"
+            }
+          },
+          "type": "user",
+          "uuid": "{6e2f8a1b-9c3d-4e5f-a6b7-c8d9e0f1a2b3}",
+          "account_id": "712020:2b3c4d5e-fixture-devon",
+          "nickname": "devon-p"
+        }
+      },
+      "links": {
+        "html": {
+          "href": "https://bitbucket.org/acme/web/commits/b7e4c1a9d2f35e6a7b8c9d0e1f2a3b4c5d6e7f80"
+        }
+      },
+      "parents": []
+    }
+  ],
+  "page": 1
+}

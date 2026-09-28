@@ -1,0 +1,4 @@
++ npm ci
+added 812 packages in 20s
++ npm test -- --ci
+Tests:       14 passed, 14 total
