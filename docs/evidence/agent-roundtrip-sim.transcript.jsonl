@@ -1,7 +1,7 @@
 {
   "agent_name" : "mergecue-agent-sim",
-  "duration_ms" : 522,
-  "mcp_path" : "~/Documents/mergecue-app/.claude/worktrees/e-security/.build/debug/mergecue-mcp",
+  "duration_ms" : 569,
+  "mcp_path" : "~/Documents/mergecue-app/.build/debug/mergecue-mcp",
   "passed" : true,
   "scenario" : "happy",
   "server" : {
@@ -12,7 +12,7 @@
   "skipped" : [
 
   ],
-  "started_at" : "2026-09-28T18:11:17.147Z",
+  "started_at" : "2026-09-28T18:36:09.867Z",
   "steps" : [
     {
       "detail" : "server mergecue 0.1.0-dev, MCP protocol 2025-11-25",
@@ -37,7 +37,7 @@
     },
     {
       "code" : "validation_failed",
-      "detail" : "isError validation_failed: Task mc_vndr1q requires the handoff code from the owner's handoff prompt — the text \"(handoff code: …)\" next to the task id. Pass it as handoff_code. MergeCue never reveals it through get_task; ask the owner for the handoff prompt if you do not have it.",
+      "detail" : "isError validation_failed: Task mc_i7bohd requires the handoff code from the owner's handoff prompt — the text \"(handoff code: …)\" next to the task id. Pass it as handoff_code. MergeCue never reveals it through get_task; ask the owner for the handoff prompt if you do not have it.",
       "expected" : "validation_failed",
       "name" : "claim without handoff_code",
       "ok" : true
@@ -49,18 +49,18 @@
       "ok" : true
     },
     {
-      "detail" : "{\"lease_expires_at\":\"2026-09-28T18:26:17.242Z\",\"version\":4}",
+      "detail" : "{\"lease_expires_at\":\"2026-09-28T18:51:10.036Z\",\"version\":4}",
       "expected" : "success",
       "name" : "update_task(editing)",
       "ok" : true
     },
     {
-      "detail" : "$MERGECUE_HOME/demo/worktrees/mc_vndr1q/mergecue-agent-sim.txt",
+      "detail" : "$MERGECUE_HOME/demo/worktrees/mc_i7bohd/mergecue-agent-sim.txt",
       "name" : "edit file",
       "ok" : true
     },
     {
-      "detail" : "{\"artifact_id\":\"art_fea056fd24\",\"missing_paths\":[],\"unexpected_paths\":[],\"verified_changed_paths\":[\"mergecue-agent-sim.txt\"],\"version\":5}",
+      "detail" : "{\"artifact_id\":\"art_807d8139e9\",\"missing_paths\":[],\"unexpected_paths\":[],\"verified_changed_paths\":[\"mergecue-agent-sim.txt\"],\"version\":5}",
       "expected" : "success",
       "name" : "report_changes",
       "ok" : true
@@ -71,7 +71,7 @@
       "ok" : true
     },
     {
-      "detail" : "{\"artifact_id\":\"art_d419c34ca1\",\"version\":6}",
+      "detail" : "{\"artifact_id\":\"art_dc6d13ff30\",\"version\":6}",
       "expected" : "success",
       "name" : "report_tests",
       "ok" : true
@@ -89,5 +89,5 @@
       "ok" : true
     }
   ],
-  "task_id" : "mc_vndr1q"
+  "task_id" : "mc_i7bohd"
 }
