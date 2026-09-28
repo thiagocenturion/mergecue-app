@@ -96,8 +96,7 @@ struct ConnectAccountSheet: View {
                 Button("Cancel", role: .cancel) { close() }
                     .keyboardShortcut(.cancelAction)
                 Button(method == .githubCLIImport ? "Import" : "Connect") { connect() }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Theme.accent)
+                    .buttonStyle(GradientButtonStyle(size: .small))
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canConnect || isConnecting)
             }

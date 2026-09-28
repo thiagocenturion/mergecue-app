@@ -1,62 +1,63 @@
 import MergeCueCore
 import SwiftUI
 
-/// PRs & MRs across accounts, one section per account with its explicit state (Loading, No PRs/MRs, Offline,
-/// Credentials expired, Rate limited, Unsupported permission). A problem on one account never hides the others.
+/// Pull and merge requests across accounts, one section per account with its explicit state (Loading, No PRs/MRs,
+/// Offline, Credentials expired, Rate limited, Unsupported permission). A problem on one account never hides the others.
 struct ChangeRequestList: View {
     @Bindable var model: AppModel
 
     var body: some View {
         let sections = ChangeRequestQueryUI.run(state: model.state, filter: model.changeRequestFilter)
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             filterBar
-            Divider()
+                .padding(.horizontal, 16)
+                .padding(.bottom, 10)
+            ThemeDivider()
             if model.state.accounts.isEmpty {
                 NothingSelected(title: "No accounts", symbol: "person.crop.circle.badge.plus",
                                 message: "Connect GitHub, GitLab or Bitbucket Cloud in Settings › Accounts.")
             } else {
-                List(selection: $model.selectedChangeRequestID) {
-                    ForEach(sections) { section in
-                        Section {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        ForEach(sections) { section in
+                            AccountSectionHeader(model: model, account: section.account)
+                                .padding(.top, 12)
+                                .padding(.horizontal, 6)
                             if section.listState.isProblem || section.items.isEmpty {
                                 AccountListStateRow(model: model, section: section)
-                                    .selectionDisabled()
+                                    .padding(12)
+                                    .cardBackground(Theme.surface, radius: 11)
                             }
                             ForEach(section.items) { snapshot in
-                                ChangeRequestRow(model: model, snapshot: snapshot)
-                                    .tag(snapshot.id as String?)
+                                ChangeRequestRow(model: model, snapshot: snapshot, isSelected: model.selectedChangeRequestID == snapshot.id)
+                                    .onTapGesture {
+                                        model.selectedChangeRequestID = snapshot.id
+                                        model.changeRequestTab = .conversation
+                                    }
                             }
-                        } header: {
-                            AccountSectionHeader(model: model, account: section.account)
                         }
                     }
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 16)
                 }
-                .listStyle(.inset)
-                .scrollContentBackground(.hidden)
             }
         }
-        .background(Color(nsColor: .controlBackgroundColor))
-        .navigationTitle("PRs & MRs")
     }
 
     private var filterBar: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                Picker("Scope", selection: $model.changeRequestFilter.scope) {
-                    ForEach(InboxScope.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-                Spacer(minLength: 4)
-                Toggle("Show closed", isOn: $model.changeRequestFilter.includeClosed)
-                    .toggleStyle(.checkbox)
-                    .font(.callout)
-                    .fixedSize()
-                    .help("Include merged and closed PRs/MRs")
-            }
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Pull requests")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(Theme.textPrimary)
+                .padding(.top, 8)
+                .accessibilityAddTraits(.isHeader)
             SearchField(text: $model.changeRequestFilter.searchText, prompt: "Search title, repo, author, #42…")
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
+                FilterMenu(title: model.changeRequestFilter.scope.title, isActive: model.changeRequestFilter.scope != .all) {
+                    ForEach(InboxScope.allCases) { scope in
+                        Button(scope.title) { model.changeRequestFilter.scope = scope }
+                    }
+                }
                 FilterMenu(title: model.changeRequestFilter.provider?.displayName ?? "Provider", isActive: model.changeRequestFilter.provider != nil) {
                     Button("Any Provider") { model.changeRequestFilter.provider = nil }
                     Divider()
@@ -73,10 +74,14 @@ struct ChangeRequestList: View {
                     }
                 }
                 Spacer(minLength: 0)
+                Toggle("Closed", isOn: $model.changeRequestFilter.includeClosed)
+                    .toggleStyle(.checkbox)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize()
+                    .help("Include merged and closed PRs/MRs")
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
     }
 }
 
@@ -86,15 +91,14 @@ struct AccountSectionHeader: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            ProviderGlyph(kind: account.kind, size: 13)
-            Text("\(account.kind.displayName) · \(account.account.displayLabel)")
-                .font(.caption.weight(.semibold))
-                .textCase(nil)
+            ProviderGlyph(kind: account.kind, size: 14)
+            Text("\(account.kind.shortName) · \(account.account.displayLabel)")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.textPrimary)
             Spacer()
             Text(UIFormat.syncText(account.status, now: model.now))
-                .font(.caption)
-                .foregroundStyle(account.status.state.isProblem ? Theme.color(UIFormat.tone(of: account.status.state)) : Color.secondary)
-                .textCase(nil)
+                .font(.system(size: 11.5))
+                .foregroundStyle(account.status.state.isProblem ? Theme.color(UIFormat.tone(of: account.status.state)) : Theme.textSecondary)
         }
         .padding(.top, 4)
         .accessibilityElement(children: .combine)
@@ -114,17 +118,18 @@ struct AccountListStateRow: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.callout.weight(.semibold))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
                 Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if case .credentialsExpired = section.listState {
                     Button("Reconnect…") {
                         model.connectSheetKind = section.account.kind
                         model.showSettings(.accounts)
                     }
-                    .controlSize(.small)
+                    .buttonStyle(SecondaryButtonStyle(size: .small))
                     .padding(.top, 2)
                 }
             }
@@ -182,24 +187,27 @@ struct AccountListStateRow: View {
 struct ChangeRequestRow: View {
     let model: AppModel
     let snapshot: ChangeRequestSnapshot
+    var isSelected = false
+    @State private var isHovering = false
 
     var body: some View {
         let summary = snapshot.summary
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
                 ChangeRequestRefLabel(kind: summary.providerKind, repoFullPath: summary.repository.fullPath, number: summary.key.number,
-                                      font: .caption, glyphSize: 13)
+                                      font: .system(size: 12), glyphSize: 13)
                 Spacer(minLength: 4)
                 Text(UIFormat.compactAge(from: summary.updatedAt, now: model.now))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 11.5).monospacedDigit())
+                    .foregroundStyle(Theme.textTertiary)
             }
             Text(summary.title)
-                .font(.callout.weight(.medium))
+                .font(.system(size: 13.5, weight: .semibold))
+                .foregroundStyle(Theme.textPrimary)
                 .lineLimit(2)
             HStack(spacing: 8) {
                 Text("@\(summary.author.username)")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                 if summary.involvement.contains(.reviewRequested) {
                     Chip(text: "Reviewing", symbol: "eye", tone: .progress)
                 } else if summary.involvement.contains(.authored) {
@@ -211,20 +219,27 @@ struct ChangeRequestRow: View {
                 ChecksBadge(state: snapshot.aggregateCheckState)
                 if let required = snapshot.approvals.requiredCount {
                     Label("\(snapshot.approvals.approvedBy.count)/\(required)", systemImage: "hand.thumbsup")
-                        .foregroundStyle(snapshot.approvals.isSatisfied == true ? Theme.mint : Color.secondary)
+                        .foregroundStyle(snapshot.approvals.isSatisfied == true ? Theme.mint : Theme.textSecondary)
                         .accessibilityLabel("\(snapshot.approvals.approvedBy.count) of \(required) approvals")
                 }
                 if snapshot.unresolvedThreadCount > 0 {
                     Label("\(snapshot.unresolvedThreadCount)", systemImage: "bubble.left")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .accessibilityLabel("\(snapshot.unresolvedThreadCount) unresolved threads")
                 }
             }
-            .font(.caption)
+            .font(.system(size: 11.5))
             .labelStyle(.titleAndIcon)
         }
-        .padding(.vertical, 3)
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 11, style: .continuous)
+            .fill(isSelected ? Theme.surfaceSelected : (isHovering ? Theme.surfaceHover : Theme.surface)))
+        .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
+            .strokeBorder(isSelected ? Theme.accent.opacity(0.7) : Theme.border, lineWidth: isSelected ? 1.3 : 1))
+        .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .onHover { isHovering = $0 }
         .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : [.isButton])
     }
 }
 

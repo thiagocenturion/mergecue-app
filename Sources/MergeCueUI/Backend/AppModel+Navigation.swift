@@ -28,6 +28,13 @@ extension AppModel {
         }
     }
 
+    /// "Fix with AI" in the window: creates the task (it starts as Waiting for agent) and opens its handoff screen.
+    public func createTaskAndShow(attentionID: String, type: TaskType) async {
+        guard let result = await send(.createTask(attentionID: attentionID, type: type)), let taskID = result.createdTaskID else { return }
+        if handoffOffer?.taskID == taskID { handoffOffer = nil }
+        showTask(taskID)
+    }
+
     // MARK: Navigation
 
     /// Selects an attention item in the Inbox (relaxing filters that would hide it) and shows the window.

@@ -1,115 +1,56 @@
 import MergeCueCore
 import SwiftUI
 
-/// Task detail: provenance, exact initial comment, checkout, state panel (handoff / heartbeat / blocked / review
-/// gate), changed files + diff, tests, proposed reply, timeline and approvals.
-struct TaskDetail: View {
+/// Task detail. `ready_for_review` opens the focused result review; every other state uses the handoff layout
+/// (exact comment + real context on the left, the state's panel with the 4-step tracker on the right).
+struct TaskDetailScreen: View {
     let model: AppModel
+    let record: TaskRecord
 
     var body: some View {
-        if let record = model.task(model.selectedTaskID) {
-            TaskDetailContent(model: model, record: record)
-                .id(record.id)
+        if record.state == .readyForReview {
+            TaskReviewScreen(model: model, record: record)
         } else {
-            NothingSelected(title: "Select a task", symbol: "checklist",
-                            message: "Tasks hand review comments and CI failures to your agent and show what it reported.")
+            TaskHandoffScreen(model: model, record: record)
         }
     }
 }
 
-struct TaskDetailContent: View {
+/// "‹" back to the task list.
+struct BackButton: View {
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.textSecondary)
+                .frame(width: 30, height: 30)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PlainRowButtonStyle())
+        .keyboardShortcut("[", modifiers: .command)
+        .help("Back to tasks (⌘[)")
+        .accessibilityLabel("Back to tasks")
+    }
+}
+
+/// Lifecycle actions of a task (retry, unblock, reopen, cancel, dismiss, show PR).
+struct TaskActionsMenu: View {
     let model: AppModel
     let record: TaskRecord
 
-    private var task: MCTask { record.task }
-
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                header
-                statePanel
-                if !task.trigger.quoted.isEmpty {
-                    Card(task.trigger.quoted.first?.source == UntrustedText.Source.ciLog ? "Triggering log excerpt" : "Exact initial comment",
-                         systemImage: "quote.bubble") {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(Array(task.trigger.quoted.enumerated()), id: \.offset) { _, quote in
-                                UntrustedQuote(quote: quote, now: model.now)
-                            }
-                            if let anchor = task.trigger.anchor {
-                                Text("\(anchor.path)\(anchor.line.map { ":\($0)" } ?? "") · captured \(UIFormat.relative(from: task.trigger.capturedAt, now: model.now)) at \(UIFormat.shortSHA(task.trigger.headSHA))")
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-                resultCards
-                HStack(alignment: .top, spacing: 16) {
-                    checkoutCard
-                    timelineCard
-                }
-                .fixedSize(horizontal: false, vertical: true)
-                if !task.approvals.isEmpty { approvalsCard }
-            }
-            .padding(20)
-            .frame(maxWidth: 900, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .background(Color(nsColor: .windowBackgroundColor))
-    }
-
-    // MARK: Header
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text(task.id.rawValue)
-                    .font(.title2.monospaced().weight(.semibold))
-                    .textSelection(.enabled)
-                Chip(text: task.state.displayName, symbol: task.state.symbolName, tone: task.state.tone)
-                Text(task.type.displayName)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                lifecycleMenu
-            }
-            HStack(spacing: 6) {
-                ChangeRequestRefLabel(kind: task.origin.providerKind, repoFullPath: task.origin.changeRequestRef.repoFullPath,
-                                      number: task.origin.changeRequest.number, font: .callout, glyphSize: 15)
-                Text(task.origin.title)
-                    .font(.callout.weight(.medium))
-                    .lineLimit(1)
-            }
-            HStack(spacing: 12) {
-                Text(provenance)
-                    .foregroundStyle(.secondary)
-                Button("Show \(task.origin.providerKind.changeRequestAbbreviation)") { model.showChangeRequest(task.origin.changeRequest) }
-                    .buttonStyle(.link)
-                Button("Open in \(task.origin.providerKind.displayName)") { Task { await model.send(.openURL(task.origin.webURL)) } }
-                    .buttonStyle(.link)
-            }
-            .font(.caption)
-        }
-    }
-
-    private var provenance: String {
-        let snapshot = model.snapshot(task.origin.changeRequest)
-        var source = "Created \(UIFormat.relative(from: task.createdAt, now: model.now))"
-        if let thread = task.origin.thread.flatMap({ snapshot?.thread($0) }), let root = thread.rootComment {
-            source += " from @\(root.author.username)'s \(root.kind == .suggestion ? "code suggestion" : root.kind == .question ? "question" : "comment")"
-        } else if let check = task.origin.check.flatMap({ snapshot?.check($0) }) {
-            source += " from the failed check \(check.name)"
-        }
-        if task.origin.ruleID != nil { source += " by a rule" }
-        return source + " · updated \(UIFormat.relative(from: task.updatedAt, now: model.now)) · v\(task.version)"
-    }
-
-    private var lifecycleMenu: some View {
+        let task = record.task
         Menu {
             if [.failed, .blocked, .stale].contains(task.state) {
                 Button("Retry") { send(.retryTask(task.id)) }
             }
             if task.state == .blocked { Button("Unblock") { send(.unblockTask(task.id)) } }
+            if task.state == .readyForReview { Button("Mark Done Without Changes") { send(.markTaskDone(task.id)) } }
+            Button("Show \(task.origin.providerKind.changeRequestAbbreviation) Details") { model.showChangeRequest(task.origin.changeRequest) }
+            Button("Open in \(task.origin.providerKind.displayName)") { send(.openURL(task.origin.webURL)) }
+            Divider()
             if task.state.isTerminal {
                 Button("Reopen") { send(.reopenTask(task.id)) }
             } else {
@@ -117,192 +58,100 @@ struct TaskDetailContent: View {
                 Button("Dismiss") { send(.dismissTask(task.id)) }
             }
         } label: {
-            Label("Task Actions", systemImage: "ellipsis.circle")
+            Image(systemName: "ellipsis")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.textSecondary)
+                .frame(width: 44, height: 40)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.surfaceRaised))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.border, lineWidth: 1))
         }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
+        .help("Task actions")
+        .accessibilityLabel("Task actions")
     }
 
     private func send(_ command: AppCommand) {
         Task { await model.send(command) }
     }
+}
 
-    // MARK: State panel
+/// Task created → Waiting for agent → AI working → Ready for review.
+struct HandoffTracker: View {
+    let current: Presentation.HandoffStep
+    /// Colour of the current step (amber when stalled or blocked, red when failed).
+    var currentColor: Color = Theme.mint
+    var currentLabel: String?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(Presentation.HandoffStep.allCases, id: \.self) { step in
+                VStack(spacing: 12) {
+                    HStack(spacing: 0) {
+                        connector(visible: step != .created, done: step <= current)
+                        node(step)
+                        connector(visible: step != .ready, done: step < current)
+                    }
+                    Text(step == current ? (currentLabel ?? step.title) : step.title)
+                        .font(.system(size: 13, weight: step == current ? .semibold : .regular))
+                        .foregroundStyle(step == current ? Theme.textPrimary : Theme.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Progress: \(currentLabel ?? current.title), step \(current.rawValue + 1) of 4")
+    }
 
     @ViewBuilder
-    private var statePanel: some View {
-        switch task.state {
-        case .waitingForAgent:
-            HandoffPanel(model: model, record: record, title: "Awaiting agent connection",
-                         message: "No agent has claimed this task yet. Hand it over with the command below; the status changes only when your agent calls claim_task through MergeCue MCP.")
-        case .stale:
-            VStack(alignment: .leading, spacing: 12) {
-                StatusCallout(tone: .attention, symbol: "exclamationmark.triangle.fill",
-                              title: "No heartbeat from \(task.lease?.agentName ?? "the agent") for \(UIFormat.duration(from: task.lease?.heartbeatAt ?? task.updatedAt, to: model.now))",
-                              message: "The lease expired, so the task is stale — never done. The agent can claim it again, or you can put it back in the queue.") {
-                    Button("Retry") { send(.retryTask(task.id)) }.buttonStyle(.borderedProminent).tint(Theme.accent)
-                    Button("Cancel Task") { send(.cancelTask(task.id)) }
-                }
-                HandoffPanel(model: model, record: record, title: "Hand it over again", message: nil)
-            }
-        case .working:
-            WorkingPanel(model: model, record: record)
-        case .readyForReview:
-            ReviewGatePanel(model: model, record: record)
-        case .approvedAction:
-            StatusCallout(tone: .progress, symbol: "arrow.triangle.2.circlepath", title: "Performing the approved action…",
-                          message: "MergeCue re-checks the remote state right before writing.") { EmptyView() }
-        case .blocked:
-            StatusCallout(tone: .attention, symbol: "lock.fill", title: task.checkout?.blockedReason ?? "Blocked",
-                          message: blockedMessage) {
-                Button("Map a Checkout…") { model.showSettings(.repositories) }.buttonStyle(.borderedProminent).tint(Theme.accent)
-                Button("Unblock") { send(.unblockTask(task.id)) }
-                Button("Cancel Task") { send(.cancelTask(task.id)) }
-            }
-        case .failed:
-            StatusCallout(tone: .critical, symbol: "xmark.octagon.fill", title: "The agent reported a failure",
-                          message: task.lastError.map { "\($0.message)\($0.retryable ? " · retryable" : "")" } ?? "No details were reported.") {
-                Button("Retry") { send(.retryTask(task.id)) }.buttonStyle(.borderedProminent).tint(Theme.accent)
-                Button("Dismiss") { send(.dismissTask(task.id)) }
-            }
-        case .done, .cancelled, .dismissed:
-            StatusCallout(tone: task.state == .done ? .success : .neutral, symbol: task.state.symbolName, title: task.state.displayName,
-                          message: task.resultSummary ?? "This task is finished. Reopen it to hand it to an agent again.") {
-                Button("Reopen") { send(.reopenTask(task.id)) }
-            }
+    private func node(_ step: Presentation.HandoffStep) -> some View {
+        if step < current {
+            Image(systemName: "checkmark")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(Theme.textSecondary)
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(Theme.surfaceRaised))
+                .overlay(Circle().strokeBorder(Theme.textTertiary, lineWidth: 1.5))
+        } else if step == current {
+            Circle()
+                .fill(currentColor)
+                .frame(width: 16, height: 16)
+                .padding(4)
+                .overlay(Circle().strokeBorder(currentColor.opacity(0.9), lineWidth: 2))
+                .shadow(color: currentColor.opacity(0.6), radius: 8)
+                .frame(width: 26, height: 26)
+        } else {
+            Circle()
+                .strokeBorder(Theme.textTertiary.opacity(0.8), lineWidth: 1.5)
+                .frame(width: 26, height: 26)
         }
     }
 
-    private var blockedMessage: String {
-        guard var detail = record.activities.last(where: { $0.kind == .blocked })?.message else {
-            return "Code edits need a safe checkout. The agent can still inspect and draft."
-        }
-        // The activity repeats the headline ("Blocked: map a safe checkout — …"); show only the explanation.
-        if let title = task.checkout?.blockedReason, detail.hasPrefix(title) {
-            detail = String(detail.dropFirst(title.count)).trimmingCharacters(in: CharacterSet(charactersIn: " —-:"))
-        }
-        return detail.prefix(1).uppercased() + detail.dropFirst()
+    private func connector(visible: Bool, done: Bool) -> some View {
+        Rectangle()
+            .fill(visible ? (done ? AnyShapeStyle(LinearGradient(colors: [Theme.textTertiary, currentColor], startPoint: .leading, endPoint: .trailing)) : AnyShapeStyle(Theme.divider)) : AnyShapeStyle(Color.clear))
+            .frame(height: 2)
+            .frame(maxWidth: .infinity)
     }
+}
 
-    // MARK: Results
+/// Circled step number ("1").
+struct StepNumber: View {
+    var text: String
+    var color: Color = Theme.blue
 
-    @ViewBuilder
-    private var resultCards: some View {
-        if let diff = record.artifact(.diff) {
-            let files = DiffParser.parse(diff.content)
-            Card("Changed files · \(files.count)", systemImage: "doc.on.doc",
-                 trailing: AnyView(Text(diff.reportedBy == .system ? "Recomputed by MergeCue from the worktree" : "Reported by the agent")
-                    .font(.caption).foregroundStyle(.secondary))) {
-                VStack(alignment: .leading, spacing: 10) {
-                    ChangedFileList(files: files.map { ChangedFile(path: $0.path, status: .modified, additions: $0.additions, deletions: $0.deletions) })
-                    DiffView(diff: diff.content)
-                }
-            }
-        }
-        if let tests = record.artifact(.testRun) {
-            TestRunCard(artifact: tests, now: model.now)
-        }
-        if let reply = task.proposedReply {
-            Card("Proposed reply", systemImage: "arrowshape.turn.up.left") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(reply)
-                        .font(.body)
-                        .textSelection(.enabled)
-                        .padding(10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(RoundedRectangle(cornerRadius: Theme.cornerRadius).fill(Color(nsColor: .textBackgroundColor)))
-                    Text("Nothing is posted until you approve a preview.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        if task.state == .working, let changes = record.activities.last(where: { $0.kind == .changesReported }) {
-            Card("Changes reported so far", systemImage: "doc.badge.ellipsis") {
-                Text(changes.data["changed_paths"] ?? changes.message)
-                    .font(.caption.monospaced())
-                    .textSelection(.enabled)
-            }
-        }
-    }
-
-    // MARK: Checkout and timeline
-
-    private var checkoutCard: some View {
-        Card("Checkout", systemImage: "folder") {
-            VStack(alignment: .leading, spacing: 6) {
-                if let checkout = task.checkout {
-                    row("Policy", policyText(checkout.policy))
-                    row("Mapped checkout", checkout.mappedCheckoutPath ?? "—", mono: true)
-                    row("Worktree", checkout.worktreePath ?? "Created when an agent claims the task", mono: checkout.worktreePath != nil)
-                    row("Branches", "\(checkout.sourceBranch) → \(checkout.targetBranch)", mono: true)
-                    row("Base", UIFormat.shortSHA(checkout.baseSHA), mono: true)
-                    if checkout.isGitButlerManaged {
-                        Label("GitButler workspace — never edited directly", systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption)
-                            .foregroundStyle(Theme.attention)
-                    }
-                    if let reason = checkout.blockedReason, task.state != .blocked {
-                        Text(reason).font(.caption).foregroundStyle(Theme.attention)
-                    }
-                } else {
-                    Text("No checkout prepared").font(.callout).foregroundStyle(.secondary)
-                }
-            }
-        }
-        .frame(maxWidth: 340)
-    }
-
-    private func policyText(_ policy: CheckoutPolicy) -> String {
-        switch policy {
-        case .isolatedWorktree: "Isolated worktree"
-        case .readOnly: "Read-only (inspect and draft)"
-        case .blocked: "Blocked"
-        }
-    }
-
-    private func row(_ label: String, _ value: String, mono: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(label).font(.caption).foregroundStyle(.secondary)
-            Text(value)
-                .font(mono ? .caption.monospaced() : .callout)
-                .lineLimit(2)
-                .truncationMode(.middle)
-                .textSelection(.enabled)
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    private var timelineCard: some View {
-        Card("Timeline", systemImage: "clock.arrow.circlepath") {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(record.activities.reversed().enumerated()), id: \.element.id) { index, activity in
-                    TimelineRow(activity: activity, now: model.now, isLast: index == record.activities.count - 1)
-                }
-            }
-        }
-    }
-
-    private var approvalsCard: some View {
-        Card("Approvals", systemImage: "checkmark.shield") {
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(task.approvals, id: \.id) { approval in
-                    HStack(spacing: 8) {
-                        Image(systemName: approval.decision == .approved ? "checkmark.circle.fill" : "xmark.circle")
-                            .foregroundStyle(approval.decision == .approved ? Theme.mint : Color.secondary)
-                        Text("\(approval.decision == .approved ? "Approved" : "Declined") \(approval.action.displayName)")
-                            .font(.callout)
-                        Spacer()
-                        Text(UIFormat.relative(from: approval.decidedAt, now: model.now))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(String(approval.previewFingerprint.prefix(10)))
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.tertiary)
-                    }
-                    .accessibilityElement(children: .combine)
-                }
-            }
-        }
+    var body: some View {
+        Text(text)
+            .font(.system(size: 19, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 44, height: 44)
+            .background(Circle().fill(LinearGradient(colors: [color.opacity(0.95), color.opacity(0.7)], startPoint: .top, endPoint: .bottom)))
+            .overlay(Circle().strokeBorder(.white.opacity(0.25), lineWidth: 1))
+            .shadow(color: color.opacity(0.45), radius: 10)
+            .accessibilityHidden(true)
     }
 }
 
@@ -315,32 +164,34 @@ struct TimelineRow: View {
         HStack(alignment: .top, spacing: 10) {
             VStack(spacing: 0) {
                 Image(systemName: symbol)
-                    .font(.caption.weight(.semibold))
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(color)
                     .frame(width: 22, height: 22)
                     .background(Circle().fill(color.opacity(0.14)))
                 if !isLast {
                     Rectangle()
-                        .fill(Color(nsColor: .separatorColor))
-                        .frame(width: 1)
+                        .fill(Theme.divider)
+                        .frame(width: 1.5)
                         .frame(maxHeight: .infinity)
                 }
             }
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(activity.actorName ?? activity.actor.rawValue.capitalized)
-                        .font(.caption.weight(.semibold))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary)
                     if let to = activity.toState, activity.fromState != to {
                         Chip(text: to.displayName, tone: to.tone)
                     }
                     Spacer(minLength: 4)
                     Text(UIFormat.relative(from: activity.at, now: now))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Theme.textSecondary)
                         .help(UIFormat.dateTime(activity.at))
                 }
                 Text(activity.message)
-                    .font(.callout)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.bottom, isLast ? 0 : 12)
@@ -358,40 +209,22 @@ struct TimelineRow: View {
 
     private var color: Color {
         switch activity.actor {
-        case .agent: Theme.accent
+        case .agent: Theme.violet
         case .user: Theme.cyan
-        case .system: .secondary
+        case .system: Theme.textSecondary
         }
     }
 }
 
-struct TestRunCard: View {
-    let artifact: Artifact
+/// The append-only activity history (popover from the timeline column, card in the handoff screen).
+struct ActivityLog: View {
+    let record: TaskRecord
     let now: Date
 
     var body: some View {
-        let status = artifact.metadata["status"] ?? "unknown"
-        let tone: Tone = status == "passed" ? .success : (status == "failed" || status == "error" ? .critical : .neutral)
-        Card("Tests", systemImage: "testtube.2", trailing: AnyView(Chip(text: status.capitalized, tone: tone))) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(artifact.metadata["command"] ?? artifact.title)
-                    .font(.callout.monospaced())
-                    .textSelection(.enabled)
-                HStack(spacing: 14) {
-                    if let passed = artifact.metadata["passed"] { Label("\(passed) passed", systemImage: "checkmark.circle").foregroundStyle(Theme.mint) }
-                    if let failed = artifact.metadata["failed"] {
-                        Label("\(failed) failed", systemImage: "xmark.circle").foregroundStyle(failed == "0" ? Color.secondary : Theme.critical)
-                    }
-                    if let skipped = artifact.metadata["skipped"] { Label("\(skipped) skipped", systemImage: "forward") }
-                    if let duration = artifact.metadata["duration_ms"].flatMap(Double.init) {
-                        Label(String(format: "%.1f s", duration / 1000), systemImage: "timer")
-                    }
-                    Text(artifact.reportedBy == .agent ? "Reported by the agent" : "Run by MergeCue")
-                        .foregroundStyle(.tertiary)
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                LogExcerptView(excerpt: LogExcerpt(text: artifact.content, truncated: false), maxHeight: 180)
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(record.activities.reversed().enumerated()), id: \.element.id) { index, activity in
+                TimelineRow(activity: activity, now: now, isLast: index == record.activities.count - 1)
             }
         }
     }
@@ -406,26 +239,58 @@ struct StatusCallout<Actions: View>: View {
     @ViewBuilder var actions: Actions
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
                 Image(systemName: symbol)
-                    .font(.title3)
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(Theme.color(tone))
+                    .frame(width: 24)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(title).font(.headline)
+                    Text(title)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary)
                     Text(message)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .font(Theme.body)
+                        .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            HStack(spacing: 8) { actions }
-                .padding(.leading, 34)
+            HStack(spacing: 10) { actions }
+                .padding(.leading, 36)
         }
-        .padding(14)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).fill(Theme.tint(tone)))
-        .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).strokeBorder(Theme.color(tone).opacity(0.25)))
+        .cardBackground(Theme.color(tone).opacity(0.08), border: Theme.color(tone).opacity(0.3))
+    }
+}
+
+/// Full test output of the task's `test_run` artifact.
+struct TestRunDetail: View {
+    let artifact: Artifact
+    let now: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 14) {
+                Text(artifact.metadata["command"] ?? artifact.title)
+                    .font(Theme.mono)
+                    .foregroundStyle(Theme.textPrimary)
+                    .textSelection(.enabled)
+                Spacer()
+                if let passed = artifact.metadata["passed"] { Label("\(passed) passed", systemImage: "checkmark.circle").foregroundStyle(Theme.mint) }
+                if let failed = artifact.metadata["failed"] {
+                    Label("\(failed) failed", systemImage: "xmark.circle").foregroundStyle(failed == "0" ? Theme.textSecondary : Theme.critical)
+                }
+                if let duration = artifact.metadata["duration_ms"].flatMap(Double.init) {
+                    Label(String(format: "%.1f s", duration / 1000), systemImage: "timer").foregroundStyle(Theme.textSecondary)
+                }
+            }
+            .font(.system(size: 12))
+            Text(artifact.reportedBy == .agent ? "Reported by the agent \(UIFormat.relative(from: artifact.createdAt, now: now))" : "Run by MergeCue")
+                .font(.system(size: 11.5))
+                .foregroundStyle(Theme.textTertiary)
+            LogExcerptView(excerpt: LogExcerpt(text: artifact.content, truncated: false), maxHeight: 420)
+        }
     }
 }

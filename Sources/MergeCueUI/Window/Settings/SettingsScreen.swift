@@ -6,26 +6,43 @@ struct SettingsList: View {
     @Bindable var model: AppModel
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Settings").font(.headline)
-                Spacer()
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            Divider()
-            List(selection: selection) {
-                ForEach(SettingsTab.allCases) { tab in
-                    Label(tab.title, systemImage: tab.symbol)
-                        .tag(tab as SettingsTab?)
-                        .badge(badge(tab))
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Settings")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(Theme.textPrimary)
+                .padding(.horizontal, 8)
+                .padding(.top, 8)
+                .padding(.bottom, 14)
+                .accessibilityAddTraits(.isHeader)
+            ForEach(SettingsTab.allCases) { tab in
+                let isSelected = model.settingsTab == tab
+                Button {
+                    model.settingsTab = tab
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: tab.symbol)
+                            .font(.system(size: 14))
+                            .frame(width: 20)
+                            .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textSecondary)
+                        Text(tab.title)
+                            .font(.system(size: 13.5, weight: isSelected ? .semibold : .regular))
+                            .foregroundStyle(Theme.textPrimary)
+                        Spacer()
+                        if badge(tab) > 0 { CountBadge(count: badge(tab), highlighted: isSelected) }
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(height: 36)
+                    .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(isSelected ? Theme.surfaceSelected : .clear))
+                    .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(isSelected ? Theme.accent.opacity(0.35) : .clear, lineWidth: 1))
                 }
+                .buttonStyle(PlainRowButtonStyle())
+                .accessibilityAddTraits(isSelected ? [.isSelected] : [])
             }
-            .listStyle(.inset)
-            .scrollContentBackground(.hidden)
+            Spacer()
         }
-        .background(Color(nsColor: .controlBackgroundColor))
-        .navigationTitle("Settings")
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Theme.contentBackground)
     }
 
     private var selection: Binding<SettingsTab?> {
@@ -51,10 +68,11 @@ struct SettingsDetail: View {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 8) {
                     Image(systemName: model.settingsTab.symbol)
-                        .font(.title2)
+                        .font(.system(size: 20))
                         .foregroundStyle(Theme.accent)
                     Text(model.settingsTab.title)
-                        .font(.title2.weight(.semibold))
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundStyle(Theme.textPrimary)
                     Spacer()
                     ModeBadge(mode: model.mode)
                 }
@@ -72,7 +90,7 @@ struct SettingsDetail: View {
             .frame(maxWidth: 820, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Theme.windowBackground)
     }
 }
 
@@ -188,8 +206,7 @@ struct AccountCard: View {
                     Button("Refresh") { Task { await model.send(.refresh(account: account.id)) } }
                     if status.state == .authExpired || status.state.isPermissionProblem {
                         Button("Reconnect…") { model.connectSheetKind = account.kind }
-                            .buttonStyle(.borderedProminent)
-                            .tint(Theme.accent)
+                            .buttonStyle(GradientButtonStyle(size: .small))
                     }
                     Spacer()
                     Button("Disconnect…", role: .destructive) { confirmDisconnect = true }

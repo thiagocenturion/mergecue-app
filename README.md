@@ -34,6 +34,20 @@ Scheme options (*Product ▸ Scheme ▸ Edit Scheme… ▸ Run ▸ Arguments*), 
 | `MERGECUE_PREVIEW_VARIANT` | `standard` (default), `authExpired`, `allCaughtUp`, `noAccounts` | Preview scenario. |
 | `MERGECUE_BACKEND` | `preview` (default), `demo`, `live` | Backend selection. `demo` and `live` are not available yet and fall back to `preview` (see `App/MergeCueApp.swift`). |
 
+## Visual design
+
+The UI follows the owner's mockups in `Design/mockups/` (1 main inbox, 2 menu bar popover, 3 agent handoff,
+4 result review): deep navy surfaces in dark mode with a matching light variant, the icon's cyan → blue → violet
+gradient for primary actions, and one colour per status (Needs you, Waiting for agent, AI working, Ready). All tokens
+live in `Sources/MergeCueUI/Components/Theme.swift`; shared controls in `Components/Controls.swift`.
+
+- Menu bar icon: the owner's coloured glyphs in `Design/menubar/` (copied to `Sources/MergeCueUI/Resources/` and the
+  `MenuBarIcon` / `MenuBarIconAlert` image sets). The light glyph is drawn on a dark menu bar and the dark glyph on a
+  light one; the mint-dot variant appears while something needs you or is ready.
+- Provider and agent marks come from Simple Icons (CC0 path data); see `Design/THIRD-PARTY-MARKS.md`.
+- `swift run mergecue-snapshots` renders every screen in dark and light to `docs/evidence/snapshots/`; files named
+  `1-…` to `4-…` correspond to the four mockups, `menubar-icon-*` shows the status item on both menu bar appearances.
+
 ## Command line
 
 ```sh
