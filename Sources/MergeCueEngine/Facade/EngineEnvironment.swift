@@ -28,6 +28,12 @@ public struct EngineEnvironment: Sendable {
     public var mappingSearchRoots: [String]
     /// Id source (seeded in tests).
     public var ids: IDGenerator
+    /// Housekeeping period (`runMaintenanceIfDue`, checked by the stale-lease monitor). nil = never. Default 1 day.
+    public var maintenanceInterval: TimeInterval?
+    /// History retention of the scheduled prune. Default 90 days.
+    public var historyRetention: TimeInterval
+    /// Finished tasks' worktrees become cleanup candidates after this long. Default 14 days.
+    public var worktreeCleanupAge: TimeInterval
     /// Delivers the engine's own alerts ("agent result ready for review"); nil = none. Sync has its own notifier.
     public var notifier: (any NotificationDelivering)?
 
@@ -47,7 +53,10 @@ public struct EngineEnvironment: Sendable {
         previewLifetime: TimeInterval = 600,
         mappingSearchRoots: [String] = [],
         ids: IDGenerator = .system,
-        notifier: (any NotificationDelivering)? = nil
+        notifier: (any NotificationDelivering)? = nil,
+        maintenanceInterval: TimeInterval? = 86_400,
+        historyRetention: TimeInterval = 90 * 86_400,
+        worktreeCleanupAge: TimeInterval = 14 * 86_400
     ) {
         self.database = database
         self.credentials = credentials
@@ -65,5 +74,8 @@ public struct EngineEnvironment: Sendable {
         self.mappingSearchRoots = mappingSearchRoots
         self.ids = ids
         self.notifier = notifier
+        self.maintenanceInterval = maintenanceInterval
+        self.historyRetention = historyRetention
+        self.worktreeCleanupAge = worktreeCleanupAge
     }
 }

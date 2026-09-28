@@ -81,6 +81,10 @@ extension EngineBackend {
         case .setQuietHours(let hours):
             try await engine.setQuietHours(hours)
             return AppCommandResult(message: hours == nil ? "Quiet hours off" : "Quiet hours saved")
+        case .cleanUpWorktrees(let ids):
+            let result = try await engine.cleanUpWorktrees(ids)
+            let skipped = result.skipped.isEmpty ? "" : " (\(result.skipped.count) skipped)"
+            return AppCommandResult(message: "Removed \(result.removed.count) task worktree\(result.removed.count == 1 ? "" : "s")\(skipped). Your checkouts were not touched.")
         case .setNotificationCategory(let category, let enabled):
             let current = await engine.notificationPreferences()
             try await engine.setNotificationPreferences(current.setting(category, enabled: enabled))

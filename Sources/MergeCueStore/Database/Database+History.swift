@@ -42,10 +42,12 @@ extension MergeCueDatabase {
     /// - events detected before `cutoff`, except those of change requests that still have a non-terminal task;
     /// - activities (before `cutoff`) of terminal tasks (`done`, `cancelled`, `dismissed`);
     /// - audit entries before `cutoff`, except those of non-terminal tasks;
-    /// - rule firings before `cutoff` whose event no longer exists.
+    /// - rule firings before `cutoff` whose event no longer exists;
+    /// - resolved/dismissed attention items last updated before `cutoff` whose change request is no longer tracked
+    ///   (no stored snapshot) and that are not linked to a task.
     ///
-    /// Tasks themselves, their artifacts/approvals, snapshots and attention items are kept, and nothing belonging to a
-    /// non-terminal task is ever removed. Deleted content is zeroed on disk (`secure_delete`).
+    /// Tasks themselves, their artifacts/approvals, snapshots and attention items of tracked change requests are
+    /// kept, and nothing belonging to a non-terminal task is ever removed. Deleted content is zeroed on disk (`secure_delete`).
     @discardableResult
     public func pruneHistory(olderThan cutoff: Date) throws -> Int {
         let before = SQLiteValue.date(cutoff)
@@ -81,8 +83,33 @@ extension MergeCueDatabase {
                 """,
                 [before]
             )
+            removed += try connection.run(
+                """
+                DELETE FROM attention_items WHERE updated_at < ?
+                    AND disposition IN ('resolved', 'dismissed')
+                    AND linked_task_id IS NULL
+                    AND cr_id NOT IN (SELECT id FROM change_requests)
+                """,
+                [before]
+            )
             try connection.run("UPDATE store_maintenance SET retention_active = 0 WHERE id = 1")
             return removed
+        }
+    }
+
+    /// Housekeeping after retention: truncates the write-ahead log (it otherwise keeps its high-water size) and lets
+    /// SQLite refresh its query planner statistics (`PRAGMA optimize`). Safe while the app runs.
+    public func checkpointAndOptimize() throws {
+        try connection.execute("PRAGMA optimize")
+        _ = try connection.query("PRAGMA wal_checkpoint(TRUNCATE)") { $0.int(0) }
+    }
+
+    /// Size in bytes of the database file plus its WAL (0 in memory).
+    public func fileSizes() -> Int {
+        guard let path else { return 0 }
+        return [path, path + "-wal"].reduce(0) { total, file in
+            let size = (try? FileManager.default.attributesOfItem(atPath: file)[.size] as? NSNumber)?.intValue ?? 0
+            return total + size
         }
     }
 }

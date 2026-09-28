@@ -70,6 +70,7 @@ public actor MergeCueEngine: IPCRequestHandling {
                 }
                 guard let self else { return }
                 await self.sweepExpiredLeases()
+                await self.runMaintenanceIfDue()
             }
         }
         log.info("engine started")
@@ -194,6 +195,7 @@ enum SettingsKey {
     static let notificationsPausedUntil = "engine.notifications_paused_until"
     static let quietHours = "engine.quiet_hours"
     static let notificationPreferences = "engine.notification_preferences"
+    static let lastMaintenance = "engine.last_maintenance"
     static let lastRefreshAt = "engine.last_refresh_at"
     static func performedAction(_ fingerprint: String) -> String { "engine.performed_action.\(fingerprint)" }
     static func eventTask(_ eventID: String) -> String { "engine.event_task.\(eventID)" }

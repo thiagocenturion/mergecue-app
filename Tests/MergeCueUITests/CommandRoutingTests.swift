@@ -1,5 +1,6 @@
 import Foundation
 import MergeCueCore
+import MergeCueEngine
 @testable import MergeCueUI
 import Testing
 
@@ -158,6 +159,13 @@ struct CommandRoutingTests {
         #expect(model.notificationsPaused)
         await model.send(.pauseNotifications(until: nil))
         #expect(!model.notificationsPaused)
+        // Worktree cleanup is an explicit command; the preview never removes anything.
+        await model.send(.cleanUpWorktrees([]))
+        #expect(model.state.worktreeCleanupCandidates.isEmpty)
+        #expect(HousekeepingCard.retentionText(nil).hasSuffix("Not run yet."))
+        let report = MaintenanceReport(at: testNow, removedRows: 12, cutoff: testNow.addingTimeInterval(-90 * 86_400), databaseBytes: 2_048_000)
+        #expect(HousekeepingCard.retentionText(report).contains("12 rows removed"))
+        #expect(HousekeepingCard.retentionText(report).contains("90 days"))
         await model.send(.setNotificationCategory(.reviewRequests, enabled: false))
         #expect(!model.state.notificationPreferences.isEnabled(.reviewRequests))
         #expect(model.state.notificationPreferences.isEnabled(.ciFailures))

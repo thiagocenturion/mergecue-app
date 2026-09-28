@@ -532,7 +532,8 @@ upsertMapping(_:), mappings(repo: RepoKey?) -> [RepoMapping], deleteMapping(id:)
 // settings kv (Codable JSON)
 setting<T: Codable>(_ key: String, as: T.Type) -> T?; setSetting<T: Codable>(_ key: String, _ value: T?)
 // retention
-pruneHistory(olderThan: Date) -> Int
+pruneHistory(olderThan: Date) -> Int  /* + resolved/dismissed attention items of untracked, unlinked CRs */
+checkpointAndOptimize() /* PRAGMA optimize + wal_checkpoint(TRUNCATE) */; fileSizes() -> Int /* db + WAL bytes */
 ```
 `StoreError`: `versionConflict(current: Int)`, `notFound`, `corrupted(String)`, `sqlite(code: Int32, message: String)`.
 Corrupted DB detection: `integrityCheck()`; Runtime offers export + reset.
@@ -835,7 +836,12 @@ Public API groups (UI contract, exact names chosen by the implementer and docume
 - rules: CRUD, templates, activation (user only), evaluation on new events with per-(rule,event) idempotency,
   quiet hours, max fires/hour; `requestExecution` degrades to `createTask` + note unless an execution mode is
   verified (`Task ready to start`, never `AI working` without a claim);
-- data: export database, reset, prune;
+- data: export database, reset, prune; scheduled housekeeping (`runMaintenanceIfDue()` from the stale-lease monitor,
+  `EngineEnvironment.maintenanceInterval` 1 day, `historyRetention` 90 days → `pruneHistory` + WAL checkpoint, report in
+  `engine.last_maintenance`); `worktreeCleanupCandidates()` lists isolated worktrees of finished tasks unchanged for
+  `worktreeCleanupAge` (14 days) and `cleanUpWorktrees(_:)` removes them **only** on the owner's confirmed click
+  (Settings ▸ Data ▸ Housekeeping) — maintenance never deletes worktrees; ETag caches are bounded per API client
+  (512 URLs / 32 MiB); handoff scripts are pruned by `AgentLauncher`;
 - `handle(method:params:client:)` implements every IPC method in §5 with the guarantees listed there.
 
 Engine rules that come from Core (do not re-derive them): after an approved action succeeds pass

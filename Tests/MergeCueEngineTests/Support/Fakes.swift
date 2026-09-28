@@ -258,6 +258,7 @@ final class FakeWorkspace: WorkspaceInspecting, @unchecked Sendable {
         var changes: WorkspaceChanges = WorkspaceChanges(changedPaths: [], unifiedDiff: "", truncated: false, hasUncommittedChanges: false)
         var patchCheck: PatchApplyCheck?
         var prepared: [WorktreeRequest] = []
+        var removedWorktrees: [String] = []
         var applied: [(patch: String, checkout: String)] = []
         var checked: [String] = []
         var commands: [[String]] = []
@@ -330,7 +331,9 @@ final class FakeWorkspace: WorkspaceInspecting, @unchecked Sendable {
         return PatchApplyCheck(canApply: true, targetHeadSHA: info?.headSHA, targetSafety: info?.safety ?? .safe)
     }
 
-    func removeWorktree(path: String, checkoutPath: String) async throws {}
+    func removeWorktree(path: String, checkoutPath: String) async throws {
+        state.update { $0.removedWorktrees.append(path) }
+    }
 
     func runCommand(_ argv: [String], in directory: String, timeout: TimeInterval) async throws -> CommandResult {
         state.update { $0.commands.append(argv) }

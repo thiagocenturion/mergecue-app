@@ -244,6 +244,49 @@ struct MaintenanceTests {
         #expect(try await database.pruneHistory(olderThan: cutoff) == 0)
     }
 
+    @Test func pruneHistoryRemovesOldResolvedItemsOfUntrackedChangeRequestsOnly() async throws {
+        let database = try await StoreFixture.database()
+        let tracked = StoreFixture.changeRequestKey(remoteID: "tracked", number: 1)
+        let gone = StoreFixture.changeRequestKey(remoteID: "gone", number: 2)
+        let old = StoreFixture.at(-120 * 86_400)
+        let recent = StoreFixture.at(-86_400)
+        let cutoff = StoreFixture.at(-90 * 86_400)
+        func item(_ cr: ChangeRequestKey, _ id: String, _ disposition: AttentionDisposition, at date: Date) -> AttentionItem {
+            StoreFixture.attentionItem(cr, thread: StoreFixture.threadKey(cr, id: id), eventIDs: ["evt_\(id)"], updatedAt: date, disposition: disposition)
+        }
+        let items = [
+            item(tracked, "t-resolved", .resolved, at: old),   // CR still tracked → kept
+            item(gone, "g-resolved", .resolved, at: old),      // removed
+            item(gone, "g-dismissed", .dismissed, at: old),    // removed
+            item(gone, "g-open", .open, at: old),              // open → kept
+            item(gone, "g-recent", .resolved, at: recent),     // too recent → kept
+            item(gone, "g-linked", .resolved, at: old),        // linked to a task → kept
+        ]
+        try await database.applySyncBatch(SyncBatch(
+            account: account, snapshots: [StoreFixture.snapshot(tracked)], attentionUpserts: items, syncedAt: recent
+        ))
+        try await database.insertTask(StoreFixture.task("mc_linked", changeRequest: gone, state: .done))
+        let linked = try #require(try await database.attentionItem(dedupeKey: items[5].dedupeKey))
+        try await database.linkAttention(id: linked.id, taskID: TaskID(rawValue: "mc_linked")!)
+
+        #expect(try await database.pruneHistory(olderThan: cutoff) == 2)
+        let left = Set(try await database.attentionItems(includeInactive: true).map(\.dedupeKey))
+        #expect(left == Set([items[0], items[3], items[4], items[5]].map(\.dedupeKey)))
+
+        try await database.checkpointAndOptimize()
+        #expect(await database.fileSizes() == 0, "in memory")
+    }
+
+    @Test func fileSizesIncludeTheWAL() async throws {
+        let path = try StoreFixture.temporaryDatabasePath("sizes")
+        let database = try MergeCueDatabase(path: path)
+        try await database.upsertAccount(StoreFixture.account())
+        #expect(await database.fileSizes() > 0)
+        try await database.checkpointAndOptimize()
+        let wal = (try? FileManager.default.attributesOfItem(atPath: path + "-wal")[.size] as? NSNumber)?.intValue ?? 0
+        #expect(wal == 0, "TRUNCATE checkpoint empties the WAL")
+    }
+
     // MARK: Helpers
 
     private func openPopulatedFile(_ path: String) async throws -> MergeCueDatabase {

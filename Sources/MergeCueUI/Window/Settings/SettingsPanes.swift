@@ -1,5 +1,6 @@
 import AppKit
 import MergeCueCore
+import MergeCueEngine
 import SwiftUI
 
 // MARK: - Repositories
@@ -329,6 +330,7 @@ struct GeneralSettings: View {
 struct DataSettings: View {
     let model: AppModel
     @State private var confirmReset = false
+    @State private var confirmCleanup = false
 
     var body: some View {
         let info = model.state.runtime
@@ -353,6 +355,11 @@ struct DataSettings: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            if info != nil {
+                Card("Housekeeping", systemImage: "clock.arrow.circlepath") {
+                    HousekeepingCard(model: model) { confirmCleanup = true }
+                }
+            }
             Card("Maintenance", systemImage: "wrench.and.screwdriver") {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
@@ -373,6 +380,16 @@ struct DataSettings: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+        }
+        .confirmationDialog(
+            "Remove \(model.state.worktreeCleanupCandidates.count) task worktree\(model.state.worktreeCleanupCandidates.count == 1 ? "" : "s")?",
+            isPresented: $confirmCleanup
+        ) {
+            Button("Clean Up", role: .destructive) {
+                Task { await model.send(.cleanUpWorktrees(model.state.worktreeCleanupCandidates.map(\.taskID))) }
+            }
+        } message: {
+            Text("MergeCue removes the isolated git worktrees of these finished tasks. Your mapped checkouts, the tasks and their history stay. Unapplied agent changes in those worktrees are lost.")
         }
         .confirmationDialog("Reset all local data?", isPresented: $confirmReset) {
             Button("Delete Tokens and Data", role: .destructive) { Task { await model.send(.resetAllData) } }
@@ -402,6 +419,55 @@ struct DataSettings: View {
             Text(label).font(.callout).foregroundStyle(.secondary).frame(width: 150, alignment: .leading)
             Text(UIFormat.abbreviatedPath(value)).font(.caption.monospaced()).textSelection(.enabled)
         }
+    }
+}
+
+/// History retention status and the worktrees of finished tasks that can be removed (listed only; removal is the
+/// owner's explicit "Clean up").
+struct HousekeepingCard: View {
+    let model: AppModel
+    let onCleanUp: () -> Void
+
+    var body: some View {
+        let candidates = model.state.worktreeCleanupCandidates
+        VStack(alignment: .leading, spacing: 8) {
+            Text(Self.retentionText(model.state.lastMaintenance))
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+            if candidates.isEmpty {
+                Text("No worktrees of finished tasks to clean up.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Worktrees of finished tasks (unchanged for 14 days or more):")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                ForEach(candidates) { candidate in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(candidate.taskID.rawValue).font(.caption.monospaced())
+                        Text("\(candidate.repoFullPath) · \(candidate.title)")
+                            .font(.caption)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer(minLength: 4)
+                        Text(candidate.state.displayName).font(.caption).foregroundStyle(.secondary)
+                    }
+                    .help(candidate.worktreePath)
+                    .accessibilityElement(children: .combine)
+                }
+                HStack {
+                    Spacer()
+                    Button("Clean Up…", action: onCleanUp)
+                }
+            }
+        }
+    }
+
+    static func retentionText(_ report: MaintenanceReport?) -> String {
+        let policy = "History older than 90 days (events, finished tasks' activity and audit, resolved items of PRs/MRs no longer tracked) is pruned once a day."
+        guard let report else { return policy + " Not run yet." }
+        let size = ByteCountFormatter.string(fromByteCount: Int64(report.databaseBytes), countStyle: .file)
+        return policy + " Last run \(UIFormat.dateTime(report.at)): \(report.removedRows) rows removed, database \(size)."
     }
 }
 

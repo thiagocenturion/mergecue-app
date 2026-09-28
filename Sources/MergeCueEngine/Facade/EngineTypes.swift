@@ -312,6 +312,10 @@ public struct EngineSnapshot: Sendable, Hashable {
     public var notificationPreferences: NotificationPreferences
     public var lastRefreshAt: Date?
     public var isDemo: Bool
+    /// Last scheduled housekeeping run.
+    public var lastMaintenance: MaintenanceReport?
+    /// Worktrees of finished tasks the owner may clean up (listed only; removal needs a click).
+    public var worktreeCleanupCandidates: [WorktreeCleanupCandidate]
 
     public init(
         accounts: [EngineAccountState],
@@ -324,7 +328,9 @@ public struct EngineSnapshot: Sendable, Hashable {
         quietHours: QuietHours?,
         notificationPreferences: NotificationPreferences = .allEnabled,
         lastRefreshAt: Date?,
-        isDemo: Bool
+        isDemo: Bool,
+        lastMaintenance: MaintenanceReport? = nil,
+        worktreeCleanupCandidates: [WorktreeCleanupCandidate] = []
     ) {
         self.accounts = accounts
         self.attention = attention
@@ -337,5 +343,7 @@ public struct EngineSnapshot: Sendable, Hashable {
         self.notificationPreferences = notificationPreferences
         self.lastRefreshAt = lastRefreshAt
         self.isDemo = isDemo
+        self.lastMaintenance = lastMaintenance
+        self.worktreeCleanupCandidates = worktreeCleanupCandidates
     }
 }

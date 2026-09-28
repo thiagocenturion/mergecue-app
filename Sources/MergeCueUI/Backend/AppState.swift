@@ -1,6 +1,7 @@
 @_exported import AgentHandoff
 import Foundation
 import MergeCueCore
+import MergeCueEngine
 
 /// A connected account together with its independent sync status and the adapter's capability manifest.
 public nonisolated struct AccountState: Sendable, Hashable, Identifiable {
@@ -159,6 +160,10 @@ public nonisolated struct AppState: Sendable, Hashable {
     public var quietHours: QuietHours?
     public var notificationPreferences: NotificationPreferences
     public var lastRefreshAt: Date?
+    /// Last scheduled housekeeping (history retention) run; nil = never / preview.
+    public var lastMaintenance: MaintenanceReport?
+    /// Worktrees of finished tasks listed in Settings ▸ Data (removed only when the owner clicks Clean up).
+    public var worktreeCleanupCandidates: [WorktreeCleanupCandidate]
 
     public init(
         accounts: [AccountState] = [],
@@ -173,7 +178,9 @@ public nonisolated struct AppState: Sendable, Hashable {
         notificationsPausedUntil: Date? = nil,
         quietHours: QuietHours? = nil,
         notificationPreferences: NotificationPreferences = .allEnabled,
-        lastRefreshAt: Date? = nil
+        lastRefreshAt: Date? = nil,
+        lastMaintenance: MaintenanceReport? = nil,
+        worktreeCleanupCandidates: [WorktreeCleanupCandidate] = []
     ) {
         self.accounts = accounts
         self.attention = attention
@@ -187,6 +194,8 @@ public nonisolated struct AppState: Sendable, Hashable {
         self.notificationsPausedUntil = notificationsPausedUntil
         self.quietHours = quietHours
         self.notificationPreferences = notificationPreferences
+        self.lastMaintenance = lastMaintenance
+        self.worktreeCleanupCandidates = worktreeCleanupCandidates
         self.lastRefreshAt = lastRefreshAt
     }
 

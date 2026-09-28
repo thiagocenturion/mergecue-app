@@ -69,6 +69,9 @@ extension PreviewBackend {
         case .setQuietHours(let hours):
             state.quietHours = hours
             return AppCommandResult(message: hours == nil ? "Quiet hours off" : "Quiet hours saved")
+        case .cleanUpWorktrees(let ids):
+            state.worktreeCleanupCandidates.removeAll { ids.contains($0.taskID) }
+            return AppCommandResult(message: "Preview: nothing was removed")
         case .setNotificationCategory(let category, let enabled):
             state.notificationPreferences.set(category, enabled: enabled)
             return .none
