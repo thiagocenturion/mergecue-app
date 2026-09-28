@@ -7,12 +7,15 @@ import SwiftUI
 struct PopoverRowView: View {
     let model: AppModel
     let item: PopoverItem
+    /// Moves VoiceOver to this row when the keyboard selects it.
+    var voiceOverFocus: AccessibilityFocusState<String?>.Binding?
     @State private var isHovering = false
 
     private var isSelected: Bool { model.popoverSelection == item.id }
 
     var body: some View {
         let content = PopoverRowContent.make(item, model: model)
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
         HStack(spacing: 12) {
             ProviderBadge(kind: item.providerKind, size: 42, style: .tile)
                 .overlay(alignment: .topLeading) {
@@ -27,7 +30,7 @@ struct PopoverRowView: View {
                 }
             VStack(alignment: .leading, spacing: 4) {
                 Text("\(item.providerKind.shortName) · \(item.repoFullPath.split(separator: "/").last.map(String.init) ?? item.repoFullPath) \(item.providerKind.formattedNumber(item.number)) · \(UIFormat.compactAge(from: item.date, now: model.now))")
-                    .font(.system(size: 12))
+                    .scaledFont(.system(size: 12))
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -35,8 +38,9 @@ struct PopoverRowView: View {
                     if let glyph = content.glyph {
                         StatusGlyph(symbol: glyph.symbol, color: glyph.color, size: 17)
                     }
+                    // Read rows use the regular weight, so "unread" never depends on the dot alone.
                     Text(content.headline)
-                        .font(.system(size: 14, weight: .medium))
+                        .scaledFont(.system(size: 14, weight: item.isUnread ? .medium : .regular))
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -48,11 +52,9 @@ struct PopoverRowView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .fill(isSelected ? Theme.surfaceSelected : (isHovering ? Theme.surfaceHover : Theme.surface)))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .strokeBorder(isSelected ? Theme.accent.opacity(0.7) : Theme.border, lineWidth: isSelected ? 1.3 : 1))
-        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(shape.fill(isSelected ? Theme.surfaceSelected : (isHovering ? Theme.surfaceHover : Theme.surface)))
+        .overlay(shape.strokeBorder(isSelected ? Theme.focusRing : Theme.border, lineWidth: isSelected ? 2 : 1))
+        .contentShape(shape)
         .onHover { isHovering = $0 }
         .onTapGesture {
             model.popoverSelection = item.id
@@ -62,7 +64,9 @@ struct PopoverRowView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(item.accessibilityLabel(now: model.now))
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityAction { model.open(item) }
         .accessibilityAction(named: "Open details") { model.open(item) }
+        .voiceOverFocus(voiceOverFocus, id: item.id)
         .accessibilityAction(named: item.primaryAction.title) {
             Task { await model.perform(item.primaryAction) }
         }
@@ -93,7 +97,7 @@ struct PopoverRowView: View {
             case .createTask(_, let type) where type != .investigateCI:
                 button.buttonStyle(OutlinedGradientButtonStyle(size: .compact))
             case .openTask(_, let title) where item.section == .ready && title == "Review":
-                button.buttonStyle(TintedOutlineButtonStyle(color: Theme.mint, size: .compact))
+                button.buttonStyle(TintedOutlineButtonStyle(color: Theme.mint, textColor: Theme.mintText, size: .compact))
             default:
                 button.buttonStyle(SecondaryButtonStyle(size: .compact))
             }
@@ -107,6 +111,14 @@ struct PopoverRowView: View {
         case .openAttention, .openTask: "Open details in the MergeCue window"
         case .retryTask: "Put the task back in the queue for an agent"
         }
+    }
+}
+
+extension View {
+    /// `accessibilityFocused(binding, equals: id)` when a binding is given.
+    @ViewBuilder
+    func voiceOverFocus(_ binding: AccessibilityFocusState<String?>.Binding?, id: String) -> some View {
+        if let binding { accessibilityFocused(binding, equals: id) } else { self }
     }
 }
 

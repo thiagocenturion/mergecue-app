@@ -5,6 +5,8 @@ import SwiftUI
 /// Laid out edge to edge under a transparent title bar; the sidebar reserves room for the traffic lights.
 public struct MainWindowView: View {
     @Bindable var model: AppModel
+    /// Icon-only sidebar below `MainWindowMetrics.compactSidebarThreshold`.
+    @State private var compactSidebar = false
 
     public init(model: AppModel) {
         self.model = model
@@ -18,8 +20,8 @@ public struct MainWindowView: View {
     public var body: some View {
         HStack(spacing: 0) {
             if !isFocusedReview {
-                Sidebar(model: model)
-                    .frame(width: Theme.sidebarWidth)
+                Sidebar(model: model, compact: compactSidebar)
+                    .frame(width: compactSidebar ? Theme.compactSidebarWidth : Theme.sidebarWidth)
                     .background(Theme.sidebarBackground)
                 Rectangle().fill(Theme.divider).frame(width: 1)
             }
@@ -30,18 +32,24 @@ public struct MainWindowView: View {
         .overlay(alignment: .top) { BannerStack(model: model) }
         .ignoresSafeArea()
         .frame(minWidth: MainWindowMetrics.minimumSize.width, minHeight: MainWindowMetrics.minimumSize.height)
+        .onGeometryChange(for: Bool.self) { $0.size.width < MainWindowMetrics.compactSidebarThreshold } action: { compactSidebar = $0 }
         .sheet(item: $model.pendingPreview) { preview in
             ApprovalSheet(model: model, preview: preview)
+                .dynamicTypeSize(model.textSize.dynamicTypeSize)
         }
         .sheet(item: $model.ruleEditor) { context in
             RuleEditorSheet(model: model, context: context)
+                .dynamicTypeSize(model.textSize.dynamicTypeSize)
         }
         .sheet(item: connectSheetBinding) { item in
             ConnectAccountSheet(model: model, kind: item.kind)
+                .dynamicTypeSize(model.textSize.dynamicTypeSize)
         }
         .sheet(isPresented: $model.showsOnboarding) {
             OnboardingView(model: model)
+                .dynamicTypeSize(model.textSize.dynamicTypeSize)
         }
+        .dynamicTypeSize(model.textSize.dynamicTypeSize)
     }
 
     private var connectSheetBinding: Binding<ConnectSheetItem?> {
@@ -119,7 +127,7 @@ struct BannerStack: View {
         if !model.banners.isEmpty {
             VStack(spacing: 6) {
                 ForEach(model.banners) { banner in
-                    BannerView(banner: banner) { model.dismissBanner(banner.id) }
+                    BannerView(banner: banner, onHold: { model.setBannerHeld(banner.id, $0) }) { model.dismissBanner(banner.id) }
                 }
             }
             .frame(maxWidth: 560)
@@ -146,13 +154,14 @@ struct NothingSelected: View {
     var body: some View {
         VStack(spacing: 10) {
             Image(systemName: symbol)
-                .font(.system(size: 30, weight: .light))
+                .scaledFont(.system(size: 30, weight: .light))
                 .foregroundStyle(Theme.textTertiary)
+                .accessibilityHidden(true)
             Text(title)
-                .font(.system(size: 16, weight: .semibold))
+                .scaledFont(.system(size: 16, weight: .semibold))
                 .foregroundStyle(Theme.textPrimary)
             Text(message)
-                .font(Theme.body)
+                .scaledFont(Theme.body)
                 .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 360)

@@ -53,13 +53,13 @@ struct ChangeRequestPanel: View {
             HStack(spacing: 12) {
                 ProviderBadge(kind: kind, size: 36, style: .circle)
                 Text(repoPath)
-                    .font(.system(size: 16, weight: .medium))
+                    .scaledFont(.system(size: 16, weight: .medium))
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .layoutPriority(1)
                 Text(kind.formattedNumber(changeRequest.number))
-                    .font(.system(size: 16))
+                    .scaledFont(.system(size: 16))
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(1)
                     .fixedSize()
@@ -82,7 +82,7 @@ struct ChangeRequestPanel: View {
             }
             .accessibilityElement(children: .contain)
             Text(snapshot?.summary.title ?? focus?.title ?? "")
-                .font(.system(size: 19, weight: .semibold))
+                .scaledFont(.system(size: 19, weight: .semibold))
                 .foregroundStyle(Theme.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
@@ -90,7 +90,7 @@ struct ChangeRequestPanel: View {
                 .accessibilityAddTraits(.isHeader)
             if let snapshot {
                 Text(metaLine(snapshot))
-                    .font(.system(size: 13))
+                    .scaledFont(.system(size: 13))
                     .foregroundStyle(Theme.textSecondary)
                     .padding(.top, 6)
             }
@@ -100,29 +100,31 @@ struct ChangeRequestPanel: View {
     @ViewBuilder
     private func statusPill(_ snapshot: ChangeRequestSnapshot?) -> some View {
         if let focus {
-            StatusPill(text: Presentation.statusPill(focus.reason), color: Theme.reasonColor(focus.reason), showsDot: true, size: 12)
+            StatusPill(text: Presentation.statusPill(focus.reason), color: Theme.reasonColor(focus.reason),
+                       textColor: Theme.reasonTextColor(focus.reason), showsDot: true, size: 12, cueSymbol: Theme.reasonSymbol(focus.reason))
         } else if let snapshot {
-            let (text, color) = Self.readiness(snapshot)
-            StatusPill(text: text, color: color, showsDot: true, size: 12)
+            let (text, color, textColor) = Self.readiness(snapshot)
+            StatusPill(text: text, color: color, textColor: textColor, showsDot: true, size: 12)
         }
     }
 
-    static func readiness(_ snapshot: ChangeRequestSnapshot) -> (String, Color) {
+    /// Readiness label with its fill and text colours.
+    static func readiness(_ snapshot: ChangeRequestSnapshot) -> (String, Color, Color) {
         switch snapshot.summary.state {
-        case .merged: return ("Merged", Theme.violet)
-        case .closed: return ("Closed", Theme.textSecondary)
+        case .merged: return ("Merged", Theme.violet, Theme.violetText)
+        case .closed: return ("Closed", Theme.textSecondary, Theme.textSecondary)
         case .open: break
         }
-        if snapshot.summary.isDraft { return ("Draft", Theme.textSecondary) }
+        if snapshot.summary.isDraft { return ("Draft", Theme.textSecondary, Theme.textSecondary) }
         if snapshot.reviews.last(where: { $0.state == .changesRequested }) != nil,
            snapshot.reviewers.contains(where: { $0.state == .changesRequested }) {
-            return ("Changes requested", Theme.needs)
+            return ("Changes requested", Theme.needs, Theme.needsText)
         }
         switch snapshot.readiness {
-        case .readyToMerge: return ("Ready to merge", Theme.mint)
-        case .checksGreen: return ("Checks green", Theme.mint)
-        case .blocked: return ("Blocked", Theme.waiting)
-        case .unknown: return ("Open", Theme.accent)
+        case .readyToMerge: return ("Ready to merge", Theme.mint, Theme.mintText)
+        case .checksGreen: return ("Checks green", Theme.mint, Theme.mintText)
+        case .blocked: return ("Blocked", Theme.waiting, Theme.waitingText)
+        case .unknown: return ("Open", Theme.accent, Theme.accentText)
         }
     }
 
@@ -186,7 +188,7 @@ struct ChangeRequestPanel: View {
             }
             if threads.isEmpty {
                 Text("No review threads yet.")
-                    .font(Theme.body)
+                    .scaledFont(Theme.body)
                     .foregroundStyle(Theme.textSecondary)
             }
         }
@@ -220,7 +222,7 @@ struct ItemActionsMenu: View {
             Button("Dismiss") { Task { await model.send(.dismissAttention(attentionID: item.id)) } }
         } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: 13, weight: .semibold))
+                .scaledFont(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.textSecondary)
                 .frame(width: 28, height: 28)
         }
@@ -248,8 +250,9 @@ struct FocusActionBar: View {
             } label: {
                 HStack(spacing: 10) {
                     Circle().fill(TaskStateStyle.color(task)).frame(width: 8, height: 8)
+                        .accessibilityHidden(true)
                     Text("Open task · \(TaskStateStyle.label(task))")
-                    Image(systemName: "arrow.right").font(.system(size: 13, weight: .semibold))
+                    Image(systemName: "arrow.right").scaledFont(.system(size: 13, weight: .semibold))
                 }
             }
             .buttonStyle(SecondaryButtonStyle(size: .large, fullWidth: true))
@@ -282,16 +285,17 @@ struct AITaskSplitButton: View {
                     SparkleIcon(size: 16)
                     Text(defaultType.actionTitle)
                 }
-                .font(.system(size: 16, weight: .semibold))
+                .scaledFont(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
-                .frame(height: 50)
+                .padding(.vertical, 8)
+                .frame(minHeight: 50)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(PlainRowButtonStyle())
+            .buttonStyle(PlainRowButtonStyle(cornerRadius: 12))
             .keyboardShortcut(.return, modifiers: .command)
             .help("\(defaultType.actionTitle) — creates a task for your agent (⌘↩)")
-            Rectangle().fill(.white.opacity(0.28)).frame(width: 1, height: 50)
+            .accessibilityHint("Creates a task for your agent. Command-Return")
             Menu {
                 Section("Task") {
                     ForEach(TaskType.allCases, id: \.self) { type in
@@ -307,17 +311,23 @@ struct AITaskSplitButton: View {
                 }
             } label: {
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 14, weight: .bold))
+                    .scaledFont(.system(size: 14, weight: .bold))
                     .foregroundStyle(.white)
-                    .frame(width: 50, height: 50)
+                    .frame(width: 50)
+                    .frame(minHeight: 50)
                     .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .frame(width: 50)
+            .frame(maxHeight: .infinity)
+            .overlay(alignment: .leading) {
+                Rectangle().fill(.white.opacity(0.28)).frame(width: 1).accessibilityHidden(true)
+            }
             .accessibilityLabel("More AI actions")
         }
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.brandGradient))
+        .fixedSize(horizontal: false, vertical: true)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.actionGradient))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.white.opacity(0.2), lineWidth: 1))
         .shadow(color: Color(hex: 0x3B82F6).opacity(0.3), radius: 12, y: 3)
     }
@@ -352,10 +362,10 @@ struct ChangeRequestFilesTab: View {
                 Text("\(snapshot.changedFiles.count) changed file\(snapshot.changedFiles.count == 1 ? "" : "s")")
                     .foregroundStyle(Theme.textSecondary)
                 Spacer()
-                Text("+\(additions)").foregroundStyle(Theme.mint)
-                Text("−\(deletions)").foregroundStyle(Theme.critical)
+                Text("+\(additions)").foregroundStyle(Theme.mintText)
+                Text("−\(deletions)").foregroundStyle(Theme.criticalText)
             }
-            .font(.system(size: 12.5, weight: .medium).monospacedDigit())
+            .scaledFont(.system(size: 12.5, weight: .medium).monospacedDigit())
             ChangedFileList(files: snapshot.changedFiles)
                 .padding(14)
                 .cardBackground(Theme.surface)
@@ -370,7 +380,7 @@ struct ChangeRequestChecksTab: View {
     var body: some View {
         if snapshot.checks.isEmpty {
             Text("No checks reported for this \(snapshot.summary.providerKind.changeRequestNoun).")
-                .font(Theme.body)
+                .scaledFont(Theme.body)
                 .foregroundStyle(Theme.textSecondary)
         }
         VStack(spacing: 0) {
@@ -379,13 +389,13 @@ struct ChangeRequestChecksTab: View {
                 HStack(spacing: 10) {
                     CheckStatusIcon(status: check.status)
                     Text(check.name)
-                        .font(.system(size: 13, weight: .medium))
+                        .scaledFont(.system(size: 13, weight: .medium))
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
                     if check.isRequired == true { Chip(text: "Required") }
                     Spacer(minLength: 6)
                     Text(check.summary ?? check.status.displayName)
-                        .font(.system(size: 12))
+                        .scaledFont(.system(size: 12))
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                     if let url = check.detailsURL {
@@ -401,7 +411,8 @@ struct ChangeRequestChecksTab: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .accessibilityElement(children: .combine)
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("\(check.name)\(check.isRequired == true ? ", required" : ""): \(check.summary ?? check.status.displayName)")
             }
         }
         .cardBackground(Theme.surface)
@@ -465,7 +476,7 @@ struct ChangeRequestTimelineTab: View {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(spacing: 0) {
                         Image(systemName: event.symbol)
-                            .font(.system(size: 11, weight: .semibold))
+                            .scaledFont(.system(size: 11, weight: .semibold))
                             .foregroundStyle(event.color)
                             .frame(width: 24, height: 24)
                             .background(Circle().fill(event.color.opacity(0.14)))
@@ -476,18 +487,18 @@ struct ChangeRequestTimelineTab: View {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack {
                             Text(event.title)
-                                .font(.system(size: 13, weight: .medium))
+                                .scaledFont(.system(size: 13, weight: .medium))
                                 .foregroundStyle(Theme.textPrimary)
                                 .lineLimit(2)
                             Spacer(minLength: 6)
                             Text(UIFormat.relative(from: event.date, now: now))
-                                .font(.system(size: 11.5))
+                                .scaledFont(.system(size: 11.5))
                                 .foregroundStyle(Theme.textTertiary)
                                 .help(UIFormat.dateTime(event.date))
                         }
                         if let detail = event.detail, !detail.isEmpty {
                             Text(detail)
-                                .font(.system(size: 12))
+                                .scaledFont(.system(size: 12))
                                 .foregroundStyle(Theme.textSecondary)
                                 .lineLimit(2)
                         }

@@ -11,7 +11,9 @@ struct StatusMenuActions {
 }
 
 /// Owns the `NSStatusItem` (appearance-aware MergeCue glyph + compact "Needs you" count) and the click-opened `NSPopover`.
-/// Left click toggles the popover; right-click or control-click shows the menu.
+/// Left click toggles the popover; right-click or control-click shows the menu. The global shortcut (Settings ›
+/// General › Keyboard) toggles the popover from any app, and VoiceOver users reach the menu and Quit through the
+/// status item's custom actions (the popover's gear menu has Quit too).
 final class StatusItemController: NSObject, NSPopoverDelegate {
     private let model: AppModel
     private let actions: StatusMenuActions
@@ -19,6 +21,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     private let popover = NSPopover()
     private var currentIconShowsDot = false
     private var appearanceObservation: NSKeyValueObservation?
+    private var hotKey: GlobalHotKey?
 
     init(model: AppModel, actions: StatusMenuActions) {
         self.model = model
@@ -45,7 +48,36 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         appearanceObservation = statusItem.button?.observe(\.effectiveAppearance, options: [.new]) { button, _ in
             Task { @MainActor in button.needsDisplay = true }
         }
+        statusItem.button?.setAccessibilityCustomActions([
+            NSAccessibilityCustomAction(name: "Show menu") { [weak self] in
+                self?.showMenu()
+                return true
+            },
+            NSAccessibilityCustomAction(name: "Quit MergeCue") { [actions] in
+                actions.quit()
+                return true
+            },
+        ])
+        hotKey = GlobalHotKey { [weak self] in self?.toggleFromKeyboard() }
         observeModel()
+        observeHotKey()
+    }
+
+    // MARK: Global shortcut
+
+    private func observeHotKey() {
+        let preset = withObservationTracking {
+            model.globalHotKey
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in self?.observeHotKey() }
+        }
+        if hotKey?.registered != preset, hotKey?.register(preset) == false {
+            model.showBanner(.attention, "\(preset.displayName) is used by another app. Choose another shortcut in Settings › General.")
+        }
+    }
+
+    private func toggleFromKeyboard() {
+        popover.isShown ? closePopover() : showPopover(fromKeyboard: true)
     }
 
     // MARK: Button content
@@ -76,7 +108,8 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         }
         button.toolTip = model.menuBarToolTip
         button.setAccessibilityLabel(model.menuBarAccessibilityLabel)
-        button.setAccessibilityHelp("Click to show what needs you. Control-click for more options.")
+        let shortcut = model.globalHotKey == .off ? "" : " Shortcut: \(model.globalHotKey.spokenName)."
+        button.setAccessibilityHelp("Click to show what needs you. Control-click, or use the Show menu action, for more options.\(shortcut)")
     }
 
     // MARK: Clicks
@@ -94,8 +127,9 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         popover.isShown ? closePopover() : showPopover()
     }
 
-    func showPopover() {
+    func showPopover(fromKeyboard: Bool = false) {
         guard let button = statusItem.button else { return }
+        model.popoverWillShow(fromKeyboard: fromKeyboard)
         NSApp.activate()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()

@@ -42,12 +42,12 @@ struct TaskHandoffScreen: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 16) {
                     Text(Presentation.taskTitle(record, snapshot: snapshot))
-                        .font(Theme.screenTitle)
+                        .scaledFont(Theme.screenTitle)
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                         .accessibilityAddTraits(.isHeader)
-                    StatusPill(text: TaskStateStyle.label(record), color: TaskStateStyle.color(record), symbol: statusSymbol, size: 13.5)
+                    StatusPill(text: TaskStateStyle.label(record), color: TaskStateStyle.color(record), textColor: TaskStateStyle.textColor(record), symbol: statusSymbol, size: 13.5)
                 }
                 HStack(spacing: 10) {
                     ProviderGlyph(kind: task.origin.providerKind, size: 18)
@@ -77,11 +77,11 @@ struct TaskHandoffScreen: View {
                         Text(check.name).foregroundStyle(Theme.textSecondary)
                     }
                     Text("·  \(task.id.rawValue)")
-                        .font(Theme.monoSmall)
+                        .scaledFont(Theme.monoSmall)
                         .foregroundStyle(Theme.textTertiary)
                         .textSelection(.enabled)
                 }
-                .font(.system(size: 15))
+                .scaledFont(.system(size: 15))
             }
             Spacer(minLength: 12)
             TaskActionsMenu(model: model, record: record)
@@ -104,12 +104,12 @@ struct TaskHandoffScreen: View {
     private var leftColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(task.type == .investigateCI ? "CI failure" : "Review comment")
-                .font(.system(size: 15, weight: .semibold))
+                .scaledFont(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.textPrimary.opacity(0.9))
             TriggerQuoteCard(model: model, record: record)
                 .padding(.top, 14)
             Text("Context ready")
-                .font(.system(size: 15, weight: .semibold))
+                .scaledFont(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.textPrimary.opacity(0.9))
                 .padding(.top, 24)
                 .help("What MergeCue has for this task right now. Your agent fetches it through MergeCue MCP.")
@@ -141,11 +141,11 @@ struct TriggerQuoteCard: View {
             HStack(spacing: 10) {
                 ProviderGlyph(kind: task.origin.providerKind, size: 26)
                 Text(root.map { Presentation.shortName($0.author) } ?? quote?.author ?? (quote?.source == UntrustedText.Source.ciLog ? "CI log" : "Comment"))
-                    .font(.system(size: 14.5, weight: .semibold))
+                    .scaledFont(.system(size: 14.5, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
                 if let date = quote?.createdAt ?? root?.createdAt {
                     Text(UIFormat.relative(from: date, now: model.now))
-                        .font(.system(size: 13))
+                        .scaledFont(.system(size: 13))
                         .foregroundStyle(Theme.textSecondary)
                 }
                 Spacer()
@@ -153,7 +153,7 @@ struct TriggerQuoteCard: View {
             if let quote {
                 if quote.source == UntrustedText.Source.ciLog {
                     Text(quote.text)
-                        .font(Theme.monoSmall)
+                        .scaledFont(Theme.monoSmall)
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(8)
                         .textSelection(.enabled)
@@ -163,7 +163,7 @@ struct TriggerQuoteCard: View {
                 }
             } else {
                 Text("No comment was captured for this task.")
-                    .font(Theme.body)
+                    .scaledFont(Theme.body)
                     .foregroundStyle(Theme.textSecondary)
             }
         }
@@ -183,25 +183,25 @@ struct ContextRow: View {
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: symbol)
-                .font(.system(size: 16))
+                .scaledFont(.system(size: 16))
                 .foregroundStyle(Theme.textSecondary)
                 .frame(width: 42, height: 42)
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.surfaceRaised))
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.border, lineWidth: 1))
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.title)
-                    .font(.system(size: 14, weight: .medium))
+                    .scaledFont(.system(size: 14, weight: .medium))
                     .foregroundStyle(Theme.textPrimary)
                 Text(item.detail)
-                    .font(.system(size: 12.5))
+                    .scaledFont(.system(size: 12.5))
                     .foregroundStyle(item.status == .warning ? Theme.waiting : Theme.textSecondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                 if item.kind == .repository, item.status == .warning {
                     Button("Map a checkout…") { model.showSettings(.repositories) }
                         .buttonStyle(PlainRowButtonStyle())
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.accent)
+                        .scaledFont(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.accentText)
                         .padding(.top, 1)
                 }
             }
@@ -209,7 +209,7 @@ struct ContextRow: View {
             statusIcon
         }
         .padding(.vertical, 9)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("\(item.title): \(item.detail). \(statusText)")
     }
 
@@ -229,16 +229,16 @@ struct ContextRow: View {
         switch item.status {
         case .ready:
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 21))
+                .scaledFont(.system(size: 21))
                 .foregroundStyle(Color(hex: 0x0B1020), Theme.mint)
                 .symbolRenderingMode(.palette)
         case .warning:
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 18))
+                .scaledFont(.system(size: 18))
                 .foregroundStyle(Theme.waiting)
         case .unavailable:
             Image(systemName: "minus.circle")
-                .font(.system(size: 19))
+                .scaledFont(.system(size: 19))
                 .foregroundStyle(Theme.textTertiary)
         }
     }
@@ -268,9 +268,9 @@ struct TaskStatePanel: View {
             ThemeDivider().padding(.top, 24)
             HStack(spacing: 10) {
                 Image(systemName: "info.circle")
-                    .font(.system(size: 15))
+                    .scaledFont(.system(size: 15))
                 Text(footnote)
-                    .font(.system(size: 13))
+                    .scaledFont(.system(size: 13))
             }
             .foregroundStyle(Theme.textSecondary)
             .padding(.top, 18)
@@ -329,7 +329,7 @@ struct TaskStatePanel: View {
                 ActivityLog(record: record, now: model.now).padding(.top, 10)
             } label: {
                 Text("Activity · \(record.activities.count)")
-                    .font(.system(size: 13, weight: .medium))
+                    .scaledFont(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.textSecondary)
             }
             .padding(.top, 18)
@@ -414,11 +414,11 @@ struct HandoffStepView: View {
                 StepNumber(text: number)
                 VStack(alignment: .leading, spacing: 6) {
                     Text(title)
-                        .font(.system(size: 21, weight: .semibold))
+                        .scaledFont(.system(size: 21, weight: .semibold))
                         .foregroundStyle(Theme.textPrimary)
                     if let message {
                         Text(message)
-                            .font(.system(size: 13.5))
+                            .scaledFont(.system(size: 13.5))
                             .foregroundStyle(Theme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -428,14 +428,14 @@ struct HandoffStepView: View {
                 HStack(spacing: 10) {
                     AgentMark(kind: kind, size: 20)
                     Text(kind.shortName)
-                        .font(.system(size: 14, weight: selected ? .semibold : .medium))
+                        .scaledFont(.system(size: 14, weight: selected ? .semibold : .medium))
                         .foregroundStyle(selected ? Theme.textPrimary : Theme.textSecondary)
                 }
             }
             .padding(.top, 22)
             .accessibilityLabel("Coding agent")
             Text("Command")
-                .font(.system(size: 13))
+                .scaledFont(.system(size: 13))
                 .foregroundStyle(Theme.textSecondary)
                 .padding(.top, 18)
             CommandField(command: HandoffText.command(for: record.id)) {
@@ -449,7 +449,7 @@ struct HandoffStepView: View {
                     HStack(spacing: 9) {
                         AgentMark(kind: agentKind, size: 16, monochrome: .white)
                         Text("Open in \(agentKind.shortName)")
-                        Image(systemName: "arrow.right").font(.system(size: 13, weight: .semibold))
+                        Image(systemName: "arrow.right").scaledFont(.system(size: 13, weight: .semibold))
                     }
                     .lineLimit(1)
                     .fixedSize()
@@ -486,13 +486,13 @@ struct HandoffStepView: View {
         if let detected {
             if !detected.mcpRegistration.isVerified {
                 Label("\(detected.name): \(detected.mcpRegistration.displayText). Set it up in Settings › Agents.", systemImage: "exclamationmark.triangle.fill")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.waiting)
+                    .scaledFont(.system(size: 12))
+                    .foregroundStyle(Theme.waitingText)
             }
         } else {
             Label("\(agentKind.shortName) wasn't detected on this Mac. Copy the command into any MCP-capable agent.", systemImage: "exclamationmark.triangle.fill")
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.waiting)
+                .scaledFont(.system(size: 12))
+                .foregroundStyle(Theme.waitingText)
         }
     }
 }
@@ -505,7 +505,7 @@ struct CommandField: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Text(command)
-                .font(.system(size: 13, design: .monospaced))
+                .scaledFont(.system(size: 13, design: .monospaced))
                 .foregroundStyle(Theme.textPrimary)
                 .lineSpacing(3)
                 .textSelection(.enabled)
@@ -539,13 +539,14 @@ struct TerminalPreview: View {
                 ForEach([0xFF5F57, 0xFEBC2E, 0x28C840], id: \.self) { Circle().fill(Color(hex: UInt32($0))).frame(width: 11, height: 11) }
                 Spacer()
                 Text(agent.shortName)
-                    .font(.system(size: 12, weight: .medium))
+                    .scaledFont(.system(size: 12, weight: .medium))
                     .foregroundStyle(Color(hex: 0xC9D1E0))
                 Spacer()
                 Color.clear.frame(width: 47, height: 1)
             }
             .padding(.horizontal, 12)
-            .frame(height: 34)
+            .padding(.vertical, 4)
+            .frame(minHeight: 34)
             .background(Color(hex: 0x1A2133))
             VStack(alignment: .leading, spacing: 4) {
                 line("> ", firstSentence, prompt: true)
@@ -562,7 +563,7 @@ struct TerminalPreview: View {
                 }
                 .padding(.top, 10)
             }
-            .font(.system(size: 11.5, design: .monospaced))
+            .scaledFont(.system(size: 11.5, design: .monospaced))
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -608,11 +609,11 @@ struct WorkingView: View {
                 }
                 VStack(alignment: .leading, spacing: 6) {
                     Text("\(lease?.agentName ?? "The agent") is working")
-                        .font(.system(size: 21, weight: .semibold))
+                        .scaledFont(.system(size: 21, weight: .semibold))
                         .foregroundStyle(Theme.textPrimary)
                     if let lease {
                         Text("Claimed \(UIFormat.relative(from: lease.claimedAt, now: model.now)) · last heartbeat \(UIFormat.relative(from: lease.heartbeatAt, now: model.now)) · lease until \(UIFormat.time(lease.expiresAt))\(lease.runID.map { " · \($0)" } ?? "")")
-                            .font(.system(size: 13))
+                            .scaledFont(.system(size: 13))
                             .foregroundStyle(heartbeatAge > 300 ? Theme.waiting : Theme.textSecondary)
                     }
                 }
@@ -623,15 +624,15 @@ struct WorkingView: View {
             if let progress = record.latestProgress {
                 HStack(spacing: 10) {
                     if let phase = progress.data["phase"] {
-                        StatusPill(text: phase.capitalized, color: Theme.violet, size: 11.5)
+                        StatusPill(text: phase.capitalized, color: Theme.violet, textColor: Theme.violetText, size: 11.5)
                     }
                     Text(progress.message)
-                        .font(.system(size: 13.5))
+                        .scaledFont(.system(size: 13.5))
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(2)
                     Spacer()
                     Text(UIFormat.relative(from: progress.at, now: model.now))
-                        .font(.system(size: 12))
+                        .scaledFont(.system(size: 12))
                         .foregroundStyle(Theme.textSecondary)
                 }
                 .padding(14)
@@ -641,10 +642,10 @@ struct WorkingView: View {
             if let changes = record.activities.last(where: { $0.kind == .changesReported }) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Changes reported so far")
-                        .font(.system(size: 13, weight: .medium))
+                        .scaledFont(.system(size: 13, weight: .medium))
                         .foregroundStyle(Theme.textSecondary)
                     Text(changes.data["changed_paths"] ?? changes.message)
-                        .font(Theme.monoSmall)
+                        .scaledFont(Theme.monoSmall)
                         .foregroundStyle(Theme.textPrimary)
                         .textSelection(.enabled)
                 }
@@ -653,7 +654,7 @@ struct WorkingView: View {
                 ActivityLog(record: record, now: model.now).padding(.top, 10)
             } label: {
                 Text("Activity · \(record.activities.count)")
-                    .font(.system(size: 13, weight: .medium))
+                    .scaledFont(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.textSecondary)
             }
         }
@@ -674,7 +675,7 @@ struct PhaseTrack: View {
                         .fill(offset <= index ? AnyShapeStyle(Theme.brandGradient) : AnyShapeStyle(Theme.divider))
                         .frame(height: 4)
                     Text(phase.capitalized)
-                        .font(.system(size: 11))
+                        .scaledFont(.system(size: 11))
                         .foregroundStyle(offset == index ? Theme.textPrimary : Theme.textSecondary)
                 }
             }

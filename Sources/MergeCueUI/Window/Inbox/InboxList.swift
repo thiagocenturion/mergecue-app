@@ -25,6 +25,9 @@ struct InboxScreen: View {
 struct InboxColumn: View {
     @Bindable var model: AppModel
     @FocusState private var searchFocused: Bool
+    @FocusState private var listFocused: Bool
+    @State private var headerWidth: CGFloat = 600
+    @Environment(\.textScale) private var textScale
 
     var body: some View {
         let result = InboxQuery.run(state: model.state, filter: model.inboxFilter, now: model.now, showRead: model.showReadInInbox)
@@ -42,26 +45,40 @@ struct InboxColumn: View {
                 emptyState(result)
                     .frame(maxHeight: .infinity)
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        ForEach(InboxDayGroup.make(result.visibleItems, now: model.now)) { group in
-                            Text(group.title)
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(Theme.textSecondary)
-                                .padding(.top, 10)
-                                .padding(.leading, 2)
-                                .accessibilityAddTraits(.isHeader)
-                            ForEach(group.items) { item in
-                                InboxItemCard(model: model, item: item, isSelected: model.selectedAttentionID == item.id)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 12) {
+                            ForEach(InboxDayGroup.make(result.visibleItems, now: model.now)) { group in
+                                Text(group.title)
+                                    .scaledFont(.system(size: 14, weight: .medium))
+                                    .foregroundStyle(Theme.textSecondary)
+                                    .padding(.top, 10)
+                                    .padding(.leading, 2)
+                                    .accessibilityAddTraits(.isHeader)
+                                ForEach(group.items) { item in
+                                    InboxItemCard(model: model, item: item, isSelected: model.selectedAttentionID == item.id,
+                                                  showsKeyboardFocus: listFocused) { listFocused = true }
+                                        .id(item.id)
+                                }
                             }
+                            readToggle(result)
                         }
-                        readToggle(result)
+                        .padding(.top, 8)
+                        .padding(.bottom, 24)
+                        .padding(.horizontal, 4)
                     }
-                    .padding(.top, 8)
-                    .padding(.bottom, 24)
-                    .padding(.horizontal, 2)
+                    .scrollIndicators(.automatic)
+                    .keyboardList(isFocused: $listFocused, hasSelection: model.selectedAttentionID != nil,
+                                  onMove: { model.moveInboxSelection(by: $0) },
+                                  onOpen: { model.openInboxSelection() },
+                                  onPrimary: { Task { await model.performInboxPrimaryAction() } })
+                    .onChange(of: model.selectedAttentionID) { _, id in
+                        guard listFocused, let id else { return }
+                        proxy.scrollTo(id)
+                    }
+                    .accessibilityLabel("Inbox items")
+                    .accessibilityHint("Use the up and down arrow keys to move, Return to open, Command-Return for the primary action")
                 }
-                .scrollIndicators(.automatic)
                 .padding(.top, 8)
             }
         }
@@ -75,25 +92,44 @@ struct InboxColumn: View {
         }
     }
 
+    /// Greeting and search side by side; stacked when the column is narrow or the text is large.
     private var header: some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(Presentation.greeting(now: model.now, firstName: model.userFirstName))
-                    .font(Theme.largeTitle)
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .accessibilityAddTraits(.isHeader)
-                Text(Presentation.attentionSubtitle(count: model.sections.count(.needsYou)))
-                    .font(.system(size: 16))
-                    .foregroundStyle(Theme.textSecondary)
+        Group {
+            if headerWidth >= 480 * textScale {
+                HStack(alignment: .top, spacing: 16) {
+                    greeting(lineLimit: 1)
+                    Spacer(minLength: 12)
+                    search.frame(width: 200).padding(.top, 2)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 12) {
+                    greeting(lineLimit: 2)
+                    search.frame(maxWidth: 360)
+                }
             }
-            Spacer(minLength: 12)
-            SearchField(text: $model.inboxFilter.searchText, prompt: "Search", showsShortcut: true, focus: $searchFocused)
-                .frame(width: 200)
-                .padding(.top, 2)
-                .help("Search title, repository, #42 (⌘K)")
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { headerWidth = $0 }
+    }
+
+    private func greeting(lineLimit: Int) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(Presentation.greeting(now: model.now, firstName: model.userFirstName))
+                .scaledFont(Theme.largeTitle)
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(lineLimit)
+                .minimumScaleFactor(0.8)
+                .accessibilityAddTraits(.isHeader)
+            Text(Presentation.attentionSubtitle(count: model.sections.count(.needsYou)))
+                .scaledFont(.system(size: 16))
+                .foregroundStyle(Theme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var search: some View {
+        SearchField(text: $model.inboxFilter.searchText, prompt: "Search", showsShortcut: true, focus: $searchFocused)
+            .help("Search title, repository, #42 (⌘K)")
     }
 
     @ViewBuilder
@@ -103,8 +139,8 @@ struct InboxColumn: View {
                 model.showReadInInbox = true
             } label: {
                 Label("Show \(result.hiddenReadCount) read item\(result.hiddenReadCount == 1 ? "" : "s")", systemImage: "chevron.down.circle")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.accent)
+                    .scaledFont(.system(size: 13))
+                    .foregroundStyle(Theme.accentText)
             }
             .buttonStyle(PlainRowButtonStyle())
             .padding(.top, 6)
@@ -113,8 +149,8 @@ struct InboxColumn: View {
                 model.showReadInInbox = false
             } label: {
                 Label("Collapse read items", systemImage: "chevron.up.circle")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.accent)
+                    .scaledFont(.system(size: 13))
+                    .foregroundStyle(Theme.accentText)
             }
             .buttonStyle(PlainRowButtonStyle())
             .padding(.top, 6)
@@ -212,11 +248,11 @@ struct InboxFilterMenu: View {
             }
         } label: {
             Image(systemName: active ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease")
-                .font(.system(size: 13, weight: .medium))
+                .scaledFont(.system(size: 13, weight: .medium))
                 .foregroundStyle(active ? Theme.accent : Theme.textSecondary)
                 .frame(width: 32, height: 32)
                 .background(Circle().fill(Theme.surfaceRaised))
-                .overlay(Circle().strokeBorder(Theme.borderStrong, lineWidth: 1))
+                .overlay(Circle().strokeBorder(active ? Theme.accent : Theme.controlBorder, lineWidth: 1))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -229,50 +265,88 @@ struct InboxFilterMenu: View {
 /// Needs you / AI working / Ready counters.
 struct InboxSummaryCards: View {
     let model: AppModel
+    @Environment(\.textScale) private var textScale
 
     var body: some View {
-        HStack(spacing: 14) {
-            card(.needsYou, title: "Needs you", symbol: "exclamationmark") {
-                model.inboxFilter.status = .needsAction
-            }
-            card(.aiWorking, title: "AI working", symbol: "sparkles") { model.showAll(.aiWorking) }
-            card(.ready, title: "Ready", symbol: "checkmark") { model.showAll(.ready) }
+        // The icon circles drop out when the column is too narrow (small window or large text).
+        ViewThatFits(in: .horizontal) {
+            cards(showsIcons: true)
+            cards(showsIcons: false)
         }
     }
 
-    private func card(_ section: PopoverSection, title: String, symbol: String, action: @escaping () -> Void) -> some View {
+    private func cards(showsIcons: Bool) -> some View {
+        HStack(spacing: 14) {
+            card(.needsYou, title: "Needs you", symbol: "exclamationmark", showsIcon: showsIcons) {
+                model.inboxFilter.status = .needsAction
+            }
+            card(.aiWorking, title: "AI working", symbol: "sparkles", showsIcon: showsIcons) { model.showAll(.aiWorking) }
+            card(.ready, title: "Ready", symbol: "checkmark", showsIcon: showsIcons) { model.showAll(.ready) }
+        }
+    }
+
+    private func card(_ section: PopoverSection, title: String, symbol: String, showsIcon: Bool, action: @escaping () -> Void) -> some View {
         let count = model.sections.count(section)
         let color = section == .aiWorking ? Theme.violet : Theme.color(section)
         return Button(action: action) {
             HStack(spacing: 14) {
-                Image(systemName: symbol)
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(section == .aiWorking ? AnyShapeStyle(LinearGradient(colors: [Theme.violet, Theme.cyan], startPoint: .bottomLeading, endPoint: .topTrailing)) : AnyShapeStyle(color))
-                    .frame(width: 44, height: 44)
-                    .background(Circle().fill(color.opacity(0.16)))
-                    .overlay(Circle().strokeBorder(color.opacity(0.4), lineWidth: 1))
+                if showsIcon {
+                    Image(systemName: symbol)
+                        .scaledFont(.system(size: 17, weight: .bold))
+                        .foregroundStyle(section == .aiWorking ? AnyShapeStyle(LinearGradient(colors: [Theme.violet, Theme.cyan], startPoint: .bottomLeading, endPoint: .topTrailing)) : AnyShapeStyle(color))
+                        .frame(width: 44 * textScale, height: 44 * textScale)
+                        .background(Circle().fill(color.opacity(0.16)))
+                        .overlay(Circle().strokeBorder(color.opacity(0.4), lineWidth: 1))
+                        .accessibilityHidden(true)
+                }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.system(size: 13))
+                        .scaledFont(.system(size: 13))
                         .foregroundStyle(Theme.textSecondary)
                     Text("\(count)")
-                        .font(.system(size: 22, weight: .semibold).monospacedDigit())
+                        .scaledFont(.system(size: 22, weight: .semibold).monospacedDigit())
                         .foregroundStyle(Theme.textPrimary)
                 }
+                .fixedSize()
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 16)
-            .frame(height: 78)
+            .padding(.vertical, 10)
+            .frame(minHeight: 78)
             .frame(maxWidth: .infinity)
             .cardBackground()
         }
-        .buttonStyle(PlainRowButtonStyle())
+        .buttonStyle(PlainRowButtonStyle(cornerRadius: Theme.cardRadius))
         .accessibilityLabel("\(title): \(count)")
         .accessibilityHint(section == .needsYou ? "Shows only items that need action" : "Shows these tasks")
     }
 }
 
 extension Theme {
+    /// Text colour for an attention reason (status pills).
+    static func reasonTextColor(_ reason: AttentionReason) -> Color {
+        switch reason {
+        case .changesRequested, .ciFailed: needsText
+        case .reviewerQuestion, .codeSuggestion: violetText
+        case .reviewComment, .reply: accentText
+        case .reviewRequested: cyanText
+        case .readyToMerge: mintText
+        case .mergeConflict: waitingText
+        }
+    }
+
+    /// Shape cue for an attention reason (Differentiate Without Color).
+    static func reasonSymbol(_ reason: AttentionReason) -> String {
+        switch reason {
+        case .changesRequested, .ciFailed: "exclamationmark.circle.fill"
+        case .reviewerQuestion, .codeSuggestion: "questionmark.circle.fill"
+        case .reviewComment, .reply: "bubble.left.fill"
+        case .reviewRequested: "eye.fill"
+        case .readyToMerge: "checkmark.circle.fill"
+        case .mergeConflict: "exclamationmark.triangle.fill"
+        }
+    }
+
     /// Colour of an attention reason's status glyph.
     static func reasonColor(_ reason: AttentionReason) -> Color {
         switch reason {
@@ -292,7 +366,14 @@ struct InboxItemCard: View {
     let model: AppModel
     let item: AttentionItem
     let isSelected: Bool
+    /// The list has keyboard focus: the selected card draws the focus indicator.
+    var showsKeyboardFocus = false
+    /// Called when the card is clicked (the list takes keyboard focus).
+    var onSelect: () -> Void = {}
     @State private var isHovering = false
+
+    /// Unread or actionable items are set in a heavier weight (read, settled items used to be dimmed to 72 %).
+    private var isActive: Bool { item.isActionable(now: model.now) || item.isUnread }
 
     var body: some View {
         let snapshot = model.snapshot(item.changeRequest)
@@ -307,13 +388,13 @@ struct InboxItemCard: View {
                             .accessibilityHidden(true)
                     }
                     Text("\(item.providerKind.shortName)  •  \(item.repoFullPath)  \(item.providerKind.formattedNumber(item.number))")
-                        .font(.system(size: 13))
+                        .scaledFont(.system(size: 13))
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer(minLength: 8)
                     Text(UIFormat.relative(from: item.updatedAt, now: model.now))
-                        .font(.system(size: 12.5))
+                        .scaledFont(.system(size: 12.5))
                         .foregroundStyle(Theme.textSecondary)
                         .help(UIFormat.dateTime(item.updatedAt))
                 }
@@ -322,12 +403,12 @@ struct InboxItemCard: View {
                         HStack(spacing: 9) {
                             StatusGlyph(symbol: text.symbol, color: Theme.reasonColor(item.reason), size: 20)
                             Text(text.headline)
-                                .font(.system(size: 15.5, weight: .semibold))
+                                .scaledFont(.system(size: 15.5, weight: isActive ? .semibold : .regular))
                                 .foregroundStyle(Theme.textPrimary)
                                 .lineLimit(1)
                         }
                         Text(text.subtitle)
-                            .font(.system(size: 13))
+                            .scaledFont(.system(size: 13))
                             .foregroundStyle(Theme.textSecondary)
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -340,7 +421,7 @@ struct InboxItemCard: View {
                 .padding(.top, 10)
                 HStack(spacing: 10) {
                     Label("\(text.commentCount)", systemImage: "bubble.left")
-                        .font(.system(size: 12))
+                        .scaledFont(.system(size: 12))
                         .foregroundStyle(Theme.textSecondary)
                         .labelStyle(.titleAndIcon)
                         .accessibilityLabel("\(text.commentCount) comments")
@@ -360,23 +441,34 @@ struct InboxItemCard: View {
             RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous)
                 .strokeBorder(isSelected ? Theme.accent.opacity(0.75) : Theme.border, lineWidth: isSelected ? 1.3 : 1)
         )
+        .keyboardSelectionRing(isSelected && showsKeyboardFocus, cornerRadius: Theme.cardRadius)
         .shadow(color: isSelected ? Theme.accent.opacity(0.18) : .clear, radius: 12)
         .contentShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
         .onHover { isHovering = $0 }
-        .onTapGesture { select() }
-        .opacity(item.isActionable(now: model.now) || item.isUnread ? 1 : 0.72)
+        .onTapGesture {
+            select()
+            onSelect()
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(item.isUnread ? "Unread. " : "")\(text.headline). \(text.subtitle). \(item.providerKind.displayName) \(item.repoFullPath) \(item.providerKind.formattedNumber(item.number)). \(UIFormat.spokenAge(from: item.updatedAt, now: model.now))")
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityAction { select() }
         .accessibilityAction(named: "Show details") { select() }
+        .accessibilityAction(named: primaryActionName) { Task { await performPrimary() } }
     }
 
     private func select() {
+        model.openInboxItem(item.id)
+    }
+
+    private var primaryActionName: String {
+        if model.activeTask(for: item) != nil { return "View task" }
+        return PopoverDerivation.primaryAction(for: item).title
+    }
+
+    private func performPrimary() async {
         model.selectedAttentionID = item.id
-        model.changeRequestTab = .conversation
-        if item.isUnread {
-            Task { await model.send(.markRead(attentionID: item.id, read: true)) }
-        }
+        await model.performInboxPrimaryAction()
     }
 
     @ViewBuilder
@@ -385,6 +477,7 @@ struct InboxItemCard: View {
             Button("View task") { model.showTask(task.id) }
                 .buttonStyle(SecondaryButtonStyle(size: .regular))
                 .fixedSize()
+                .accessibilityLabel("View task \(task.id.rawValue), \(item.repoFullPath) \(item.providerKind.formattedNumber(item.number))")
         } else {
             let action = PopoverDerivation.primaryAction(for: item)
             let title = Presentation.compactTitle(action)
@@ -422,8 +515,8 @@ struct TaskStateChip: View {
             Text("\(TaskStateStyle.label(record)) · \(record.id.rawValue)")
                 .lineLimit(1)
         }
-        .font(.system(size: 11.5, weight: .medium))
-        .foregroundStyle(color)
+        .scaledFont(.system(size: 11.5, weight: .medium))
+        .foregroundStyle(TaskStateStyle.textColor(record))
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
         .background(Capsule().fill(color.opacity(0.12)))
@@ -442,6 +535,32 @@ enum TaskStateStyle {
         case .failed: Theme.critical
         case .approvedAction: Theme.cyan
         case .cancelled, .dismissed: Theme.textTertiary
+        }
+    }
+
+    /// Text in the state's colour (≥ 4.5:1 on surfaces and tints).
+    static func textColor(_ record: TaskRecord) -> Color {
+        switch record.task.state {
+        case .waitingForAgent: Theme.waitingText
+        case .working: record.hasRealClaim ? Theme.violetText : Theme.waitingText
+        case .readyForReview, .done: Theme.mintText
+        case .blocked, .stale: Theme.waitingText
+        case .failed: Theme.criticalText
+        case .approvedAction: Theme.cyanText
+        case .cancelled, .dismissed: Theme.textSecondary
+        }
+    }
+
+    /// Shape cue for the state (Differentiate Without Color).
+    static func symbol(_ record: TaskRecord) -> String {
+        switch record.task.state {
+        case .waitingForAgent: "clock.fill"
+        case .working: record.hasRealClaim ? "sparkles" : "clock.fill"
+        case .readyForReview, .done: "checkmark.circle.fill"
+        case .blocked, .stale: "exclamationmark.triangle.fill"
+        case .failed: "xmark.octagon.fill"
+        case .approvedAction: "checkmark.seal.fill"
+        case .cancelled, .dismissed: "minus.circle.fill"
         }
     }
 

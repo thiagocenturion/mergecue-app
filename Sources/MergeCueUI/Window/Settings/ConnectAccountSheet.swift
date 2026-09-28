@@ -12,8 +12,8 @@ struct ConnectAccountSheet: View {
             HStack(spacing: 10) {
                 ProviderGlyph(kind: kind, size: 30)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Connect \(kind.displayName)").font(.title3.weight(.semibold))
-                    Text(ProviderInstance.default(for: kind).host).font(.callout).foregroundStyle(.secondary)
+                    Text("Connect \(kind.displayName)").scaledFont(.title3.weight(.semibold))
+                    Text(ProviderInstance.default(for: kind).host).scaledFont(.callout).foregroundStyle(Theme.textSecondary)
                 }
                 Spacer()
                 ModeBadge(mode: model.mode)
@@ -43,6 +43,8 @@ struct ConnectAccountForm: View {
     @State private var instanceURL = "https://gitlab.com"
     @State private var wantsWrites = false
     @State private var isConnecting = false
+    /// The token field takes keyboard focus when the form appears (it is the one required input).
+    @FocusState private var tokenFocused: Bool
 
     init(model: AppModel, kind: ProviderKind, showsCancel: Bool, onFinished: @escaping () -> Void) {
         self.model = model
@@ -58,7 +60,7 @@ struct ConnectAccountForm: View {
                 githubCLI
                 HStack(spacing: 8) {
                     Rectangle().fill(Theme.divider).frame(height: 1)
-                    Text("or paste a token").font(.caption).foregroundStyle(.secondary).fixedSize()
+                    Text("or paste a token").scaledFont(.caption).foregroundStyle(Theme.textSecondary).fixedSize()
                     Rectangle().fill(Theme.divider).frame(height: 1)
                 }
             } else if ConnectGuide.methods(for: kind).count > 1 {
@@ -69,8 +71,8 @@ struct ConnectAccountForm: View {
                 .labelsHidden()
             }
             Text(ConnectGuide.explanation(for: kind, method: tokenMethod))
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                .scaledFont(.callout)
+                .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             scopes
             if kind == .gitlab {
@@ -78,7 +80,7 @@ struct ConnectAccountForm: View {
                     .textFieldStyle(.roundedBorder)
                     .help("GitLab.com is tested. The instance URL is part of the account's identity.")
                 Toggle("I want MergeCue to post replies and resolve threads (needs the api scope)", isOn: $wantsWrites)
-                    .font(.callout)
+                    .scaledFont(.callout)
             }
             if let url = ConnectGuide.tokenPage(for: kind, method: tokenMethod, wantsWrites: wantsWrites, instance: gitlabInstance) {
                 Button {
@@ -96,22 +98,23 @@ struct ConnectAccountForm: View {
             }
             SecureField(tokenMethod == .bitbucketAccessToken ? "Access token" : "Token", text: $token)
                 .textFieldStyle(.roundedBorder)
+                .focused($tokenFocused)
                 .accessibilityHint("Stored only in your Keychain")
                 .onSubmit { if canConnect { connect(method: tokenMethod) } }
             Label("Stored only in your Keychain — never logged, synced or shown again. Remote writes stay off until you turn them on per account.",
                   systemImage: "lock.shield")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .scaledFont(.caption)
+                .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             if model.mode == .preview {
                 Label("Preview data: the connection is simulated and the token is discarded.", systemImage: "info.circle")
-                    .font(.caption)
-                    .foregroundStyle(Theme.attention)
+                    .scaledFont(.caption)
+                    .foregroundStyle(Theme.attentionText)
             } else if model.mode == .demo {
                 Label("Demo mode: real providers are not contacted. Switch off Demo mode in Settings › General to connect your accounts.",
                       systemImage: "info.circle")
-                    .font(.caption)
-                    .foregroundStyle(Theme.attention)
+                    .scaledFont(.caption)
+                    .foregroundStyle(Theme.attentionText)
                     .fixedSize(horizontal: false, vertical: true)
             }
             HStack {
@@ -129,6 +132,12 @@ struct ConnectAccountForm: View {
         }
         .onChange(of: method) { _, _ in token = "" }
         .onDisappear { token = "" }
+        .defaultFocus($tokenFocused, true)
+        .task {
+            // After the sheet's own first-responder pass.
+            try? await Task.sleep(for: .milliseconds(150))
+            tokenFocused = true
+        }
     }
 
     private var githubCLI: some View {
@@ -142,25 +151,25 @@ struct ConnectAccountForm: View {
             .disabled(isConnecting)
             .help("Runs `gh auth token` once and stores a copy of that token in your Keychain")
             Text("Reuses the account you're signed in to with `gh auth login` (its scopes, usually repo and read:org). Nothing is imported until you click.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .scaledFont(.caption)
+                .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private var scopes: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Scopes").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            Text("Scopes").scaledFont(.caption.weight(.semibold)).foregroundStyle(Theme.textSecondary)
             ForEach(ConnectGuide.scopes(for: kind, method: tokenMethod, wantsWrites: wantsWrites), id: \.self) { scope in
                 Label {
-                    Text(scope).font(.callout)
+                    Text(scope).scaledFont(.callout)
                 } icon: {
                     Image(systemName: "checkmark.circle").foregroundStyle(Theme.mint)
                 }
             }
             Text(ConnectGuide.writeNote(for: kind))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .scaledFont(.caption)
+                .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(10)

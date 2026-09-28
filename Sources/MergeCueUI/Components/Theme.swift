@@ -10,70 +10,90 @@ enum Theme {
     // MARK: Surfaces
 
     /// Window background (behind the columns).
-    static let windowBackground = adaptive(light: 0xF3F5FA, dark: 0x0B1020)
+    static let windowBackground = Palette.windowBackground.color
     /// Sidebar column.
-    static let sidebarBackground = adaptive(light: 0xE9EDF5, dark: 0x0D1324)
+    static let sidebarBackground = Palette.sidebarBackground.color
     /// The content column (between sidebar and detail).
-    static let contentBackground = adaptive(light: 0xF3F5FA, dark: 0x0F1629)
+    static let contentBackground = Palette.contentBackground.color
     /// Cards and panels.
-    static let surface = adaptive(light: 0xFFFFFF, dark: 0x141B2D)
+    static let surface = Palette.surface.color
     /// Nested areas inside cards (code, command fields, quotes).
-    static let surfaceSunken = adaptive(light: 0xF5F7FB, dark: 0x0F1526)
+    static let surfaceSunken = Palette.surfaceSunken.color
     /// Raised controls on cards (secondary buttons, segmented tracks).
-    static let surfaceRaised = adaptive(light: 0xF1F4F9, dark: 0x1A2236)
+    static let surfaceRaised = Palette.surfaceRaised.color
     /// Hovered rows.
-    static let surfaceHover = adaptive(light: 0xEEF2F8, dark: 0x192136)
+    static let surfaceHover = Palette.surfaceHover.color
     /// Selected card / navigation item.
-    static let surfaceSelected = adaptive(light: 0xE8F0FF, dark: 0x16224A)
+    static let surfaceSelected = Palette.surfaceSelected.color
     /// The popover body.
-    static let popoverBackground = adaptive(light: 0xF7F8FC, dark: 0x111728)
+    static let popoverBackground = Palette.popoverBackground.color
     /// Terminal-style preview panel (dark in both appearances, like a real terminal).
-    static let terminalBackground = adaptive(light: 0x0F1424, dark: 0x0A0F1C)
+    static let terminalBackground = Palette.terminalBackground.color
 
-    /// 1 px card borders (~8 % white in dark mode).
-    static let border = adaptive(light: 0x0F172A, dark: 0xFFFFFF, lightAlpha: 0.09, darkAlpha: 0.08)
-    static let borderStrong = adaptive(light: 0x0F172A, dark: 0xFFFFFF, lightAlpha: 0.16, darkAlpha: 0.14)
-    static let divider = adaptive(light: 0x0F172A, dark: 0xFFFFFF, lightAlpha: 0.08, darkAlpha: 0.07)
+    /// 1 px card borders (~8 % white in dark mode; much stronger with Increase Contrast).
+    static let border = Palette.border.color
+    static let borderStrong = Palette.borderStrong.color
+    static let divider = Palette.divider.color
+    /// Boundary of buttons, fields and filter chips (≥ 3:1 against the surrounding surface).
+    static let controlBorder = Palette.controlBorder.color
+    /// Keyboard focus ring (full opacity, ≥ 3:1 on every surface).
+    static let focusRing = Palette.focusRing.color
 
     // MARK: Text
 
-    static let textPrimary = adaptive(light: 0x0F172A, dark: 0xF3F5FA)
-    static let textSecondary = adaptive(light: 0x566074, dark: 0xA3ACBF)
-    static let textTertiary = adaptive(light: 0x8891A3, dark: 0x6E778C)
+    static let textPrimary = Palette.textPrimary.color
+    static let textSecondary = Palette.textSecondary.color
+    static let textTertiary = Palette.textTertiary.color
 
     // MARK: Status and brand
 
-    /// Brand accent between the icon's cyan and violet (selection, links, focus).
-    static let accent = adaptive(light: 0x2F6BF0, dark: 0x4C8DFF)
-    static let cyan = adaptive(light: 0x0891B2, dark: 0x38C8F5)
-    static let blue = adaptive(light: 0x2563EB, dark: 0x3B82F6)
-    static let violet = adaptive(light: 0x7C3AED, dark: 0x9B7BFA)
+    /// Brand accent between the icon's cyan and violet (selection, links, focus). Use `accentText` for text.
+    static let accent = Palette.accent.color
+    static let cyan = Palette.cyan.color
+    static let blue = Palette.blue.color
+    static let violet = Palette.violet.color
     /// "Needs you" (red/pink).
-    static let needs = adaptive(light: 0xE03A5C, dark: 0xF0506E)
+    static let needs = Palette.needs.color
     /// "Waiting for agent" (amber).
-    static let waiting = adaptive(light: 0xB7700B, dark: 0xF5B544)
+    static let waiting = Palette.waiting.color
     /// "AI working" (violet → cyan).
     static let working = violet
     /// "Ready" / success (the icon's mint dot).
-    static let mint = adaptive(light: 0x0B9A73, dark: 0x3FE6B4)
+    static let mint = Palette.mint.color
     /// Warnings that are not errors (rate limited, unconfirmed mapping, stale).
     static let attention = waiting
-    static let critical = adaptive(light: 0xDC2F4D, dark: 0xF0506E)
+    static let critical = Palette.critical.color
+
+    /// Text in a status colour (links, chips, pills, tinted buttons): ≥ 4.5:1 on every surface and on the status tint.
+    static let accentText = Palette.accentText.color
+    static let cyanText = Palette.cyanText.color
+    static let violetText = Palette.violetText.color
+    static let needsText = Palette.needsText.color
+    static let waitingText = Palette.waitingText.color
+    static let attentionText = waitingText
+    static let mintText = Palette.mintText.color
+    static let criticalText = Palette.criticalText.color
+    /// Glyphs drawn on a status fill (white in light mode, deep navy on the bright dark-mode fills).
+    static let onStatusFill = Palette.onStatusFill.color
 
     /// Diff rows.
-    static let diffAddedBackground = adaptive(light: 0x0B9A73, dark: 0x1FAF7A, lightAlpha: 0.12, darkAlpha: 0.20)
-    static let diffRemovedBackground = adaptive(light: 0xDC2F4D, dark: 0xC7384F, lightAlpha: 0.10, darkAlpha: 0.26)
-    static let diffAddedText = adaptive(light: 0x08785A, dark: 0x6BF0C0)
-    static let diffRemovedText = adaptive(light: 0xB42340, dark: 0xFF8FA3)
+    static let diffAddedBackground = Palette.diffAddedBackground.color
+    static let diffRemovedBackground = Palette.diffRemovedBackground.color
+    static let diffAddedText = Palette.diffAddedText.color
+    static let diffRemovedText = Palette.diffRemovedText.color
 
     /// Syntax-ish accents for code (keywords / types) — deliberately light-touch.
-    static let codeKeyword = adaptive(light: 0x7C3AED, dark: 0xC792EA)
-    static let codeType = adaptive(light: 0x0E7490, dark: 0x82AAFF)
+    static let codeKeyword = Palette.codeKeyword.color
+    static let codeType = Palette.codeType.color
 
-    /// Primary action gradient (#38C8F5 → #3B82F6 → #8B5CF6).
-    static let gradientStops: [Color] = [Color(hex: 0x38C8F5), Color(hex: 0x3B82F6), Color(hex: 0x8B5CF6)]
+    /// The icon's gradient (#38C8F5 → #3B82F6 → #8B5CF6) for decoration: borders, underlines, icons.
+    static let gradientStops: [Color] = Palette.brandStops.map { Color(hex: $0) }
     static let brandGradient = LinearGradient(colors: gradientStops, startPoint: .leading, endPoint: .trailing)
     static let brandGradientDiagonal = LinearGradient(colors: gradientStops, startPoint: .topLeading, endPoint: .bottomTrailing)
+    /// Fill behind white text (primary buttons): the brand hues deepened to ≥ 4.5:1 with white at every point.
+    static let actionGradient = LinearGradient(colors: Palette.actionStops.map { Color(hex: $0) }, startPoint: .leading, endPoint: .trailing)
+    /// Text or icon in the brand gradient on light surfaces ("✦ Fix with AI" outline button).
+    static let actionTextGradient = LinearGradient(colors: [cyanText, accentText], startPoint: .leading, endPoint: .trailing)
 
     static func color(_ tone: Tone) -> Color {
         switch tone {
@@ -82,6 +102,17 @@ enum Theme {
         case .critical: critical
         case .progress: violet
         case .success: mint
+        }
+    }
+
+    /// Text in a tone's colour (≥ 4.5:1 on surfaces and on `tint(tone)`).
+    static func textColor(_ tone: Tone) -> Color {
+        switch tone {
+        case .neutral: textSecondary
+        case .attention: waitingText
+        case .critical: criticalText
+        case .progress: violetText
+        case .success: mintText
         }
     }
 
@@ -100,34 +131,52 @@ enum Theme {
         }
     }
 
-    static func adaptive(light: UInt32, dark: UInt32, lightAlpha: CGFloat = 1, darkAlpha: CGFloat = 1) -> Color {
-        Color(nsColor: adaptiveNSColor(light: light, dark: dark, lightAlpha: lightAlpha, darkAlpha: darkAlpha))
-    }
-
-    static func adaptiveNSColor(light: UInt32, dark: UInt32, lightAlpha: CGFloat = 1, darkAlpha: CGFloat = 1) -> NSColor {
-        NSColor(name: nil) { appearance in
-            isDark(appearance) ? NSColor(hex: dark, alpha: darkAlpha) : NSColor(hex: light, alpha: lightAlpha)
+    /// Text in a section's colour.
+    static func textColor(_ section: PopoverSection) -> Color {
+        switch section {
+        case .needsYou: needsText
+        case .waitingForAgent: waitingText
+        case .aiWorking: cyanText
+        case .ready: mintText
         }
     }
 
-    static func isDark(_ appearance: NSAppearance) -> Bool {
-        appearance.bestMatch(from: [.darkAqua, .aqua, .vibrantDark, .vibrantLight]).map { $0 == .darkAqua || $0 == .vibrantDark } ?? false
+    /// Shape cue that goes with a section's colour (Differentiate Without Color, legends).
+    static func symbol(_ section: PopoverSection) -> String {
+        switch section {
+        case .needsYou: "exclamationmark.circle.fill"
+        case .waitingForAgent: "clock.fill"
+        case .aiWorking: "sparkles"
+        case .ready: "checkmark.circle.fill"
+        }
     }
 
-    // MARK: Type
+    static func adaptive(light: UInt32, dark: UInt32, lightAlpha: CGFloat = 1, darkAlpha: CGFloat = 1) -> Color {
+        ColorToken(light: light, dark: dark, lightAlpha: lightAlpha, darkAlpha: darkAlpha).color
+    }
+
+    static func adaptiveNSColor(light: UInt32, dark: UInt32, lightAlpha: CGFloat = 1, darkAlpha: CGFloat = 1) -> NSColor {
+        ColorToken(light: light, dark: dark, lightAlpha: lightAlpha, darkAlpha: darkAlpha).nsColor
+    }
+
+    static func isDark(_ appearance: NSAppearance) -> Bool {
+        ThemeAppearance.isDark(appearance)
+    }
+
+    // MARK: Type (scaled with Settings › General › Text size through `scaledFont(_:)`)
 
     /// "Good afternoon, Thiago".
-    static let largeTitle = Font.system(size: 30, weight: .bold)
+    static let largeTitle = ThemeFont(size: 30, weight: .bold)
     /// Task and review headlines ("Patch ready for review").
-    static let screenTitle = Font.system(size: 28, weight: .bold)
-    static let panelTitle = Font.system(size: 19, weight: .semibold)
-    static let cardTitle = Font.system(size: 15, weight: .semibold)
-    static let body = Font.system(size: 13.5)
-    static let bodyMedium = Font.system(size: 13.5, weight: .medium)
-    static let meta = Font.system(size: 12.5)
-    static let caption = Font.system(size: 11.5)
-    static let mono = Font.system(size: 12, design: .monospaced)
-    static let monoSmall = Font.system(size: 11.5, design: .monospaced)
+    static let screenTitle = ThemeFont(size: 28, weight: .bold)
+    static let panelTitle = ThemeFont(size: 19, weight: .semibold)
+    static let cardTitle = ThemeFont(size: 15, weight: .semibold)
+    static let body = ThemeFont(size: 13.5)
+    static let bodyMedium = ThemeFont(size: 13.5, weight: .medium)
+    static let meta = ThemeFont(size: 12.5)
+    static let caption = ThemeFont(size: 11.5)
+    static let mono = ThemeFont(size: 12, design: .monospaced)
+    static let monoSmall = ThemeFont(size: 11.5, design: .monospaced)
 
     // MARK: Metrics
 
@@ -137,6 +186,8 @@ enum Theme {
     static let cardRadius: CGFloat = 13
     static let controlRadius: CGFloat = 9
     static let sidebarWidth: CGFloat = 232
+    /// Icon-only sidebar used when the window is narrower than `MainWindowMetrics.compactSidebarThreshold`.
+    static let compactSidebarWidth: CGFloat = 76
 }
 
 extension Color {
@@ -186,12 +237,12 @@ struct Card<Content: View>: View {
                 HStack(spacing: 8) {
                     if let systemImage {
                         Image(systemName: systemImage)
-                            .font(.system(size: 14, weight: .medium))
+                            .scaledFont(.system(size: 14, weight: .medium))
                             .foregroundStyle(Theme.textSecondary)
                             .accessibilityHidden(true)
                     }
                     Text(title)
-                        .font(Theme.cardTitle)
+                        .scaledFont(Theme.cardTitle)
                         .foregroundStyle(Theme.textPrimary)
                     Spacer(minLength: 8)
                     if let trailing { trailing }
@@ -223,8 +274,8 @@ struct Chip: View {
             Text(text)
                 .lineLimit(1)
         }
-        .font(.system(size: 11, weight: .medium))
-        .foregroundStyle(Theme.color(tone))
+        .scaledFont(.system(size: 11, weight: .medium))
+        .foregroundStyle(Theme.textColor(tone))
         .padding(.horizontal, 7)
         .padding(.vertical, 2.5)
         .background(Capsule().fill(Theme.tint(tone)))
@@ -244,12 +295,12 @@ struct ModeBadge: View {
                     .accessibilityHidden(true)
                 if !compact { Text(text) }
             }
-            .font(.system(size: 10.5, weight: .semibold))
-            .foregroundStyle(Theme.waiting)
+            .scaledFont(.system(size: 10.5, weight: .semibold))
+            .foregroundStyle(Theme.waitingText)
             .padding(.horizontal, 7)
             .padding(.vertical, 2.5)
             .background(Capsule().fill(Theme.waiting.opacity(0.12)))
-            .overlay(Capsule().strokeBorder(Theme.waiting.opacity(0.35), lineWidth: 0.75))
+            .overlay(Capsule().strokeBorder(Theme.waiting.opacity(0.6), lineWidth: 0.75))
             .help(mode.explanation)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(text)
@@ -269,7 +320,7 @@ struct Avatar: View {
         let palette: [Color] = [Color(hex: 0x6B5B95), Color(hex: 0x4F6D8F), Color(hex: 0x5B7A6E), Color(hex: 0x8A6A4F), Color(hex: 0x5E6478)]
         let index = name.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0x7FFF_FFFF } % palette.count
         Text(initial)
-            .font(.system(size: size * 0.46, weight: .semibold))
+            .scaledFont(.system(size: size * 0.46, weight: .semibold))
             .foregroundStyle(.white.opacity(0.95))
             .frame(width: size, height: size)
             .background(Circle().fill(palette[index]))
@@ -290,7 +341,7 @@ struct AppMark: View {
             } else {
                 RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
                     .fill(Color(hex: 0x111827))
-                    .overlay(Image(systemName: "forward.end.fill").font(.system(size: size * 0.5)).foregroundStyle(Theme.brandGradient))
+                    .overlay(Image(systemName: "forward.end.fill").scaledFont(.system(size: size * 0.5)).foregroundStyle(Theme.brandGradient))
             }
         }
         .frame(width: size, height: size)

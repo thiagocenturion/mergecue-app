@@ -23,7 +23,7 @@ struct BackButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: "chevron.left")
-                .font(.system(size: 15, weight: .semibold))
+                .scaledFont(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.textSecondary)
                 .frame(width: 30, height: 30)
                 .contentShape(Rectangle())
@@ -59,11 +59,11 @@ struct TaskActionsMenu: View {
             }
         } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: 15, weight: .semibold))
+                .scaledFont(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.textSecondary)
                 .frame(width: 44, height: 40)
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.surfaceRaised))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.border, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.controlBorder, lineWidth: 1))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -94,7 +94,7 @@ struct HandoffTracker: View {
                         connector(visible: step != .ready, done: step < current)
                     }
                     Text(step == current ? (currentLabel ?? step.title) : step.title)
-                        .font(.system(size: 13, weight: step == current ? .semibold : .regular))
+                        .scaledFont(.system(size: 13, weight: step == current ? .semibold : .regular))
                         .foregroundStyle(step == current ? Theme.textPrimary : Theme.textSecondary)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
@@ -110,7 +110,7 @@ struct HandoffTracker: View {
     private func node(_ step: Presentation.HandoffStep) -> some View {
         if step < current {
             Image(systemName: "checkmark")
-                .font(.system(size: 10, weight: .bold))
+                .scaledFont(.system(size: 10, weight: .bold))
                 .foregroundStyle(Theme.textSecondary)
                 .frame(width: 26, height: 26)
                 .background(Circle().fill(Theme.surfaceRaised))
@@ -145,7 +145,7 @@ struct StepNumber: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 19, weight: .semibold))
+            .scaledFont(.system(size: 19, weight: .semibold))
             .foregroundStyle(.white)
             .frame(width: 44, height: 44)
             .background(Circle().fill(LinearGradient(colors: [color.opacity(0.95), color.opacity(0.7)], startPoint: .top, endPoint: .bottom)))
@@ -164,7 +164,7 @@ struct TimelineRow: View {
         HStack(alignment: .top, spacing: 10) {
             VStack(spacing: 0) {
                 Image(systemName: symbol)
-                    .font(.system(size: 10, weight: .semibold))
+                    .scaledFont(.system(size: 10, weight: .semibold))
                     .foregroundStyle(color)
                     .frame(width: 22, height: 22)
                     .background(Circle().fill(color.opacity(0.14)))
@@ -178,19 +178,19 @@ struct TimelineRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(activity.actorName ?? activity.actor.rawValue.capitalized)
-                        .font(.system(size: 12, weight: .semibold))
+                        .scaledFont(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Theme.textPrimary)
                     if let to = activity.toState, activity.fromState != to {
                         Chip(text: to.displayName, tone: to.tone)
                     }
                     Spacer(minLength: 4)
                     Text(UIFormat.relative(from: activity.at, now: now))
-                        .font(.system(size: 11.5))
+                        .scaledFont(.system(size: 11.5))
                         .foregroundStyle(Theme.textSecondary)
                         .help(UIFormat.dateTime(activity.at))
                 }
                 Text(activity.message)
-                    .font(.system(size: 12.5))
+                    .scaledFont(.system(size: 12.5))
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -242,16 +242,16 @@ struct StatusCallout<Actions: View>: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: symbol)
-                    .font(.system(size: 18, weight: .semibold))
+                    .scaledFont(.system(size: 18, weight: .semibold))
                     .foregroundStyle(Theme.color(tone))
                     .frame(width: 24)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
-                        .font(.system(size: 15, weight: .semibold))
+                        .scaledFont(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.textPrimary)
                     Text(message)
-                        .font(Theme.body)
+                        .scaledFont(Theme.body)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -274,11 +274,11 @@ struct TestRunDetail: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 14) {
                 Text(artifact.metadata["command"] ?? artifact.title)
-                    .font(Theme.mono)
+                    .scaledFont(Theme.mono)
                     .foregroundStyle(Theme.textPrimary)
                     .textSelection(.enabled)
                 Spacer()
-                if let passed = artifact.metadata["passed"] { Label("\(passed) passed", systemImage: "checkmark.circle").foregroundStyle(Theme.mint) }
+                if let passed = artifact.metadata["passed"] { Label("\(passed) passed", systemImage: "checkmark.circle").foregroundStyle(Theme.mintText) }
                 if let failed = artifact.metadata["failed"] {
                     Label("\(failed) failed", systemImage: "xmark.circle").foregroundStyle(failed == "0" ? Theme.textSecondary : Theme.critical)
                 }
@@ -286,9 +286,9 @@ struct TestRunDetail: View {
                     Label(String(format: "%.1f s", duration / 1000), systemImage: "timer").foregroundStyle(Theme.textSecondary)
                 }
             }
-            .font(.system(size: 12))
+            .scaledFont(.system(size: 12))
             Text(artifact.reportedBy == .agent ? "Reported by the agent \(UIFormat.relative(from: artifact.createdAt, now: now))" : "Run by MergeCue")
-                .font(.system(size: 11.5))
+                .scaledFont(.system(size: 11.5))
                 .foregroundStyle(Theme.textTertiary)
             LogExcerptView(excerpt: LogExcerpt(text: artifact.content, truncated: false), maxHeight: 420)
         }

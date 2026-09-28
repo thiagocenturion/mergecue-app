@@ -24,7 +24,7 @@ struct InboxDetail: View {
 
 extension Theme {
     /// The large rounded detail panel (right column).
-    static let panel = adaptive(light: 0xFFFFFF, dark: 0x10172A)
+    static let panel = Palette.panel.color
 }
 
 /// The task that handles an attention item.
@@ -37,7 +37,7 @@ struct LinkedTaskCard: View {
         let headline = Presentation.taskHeadline(record, snapshot: model.snapshot(record.task.origin.changeRequest), now: model.now)
         HStack(spacing: 12) {
             Image(systemName: record.task.state.symbolName)
-                .font(.system(size: 15, weight: .semibold))
+                .scaledFont(.system(size: 15, weight: .semibold))
                 .foregroundStyle(color)
                 .frame(width: 34, height: 34)
                 .background(Circle().fill(color.opacity(0.14)))
@@ -45,13 +45,13 @@ struct LinkedTaskCard: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
                     Text(headline)
-                        .font(.system(size: 13.5, weight: .semibold))
+                        .scaledFont(.system(size: 13.5, weight: .semibold))
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
-                    StatusPill(text: TaskStateStyle.label(record), color: color, size: 11)
+                    StatusPill(text: TaskStateStyle.label(record), color: color, textColor: TaskStateStyle.textColor(record), size: 11)
                 }
                 Text("Task \(record.id.rawValue) · \(record.task.type.displayName) · updated \(UIFormat.relative(from: record.task.updatedAt, now: model.now))")
-                    .font(.system(size: 12))
+                    .scaledFont(.system(size: 12))
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(1)
             }
@@ -61,7 +61,8 @@ struct LinkedTaskCard: View {
         }
         .padding(12)
         .cardBackground(color.opacity(0.07), border: color.opacity(0.3))
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Task \(record.id.rawValue), \(TaskStateStyle.label(record)): \(headline)")
     }
 }
 
@@ -75,9 +76,9 @@ struct CheckDetail: View {
             HStack(spacing: 8) {
                 CheckStatusIcon(status: check.status)
                 Text(check.name)
-                    .font(.system(size: 13.5, weight: .semibold))
+                    .scaledFont(.system(size: 13.5, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
-                StatusPill(text: check.status.displayName, color: Theme.color(CheckStatusIcon.tone(check.status)), size: 11)
+                StatusPill(text: check.status.displayName, color: Theme.color(CheckStatusIcon.tone(check.status)), textColor: Theme.textColor(CheckStatusIcon.tone(check.status)), size: 11)
                 if check.isRequired == true { Chip(text: "Required") }
                 Spacer()
                 if let url = check.detailsURL {
@@ -86,7 +87,7 @@ struct CheckDetail: View {
                     } label: {
                         HStack(spacing: 5) {
                             Text("Open log")
-                            Image(systemName: "arrow.up.right.square").font(.system(size: 11))
+                            Image(systemName: "arrow.up.right.square").scaledFont(.system(size: 11))
                         }
                     }
                     .buttonStyle(SecondaryButtonStyle(size: .small))
@@ -94,7 +95,7 @@ struct CheckDetail: View {
             }
             if let summary = check.summary {
                 Text(summary)
-                    .font(Theme.body)
+                    .scaledFont(Theme.body)
                     .foregroundStyle(Theme.textSecondary)
             }
             HStack(spacing: 14) {
@@ -103,13 +104,13 @@ struct CheckDetail: View {
                 }
                 if let sha = check.commitSHA {
                     Label(UIFormat.shortSHA(sha), systemImage: "number")
-                        .font(Theme.monoSmall)
+                        .scaledFont(Theme.monoSmall)
                 }
                 if let started = check.startedAt, let completed = check.completedAt {
                     Label(UIFormat.duration(from: started, to: completed), systemImage: "timer")
                 }
             }
-            .font(.system(size: 12))
+            .scaledFont(.system(size: 12))
             .foregroundStyle(Theme.textSecondary)
             if check.status.isFailing {
                 if let excerpt = model.logExcerpts[check.key.id] {
@@ -117,7 +118,7 @@ struct CheckDetail: View {
                 } else {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
-                        Text("Loading log excerpt…").font(Theme.body).foregroundStyle(Theme.textSecondary)
+                        Text("Loading log excerpt…").scaledFont(Theme.body).foregroundStyle(Theme.textSecondary)
                     }
                     .task { await model.loadLog(for: check.key) }
                 }

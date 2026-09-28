@@ -17,6 +17,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         MainWindowController.configure(window, badge: model.mode.badgeText)
         super.init(window: window)
         window.delegate = self
+        observeTitle()
+    }
+
+    /// Keeps the window's title and subtitle on the current screen (VoiceOver, Mission Control, Window menu).
+    private func observeTitle() {
+        let title = withObservationTracking {
+            model.windowTitle
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in self?.observeTitle() }
+        }
+        window?.title = title.title
+        window?.subtitle = title.subtitle
     }
 
     @available(*, unavailable)
@@ -66,7 +78,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
 public enum MainWindowMetrics {
     public static let defaultSize = NSSize(width: 1_360, height: 860)
-    public static let minimumSize = NSSize(width: 1_140, height: 700)
+    /// Small enough for a 13" display at larger text sizes; below `compactSidebarThreshold` the sidebar shows icons only.
+    public static let minimumSize = NSSize(width: 960, height: 600)
+    /// Window widths below this use the icon-only sidebar.
+    public static let compactSidebarThreshold: CGFloat = 1_140
     /// Height reserved at the top of the sidebar for the traffic lights (transparent 28 pt title bar + margin).
     static let titlebarInset: CGFloat = 40
     /// Top padding of the content columns (below the invisible title bar).

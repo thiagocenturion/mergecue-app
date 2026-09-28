@@ -4,11 +4,14 @@ import SwiftUI
 /// The menu bar popover: header (app tile, "Your PRs at a glance", sync state), account problems, the sections
 /// Needs you / Waiting for agent (only when non-empty) / AI working / Ready (top 3 each, collapsible) and the footer
 /// (Open MergeCue, Refresh, Pause notifications, Settings).
-/// Keyboard: ↑/↓ select, Return runs the primary action, ⌘R refreshes, ⌘, opens Settings, ⌘O opens the window, Esc closes.
+/// Keyboard: ↑/↓ select, Return or Space open the selected row's details, ⌘↩ runs its primary action, ⌘R refreshes,
+/// ⌘, opens Settings, ⌘O opens the window, Esc closes. The global shortcut (Settings › General) opens it from any app.
 public struct PopoverView: View {
     let model: AppModel
     var onClose: () -> Void
     @FocusState private var isFocused: Bool
+    @AccessibilityFocusState private var voiceOverFocus: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var contentHeight: CGFloat = 320
     @State private var topHeight: CGFloat = 90
     @State private var bottomHeight: CGFloat = 64
@@ -22,6 +25,12 @@ public struct PopoverView: View {
         max(220, Theme.popoverMaxHeight - topHeight - bottomHeight - 2)
     }
 
+    /// The popover widens a little with larger text (the full scale would crowd the menu bar).
+    private var width: CGFloat {
+        let scale = Theme.textScale(for: model.textSize.dynamicTypeSize)
+        return (Theme.popoverWidth * (1 + (scale - 1) * 0.6)).rounded()
+    }
+
     public var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
@@ -31,7 +40,7 @@ public struct PopoverView: View {
                 if !model.banners.isEmpty || model.handoffOffer != nil {
                     VStack(spacing: 8) {
                         ForEach(model.banners) { banner in
-                            BannerView(banner: banner) { model.dismissBanner(banner.id) }
+                            BannerView(banner: banner, onHold: { model.setBannerHeld(banner.id, $0) }) { model.dismissBanner(banner.id) }
                         }
                         if let offer = model.handoffOffer {
                             HandoffCallout(model: model, offer: offer)
@@ -53,8 +62,10 @@ public struct PopoverView: View {
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bottomHeight = $0 }
         }
-        .frame(width: Theme.popoverWidth)
+        .frame(width: width)
         .background(Theme.popoverBackground.ignoresSafeArea())
+        // The container takes keyboard focus for ↑/↓/Return; the selected row shows it (a 2 pt focus ring)
+        // instead of a system ring around the whole popover.
         .focusable()
         .focused($isFocused)
         .focusEffectDisabled()
@@ -66,13 +77,24 @@ public struct PopoverView: View {
             model.movePopoverSelection(by: -1)
             return .handled
         }
-        .onKeyPress(.return) {
+        .onKeyPress(keys: [.return, .space], phases: .down) { press in
             guard model.popoverSelection != nil else { return .ignored }
-            Task { await model.activatePopoverSelection() }
+            if press.key == .return && press.modifiers.contains(.command) {
+                Task { await model.activatePopoverSelection() }
+            } else if press.modifiers.isEmpty {
+                model.openPopoverSelection()
+            } else {
+                return .ignored
+            }
             return .handled
         }
         .onExitCommand(perform: onClose)
         .onAppear { isFocused = true }
+        .onChange(of: model.popoverPresentationCount) { _, _ in isFocused = true }
+        .onChange(of: model.popoverSelection) { _, id in
+            if let id { voiceOverFocus = id }
+        }
+        .dynamicTypeSize(model.textSize.dynamicTypeSize)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("MergeCue")
     }
@@ -83,7 +105,7 @@ public struct PopoverView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     ForEach(PopoverSection.allCases) { section in
                         if section != .waitingForAgent || !model.sections.items(section).isEmpty {
-                            PopoverSectionView(model: model, section: section)
+                            PopoverSectionView(model: model, section: section, voiceOverFocus: $voiceOverFocus)
                         }
                     }
                 }
@@ -96,7 +118,7 @@ public struct PopoverView: View {
             .frame(height: min(contentHeight, maxScrollHeight))
             .onChange(of: model.popoverSelection) { _, id in
                 guard let id else { return }
-                withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(id, anchor: .center) }
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) { proxy.scrollTo(id, anchor: .center) }
             }
         }
     }
@@ -119,11 +141,11 @@ struct PopoverHeader: View {
             .accessibilityLabel("Open MergeCue window")
             VStack(alignment: .leading, spacing: 3) {
                 Text("MergeCue")
-                    .font(.system(size: 19, weight: .bold))
+                    .scaledFont(.system(size: 19, weight: .bold))
                     .foregroundStyle(Theme.textPrimary)
                     .fixedSize()
                 Text("Your PRs at a glance")
-                    .font(.system(size: 14))
+                    .scaledFont(.system(size: 14))
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize()
             }
@@ -133,8 +155,9 @@ struct PopoverHeader: View {
                 Circle()
                     .fill(summary.tone == .success ? Theme.mint : (summary.tone == .neutral ? Theme.textTertiary : Theme.color(summary.tone)))
                     .frame(width: 8, height: 8)
+                    .accessibilityHidden(true)
                 Text(summary.text.replacingOccurrences(of: "Synced just now", with: "Synced now"))
-                    .font(.system(size: 13))
+                    .scaledFont(.system(size: 13))
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(1)
             }
@@ -171,17 +194,17 @@ struct AccountProblemsStrip: View {
                 if model.notificationsPaused, let until = model.state.notificationsPausedUntil {
                     HStack(spacing: 8) {
                         Image(systemName: "bell.slash.fill")
-                            .font(.system(size: 11))
+                            .scaledFont(.system(size: 11))
                             .foregroundStyle(Theme.waiting)
                             .frame(width: 18)
                         Text("Notifications paused until \(UIFormat.time(until))")
-                            .font(.system(size: 12))
+                            .scaledFont(.system(size: 12))
                             .foregroundStyle(Theme.textSecondary)
                         Spacer()
                         Button("Resume") { Task { await model.send(.pauseNotifications(until: nil)) } }
                             .buttonStyle(PlainRowButtonStyle())
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Theme.accent)
+                            .scaledFont(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Theme.accentText)
                     }
                 }
             }
@@ -201,17 +224,17 @@ struct AccountStatusLine: View {
             ProviderGlyph(kind: account.kind, size: 14)
                 .frame(width: 18)
             Text("\(account.kind.displayName) · \(account.account.displayLabel)")
-                .font(.system(size: 12, weight: .medium))
+                .scaledFont(.system(size: 12, weight: .medium))
                 .foregroundStyle(Theme.textPrimary)
                 .lineLimit(1)
             Spacer(minLength: 6)
             Image(systemName: symbol)
-                .font(.system(size: 10.5))
+                .scaledFont(.system(size: 10.5))
                 .foregroundStyle(Theme.color(tone))
                 .accessibilityHidden(true)
             Text(UIFormat.syncText(account.status, now: model.now))
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.color(tone))
+                .scaledFont(.system(size: 12))
+                .foregroundStyle(Theme.textColor(tone))
                 .lineLimit(1)
             if account.status.state == .authExpired {
                 Button("Reconnect") {
@@ -219,12 +242,13 @@ struct AccountStatusLine: View {
                     model.showSettings(.accounts)
                 }
                 .buttonStyle(PlainRowButtonStyle())
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.accent)
+                .scaledFont(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.accentText)
+                .accessibilityLabel("Reconnect \(account.kind.displayName) account \(account.account.displayLabel)")
             }
         }
         .help(account.status.message.map { SecretRedactorHelp.safe($0) } ?? account.status.state.displayText)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("\(account.kind.displayName) account \(account.account.displayLabel): \(UIFormat.syncText(account.status, now: model.now))")
     }
 
@@ -246,6 +270,7 @@ enum SecretRedactorHelp {
 /// "Open MergeCue" + Refresh, Pause notifications and Settings.
 struct PopoverFooter: View {
     let model: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 6) {
@@ -254,9 +279,9 @@ struct PopoverFooter: View {
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "arrow.up.forward.square")
-                        .font(.system(size: 15))
+                        .scaledFont(.system(size: 15))
                     Text("Open MergeCue")
-                        .font(.system(size: 14, weight: .medium))
+                        .scaledFont(.system(size: 14, weight: .medium))
                 }
                 .foregroundStyle(Theme.textPrimary)
                 .padding(.vertical, 6)
@@ -269,7 +294,7 @@ struct PopoverFooter: View {
                 Task { await model.refresh() }
             } label: {
                 Image(systemName: "arrow.clockwise")
-                    .symbolEffect(.rotate, isActive: model.isRefreshing)
+                    .symbolEffect(.rotate, isActive: model.isRefreshing && !reduceMotion)
             }
             .buttonStyle(IconButtonStyle(size: 30, filled: false))
             .keyboardShortcut("r", modifiers: .command)
@@ -277,15 +302,32 @@ struct PopoverFooter: View {
             .accessibilityLabel("Refresh")
             PauseNotificationsMenu(model: model)
             Rectangle().fill(Theme.divider).frame(width: 1, height: 22).padding(.horizontal, 4)
-            Button {
-                model.showSettings()
+                .accessibilityHidden(true)
+            // Settings, the window and Quit in one menu, so quitting doesn't depend on right-clicking the menu bar icon.
+            Menu {
+                Button("Settings…") { model.showSettings() }
+                Button("Open MergeCue") { model.showScreen(.inbox) }
+                if let quit = model.quitHandler {
+                    Divider()
+                    Button("Quit MergeCue", action: quit)
+                }
             } label: {
                 Image(systemName: "gearshape")
+                    .scaledFont(.system(size: 13.5, weight: .medium))
+                    .foregroundStyle(Theme.textSecondary)
+                    .frame(width: 30, height: 30)
             }
-            .buttonStyle(IconButtonStyle(size: 30, filled: false))
-            .keyboardShortcut(",", modifiers: .command)
-            .help("Settings (⌘,)")
-            .accessibilityLabel("Settings")
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Settings and Quit (⌘, opens Settings)")
+            .accessibilityLabel("Settings and more")
+            .background {
+                Button("") { model.showSettings() }
+                    .keyboardShortcut(",", modifiers: .command)
+                    .hidden()
+                    .accessibilityHidden(true)
+            }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
@@ -312,8 +354,8 @@ struct PauseNotificationsMenu: View {
             }
         } label: {
             Image(systemName: model.notificationsPaused ? "bell.slash.fill" : "bell")
-                .font(.system(size: 13.5, weight: .medium))
-                .foregroundStyle(model.notificationsPaused ? Theme.waiting : Theme.textSecondary)
+                .scaledFont(.system(size: 13.5, weight: .medium))
+                .foregroundStyle(model.notificationsPaused ? Theme.waitingText : Theme.textSecondary)
                 .frame(width: 30, height: 30)
         }
         .menuStyle(.borderlessButton)
@@ -336,6 +378,9 @@ enum PauseOptions {
 struct PopoverSectionView: View {
     @Bindable var model: AppModel
     let section: PopoverSection
+    /// Moves VoiceOver to the row the keyboard selects.
+    var voiceOverFocus: AccessibilityFocusState<String?>.Binding?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isCollapsed: Bool { model.collapsedPopoverSections.contains(section) }
 
@@ -343,21 +388,18 @@ struct PopoverSectionView: View {
         let items = model.sections.items(section)
         VStack(alignment: .leading, spacing: 10) {
             Button {
-                withAnimation(.easeOut(duration: 0.15)) {
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) {
                     if isCollapsed { model.collapsedPopoverSections.remove(section) } else { model.collapsedPopoverSections.insert(section) }
                 }
             } label: {
                 HStack(spacing: 10) {
-                    Circle()
-                        .fill(Theme.color(section))
-                        .frame(width: 10, height: 10)
-                        .shadow(color: Theme.color(section).opacity(0.5), radius: 4)
+                    SectionMarker(section: section, glow: true)
                     Text("\(section.title)  ·  \(items.count)")
-                        .font(.system(size: 15, weight: .semibold))
+                        .scaledFont(.system(size: 15, weight: .semibold))
                         .foregroundStyle(items.isEmpty ? Theme.textSecondary : Theme.textPrimary)
                     Spacer()
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 11.5, weight: .semibold))
+                        .scaledFont(.system(size: 11.5, weight: .semibold))
                         .foregroundStyle(Theme.textSecondary)
                         .rotationEffect(.degrees(isCollapsed ? -90 : 0))
                 }
@@ -375,7 +417,7 @@ struct PopoverSectionView: View {
                 } else {
                     VStack(spacing: 8) {
                         ForEach(items.prefix(AppModel.popoverRowLimit)) { item in
-                            PopoverRowView(model: model, item: item)
+                            PopoverRowView(model: model, item: item, voiceOverFocus: voiceOverFocus)
                                 .id(item.id)
                         }
                     }
@@ -385,10 +427,10 @@ struct PopoverSectionView: View {
                         } label: {
                             HStack(spacing: 4) {
                                 Text("View all \(items.count)")
-                                Image(systemName: "arrow.right").font(.system(size: 10, weight: .semibold))
+                                Image(systemName: "arrow.right").scaledFont(.system(size: 10, weight: .semibold))
                             }
-                            .font(.system(size: 12.5, weight: .medium))
-                            .foregroundStyle(Theme.accent)
+                            .scaledFont(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(Theme.accentText)
                             .padding(.leading, 4)
                         }
                         .buttonStyle(PlainRowButtonStyle())
@@ -409,57 +451,15 @@ struct EmptySectionRow: View {
                 .foregroundStyle(section == .needsYou ? Theme.mint : Theme.textTertiary)
                 .accessibilityHidden(true)
             Text(section.emptyTitle)
-                .font(.system(size: 12.5))
+                .scaledFont(.system(size: 12.5))
                 .foregroundStyle(Theme.textSecondary)
         }
         .padding(.horizontal, 14)
-        .frame(height: 40)
+        .padding(.vertical, 8)
+        .frame(minHeight: 40)
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardBackground(Theme.surface.opacity(0.6), radius: 12)
         .accessibilityElement(children: .combine)
-    }
-}
-
-/// Transient message.
-struct BannerView: View {
-    let banner: Banner
-    var onDismiss: () -> Void
-
-    var body: some View {
-        let color = banner.tone == .neutral ? Theme.accent : Theme.color(banner.tone)
-        HStack(alignment: .top, spacing: 9) {
-            Image(systemName: symbol)
-                .foregroundStyle(color)
-                .accessibilityHidden(true)
-            Text(banner.message)
-                .font(.system(size: 12.5))
-                .foregroundStyle(Theme.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Button(action: onDismiss) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Theme.textSecondary)
-            }
-            .buttonStyle(PlainRowButtonStyle())
-            .accessibilityLabel("Dismiss message")
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.surface))
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(color.opacity(0.1)))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(color.opacity(0.35), lineWidth: 1))
-        .shadow(color: .black.opacity(0.18), radius: 10, y: 3)
-        .accessibilityElement(children: .combine)
-    }
-
-    private var symbol: String {
-        switch banner.tone {
-        case .critical: "exclamationmark.octagon.fill"
-        case .attention: "exclamationmark.triangle.fill"
-        case .success: "checkmark.circle.fill"
-        case .neutral, .progress: "info.circle.fill"
-        }
     }
 }
 
@@ -472,22 +472,22 @@ struct HandoffCallout: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "clock")
-                    .foregroundStyle(Theme.waiting)
+                    .foregroundStyle(Theme.waitingText)
                     .accessibilityHidden(true)
                 Text("Waiting for agent · \(offer.taskID.rawValue)")
-                    .font(.system(size: 13, weight: .semibold))
+                    .scaledFont(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
                 Spacer()
                 Button {
                     model.handoffOffer = nil
                 } label: {
-                    Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).foregroundStyle(Theme.textSecondary)
+                    Image(systemName: "xmark").scaledFont(.system(size: 10, weight: .bold)).foregroundStyle(Theme.textSecondary)
                 }
                 .buttonStyle(PlainRowButtonStyle())
                 .accessibilityLabel("Dismiss")
             }
             Text("Paste the command into your agent, or open the agent at the task checkout. The status changes only after it connects.")
-                .font(.system(size: 12))
+                .scaledFont(.system(size: 12))
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
@@ -509,8 +509,8 @@ struct HandoffCallout: View {
                 Spacer()
                 Button("Details") { model.showTask(offer.taskID) }
                     .buttonStyle(PlainRowButtonStyle())
-                    .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(Theme.accent)
+                    .scaledFont(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(Theme.accentText)
             }
         }
         .padding(12)
@@ -525,13 +525,13 @@ struct OnboardingPrompt: View {
     var body: some View {
         VStack(spacing: 10) {
             Text("Welcome to MergeCue")
-                .font(.system(size: 17, weight: .semibold))
+                .scaledFont(.system(size: 17, weight: .semibold))
                 .foregroundStyle(Theme.textPrimary)
             Text("PRs move forward. You stay in flow.")
-                .font(.system(size: 13))
+                .scaledFont(.system(size: 13))
                 .foregroundStyle(Theme.textSecondary)
             Text("Connect GitHub, GitLab or Bitbucket Cloud to see what needs you across all of them.")
-                .font(.system(size: 13))
+                .scaledFont(.system(size: 13))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)

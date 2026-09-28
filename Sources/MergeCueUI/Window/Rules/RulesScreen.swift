@@ -4,16 +4,14 @@ import SwiftUI
 /// Rules: agent proposals pending activation, the user's rules and the built-in templates.
 struct RuleList: View {
     @Bindable var model: AppModel
+    @FocusState private var listFocused: Bool
 
     var body: some View {
-        let proposals = model.pendingRuleProposals
-        let templateIDs = Set(RuleTemplates.all.map(\.id))
-        let mine = model.state.rules.filter { !templateIDs.contains($0.id) && !($0.origin == .agentProposal && !$0.isActive) }
-        let templates = model.state.rules.filter { templateIDs.contains($0.id) }
+        let (proposals, mine, templates) = model.ruleSections
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Rules")
-                    .font(.system(size: 24, weight: .bold))
+                    .scaledFont(.system(size: 24, weight: .bold))
                     .foregroundStyle(Theme.textPrimary)
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
@@ -28,22 +26,34 @@ struct RuleList: View {
             .padding(.top, 8)
             .padding(.bottom, 12)
             ThemeDivider()
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 6) {
-                    if !proposals.isEmpty {
-                        section("Pending activation", proposals)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        if !proposals.isEmpty {
+                            section("Pending activation", proposals)
+                        }
+                        section("Your rules", mine)
+                        if mine.isEmpty {
+                            Text("No rules yet — start from a template below.")
+                                .scaledFont(.system(size: 12.5))
+                                .foregroundStyle(Theme.textSecondary)
+                                .padding(.horizontal, 6)
+                        }
+                        section("Templates", templates)
                     }
-                    section("Your rules", mine)
-                    if mine.isEmpty {
-                        Text("No rules yet — start from a template below.")
-                            .font(.system(size: 12.5))
-                            .foregroundStyle(Theme.textSecondary)
-                            .padding(.horizontal, 6)
-                    }
-                    section("Templates", templates)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 16)
                 }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 16)
+                .keyboardList(isFocused: $listFocused, hasSelection: model.selectedRuleID != nil,
+                              onMove: { model.moveRuleSelection(by: $0) },
+                              onOpen: {},
+                              onPrimary: { model.performRulePrimaryAction() })
+                .onChange(of: model.selectedRuleID) { _, id in
+                    guard listFocused, let id else { return }
+                    proxy.scrollTo(id)
+                }
+                .accessibilityLabel("Rules")
+                .accessibilityHint("Use the up and down arrow keys to move, Command-Return to edit")
             }
         }
         .background(Theme.contentBackground)
@@ -52,7 +62,7 @@ struct RuleList: View {
     @ViewBuilder
     private func section(_ title: String, _ rules: [Rule]) -> some View {
         Text(title)
-            .font(.system(size: 12.5, weight: .medium))
+            .scaledFont(.system(size: 12.5, weight: .medium))
             .foregroundStyle(Theme.textSecondary)
             .padding(.top, 14)
             .padding(.horizontal, 6)
@@ -63,9 +73,19 @@ struct RuleList: View {
                 .padding(10)
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(isSelected ? Theme.surfaceSelected : Theme.surface))
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(isSelected ? Theme.accent.opacity(0.7) : Theme.border, lineWidth: 1))
+                .keyboardSelectionRing(isSelected && listFocused, cornerRadius: 10)
                 .contentShape(Rectangle())
-                .onTapGesture { model.selectedRuleID = rule.id }
+                .onTapGesture {
+                    model.selectedRuleID = rule.id
+                    listFocused = true
+                }
                 .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : [.isButton])
+                .accessibilityAction { model.selectedRuleID = rule.id }
+                .accessibilityAction(named: RuleTemplates.template(id: rule.id) != nil ? "Use as template" : "Edit") {
+                    model.selectedRuleID = rule.id
+                    model.performRulePrimaryAction()
+                }
+                .id(rule.id)
         }
     }
 }
@@ -77,26 +97,26 @@ struct RuleRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: RuleText.symbol(rule.action))
-                .foregroundStyle(rule.isActive ? Theme.accent : Color.secondary)
+                .foregroundStyle(rule.isActive ? Theme.accent : Theme.textSecondary)
                 .frame(width: 18)
                 .padding(.top, 1)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(rule.name).font(.callout.weight(.medium)).lineLimit(1)
+                    Text(rule.name).scaledFont(.callout.weight(.medium)).lineLimit(1)
                     if rule.origin == .agentProposal && !rule.isActive {
                         Chip(text: "Proposed by agent", symbol: "sparkles", tone: .attention)
                     }
                 }
                 Text(RuleText.summary(rule))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .scaledFont(.caption)
+                    .foregroundStyle(Theme.textSecondary)
                     .lineLimit(2)
             }
             Spacer(minLength: 4)
             Text(rule.isActive ? "On" : "Off")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(rule.isActive ? Theme.mint : Color.secondary)
+                .scaledFont(.caption.weight(.semibold))
+                .foregroundStyle(rule.isActive ? Theme.mintText : Theme.textSecondary)
         }
         .padding(.vertical, 3)
         .accessibilityElement(children: .combine)
@@ -113,11 +133,11 @@ struct RuleDetail: View {
                 VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
-                            Image(systemName: RuleText.symbol(rule.action)).font(.title2).foregroundStyle(Theme.accent)
-                            Text(rule.name).font(.title2.weight(.semibold))
+                            Image(systemName: RuleText.symbol(rule.action)).scaledFont(.title2).foregroundStyle(Theme.accent)
+                            Text(rule.name).scaledFont(.title2.weight(.semibold))
                             Chip(text: rule.isActive ? "Active" : "Inactive", tone: rule.isActive ? .success : .neutral)
                         }
-                        Text(RuleText.summary(rule)).font(.callout).foregroundStyle(.secondary)
+                        Text(RuleText.summary(rule)).scaledFont(.callout).foregroundStyle(Theme.textSecondary)
                     }
                     if rule.origin == .agentProposal && !rule.isActive {
                         StatusCallout(tone: .attention, symbol: "sparkles", title: "Proposed by an agent",
@@ -146,7 +166,7 @@ struct RuleDetail: View {
                             field("Quiet hours", rule.quietHours.map(RuleText.quietHours) ?? "None")
                             if case .requestExecution = rule.action {
                                 Text("Unattended execution runs only with a verified agent runtime; otherwise MergeCue creates the task and it waits for an agent.")
-                                    .font(.caption).foregroundStyle(.secondary)
+                                    .scaledFont(.caption).foregroundStyle(Theme.textSecondary)
                             }
                         }
                     }
@@ -180,8 +200,8 @@ struct RuleDetail: View {
 
     private func field(_ label: String, _ value: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(label).font(.callout).foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
-            Text(value).font(.callout).textSelection(.enabled)
+            Text(label).scaledFont(.callout).foregroundStyle(Theme.textSecondary).frame(width: 110, alignment: .leading)
+            Text(value).scaledFont(.callout).textSelection(.enabled)
         }
         .accessibilityElement(children: .combine)
     }

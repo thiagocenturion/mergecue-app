@@ -54,7 +54,7 @@ struct RuleEditorSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(context.isNew ? "New Rule" : "Edit Rule")
-                .font(.title3.weight(.semibold))
+                .scaledFont(.title3.weight(.semibold))
                 .padding([.horizontal, .top], 20)
                 .padding(.bottom, 8)
             Form {
@@ -82,8 +82,8 @@ struct RuleEditorSheet: View {
                     }
                     if actionKind == .requestExecution {
                         Text("Runs unattended only with a verified agent runtime you opted into; otherwise the task waits for an agent.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .scaledFont(.caption)
+                            .foregroundStyle(Theme.textSecondary)
                     }
                     Stepper("At most \(rule.maxFiresPerHour) per hour", value: $rule.maxFiresPerHour, in: 1...120)
                     Toggle("Quiet hours", isOn: $quietEnabled)
@@ -96,8 +96,8 @@ struct RuleEditorSheet: View {
             .formStyle(.grouped)
             HStack {
                 Text("Rules never bypass approval for repository writes.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .scaledFont(.caption)
+                    .foregroundStyle(Theme.textSecondary)
                 Spacer()
                 Button("Cancel", role: .cancel) { close() }
                     .keyboardShortcut(.cancelAction)
@@ -163,8 +163,8 @@ struct MultiToggleGrid<Option: Hashable>: View {
                 Text(title)
                 Spacer()
                 Text(selection.isEmpty ? "Any" : "\(selection.count) selected")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .scaledFont(.caption)
+                    .foregroundStyle(Theme.textSecondary)
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), alignment: .leading)], alignment: .leading, spacing: 4) {
                 ForEach(options, id: \.self) { option in
@@ -175,7 +175,7 @@ struct MultiToggleGrid<Option: Hashable>: View {
                         }
                     ))
                     .toggleStyle(.checkbox)
-                    .font(.callout)
+                    .scaledFont(.callout)
                 }
             }
         }

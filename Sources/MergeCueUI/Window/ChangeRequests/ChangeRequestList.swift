@@ -5,6 +5,7 @@ import SwiftUI
 /// Offline, Credentials expired, Rate limited, Unsupported permission). A problem on one account never hides the others.
 struct ChangeRequestList: View {
     @Bindable var model: AppModel
+    @FocusState private var listFocused: Bool
 
     var body: some View {
         let sections = ChangeRequestQueryUI.run(state: model.state, filter: model.changeRequestFilter)
@@ -17,28 +18,44 @@ struct ChangeRequestList: View {
                 NothingSelected(title: "No accounts", symbol: "person.crop.circle.badge.plus",
                                 message: "Connect GitHub, GitLab or Bitbucket Cloud in Settings › Accounts.")
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 6) {
-                        ForEach(sections) { section in
-                            AccountSectionHeader(model: model, account: section.account)
-                                .padding(.top, 12)
-                                .padding(.horizontal, 6)
-                            if section.listState.isProblem || section.items.isEmpty {
-                                AccountListStateRow(model: model, section: section)
-                                    .padding(12)
-                                    .cardBackground(Theme.surface, radius: 11)
-                            }
-                            ForEach(section.items) { snapshot in
-                                ChangeRequestRow(model: model, snapshot: snapshot, isSelected: model.selectedChangeRequestID == snapshot.id)
-                                    .onTapGesture {
-                                        model.selectedChangeRequestID = snapshot.id
-                                        model.changeRequestTab = .conversation
-                                    }
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 6) {
+                            ForEach(sections) { section in
+                                AccountSectionHeader(model: model, account: section.account)
+                                    .padding(.top, 12)
+                                    .padding(.horizontal, 6)
+                                if section.listState.isProblem || section.items.isEmpty {
+                                    AccountListStateRow(model: model, section: section)
+                                        .padding(12)
+                                        .cardBackground(Theme.surface, radius: 11)
+                                }
+                                ForEach(section.items) { snapshot in
+                                    let isSelected = model.selectedChangeRequestID == snapshot.id
+                                    ChangeRequestRow(model: model, snapshot: snapshot, isSelected: isSelected)
+                                        .keyboardSelectionRing(isSelected && listFocused, cornerRadius: 11)
+                                        .onTapGesture {
+                                            model.openChangeRequest(snapshot.id)
+                                            listFocused = true
+                                        }
+                                        .accessibilityAction { model.openChangeRequest(snapshot.id) }
+                                        .id(snapshot.id)
+                                }
                             }
                         }
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 16)
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 16)
+                    .keyboardList(isFocused: $listFocused, hasSelection: model.selectedChangeRequestID != nil,
+                                  onMove: { model.moveChangeRequestSelection(by: $0) },
+                                  onOpen: { if let id = model.selectedChangeRequestID { model.openChangeRequest(id) } },
+                                  onPrimary: { model.performChangeRequestPrimaryAction() })
+                    .onChange(of: model.selectedChangeRequestID) { _, id in
+                        guard listFocused, let id else { return }
+                        proxy.scrollTo(id)
+                    }
+                    .accessibilityLabel("Pull and merge requests")
+                    .accessibilityHint("Use the up and down arrow keys to move, Return to open")
                 }
             }
         }
@@ -47,7 +64,7 @@ struct ChangeRequestList: View {
     private var filterBar: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Pull requests")
-                .font(.system(size: 24, weight: .bold))
+                .scaledFont(.system(size: 24, weight: .bold))
                 .foregroundStyle(Theme.textPrimary)
                 .padding(.top, 8)
                 .accessibilityAddTraits(.isHeader)
@@ -76,7 +93,7 @@ struct ChangeRequestList: View {
                 Spacer(minLength: 0)
                 Toggle("Closed", isOn: $model.changeRequestFilter.includeClosed)
                     .toggleStyle(.checkbox)
-                    .font(.system(size: 12))
+                    .scaledFont(.system(size: 12))
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize()
                     .help("Include merged and closed PRs/MRs")
@@ -93,15 +110,16 @@ struct AccountSectionHeader: View {
         HStack(spacing: 6) {
             ProviderGlyph(kind: account.kind, size: 14)
             Text("\(account.kind.shortName) · \(account.account.displayLabel)")
-                .font(.system(size: 12, weight: .semibold))
+                .scaledFont(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.textPrimary)
             Spacer()
             Text(UIFormat.syncText(account.status, now: model.now))
-                .font(.system(size: 11.5))
-                .foregroundStyle(account.status.state.isProblem ? Theme.color(UIFormat.tone(of: account.status.state)) : Theme.textSecondary)
+                .scaledFont(.system(size: 11.5))
+                .foregroundStyle(account.status.state.isProblem ? Theme.textColor(UIFormat.tone(of: account.status.state)) : Theme.textSecondary)
         }
         .padding(.top, 4)
         .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -118,10 +136,10 @@ struct AccountListStateRow: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .scaledFont(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
                 Text(message)
-                    .font(.system(size: 12))
+                    .scaledFont(.system(size: 12))
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if case .credentialsExpired = section.listState {
@@ -131,11 +149,13 @@ struct AccountListStateRow: View {
                     }
                     .buttonStyle(SecondaryButtonStyle(size: .small))
                     .padding(.top, 2)
+                    .accessibilityLabel("Reconnect \(section.account.kind.displayName) account \(section.account.account.displayLabel)")
                 }
             }
         }
         .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(section.account.kind.displayName) · \(section.account.account.displayLabel): \(title). \(message)")
     }
 
     private var title: String {
@@ -198,11 +218,12 @@ struct ChangeRequestRow: View {
                                       font: .system(size: 12), glyphSize: 13)
                 Spacer(minLength: 4)
                 Text(UIFormat.compactAge(from: summary.updatedAt, now: model.now))
-                    .font(.system(size: 11.5).monospacedDigit())
+                    .scaledFont(.system(size: 11.5).monospacedDigit())
                     .foregroundStyle(Theme.textTertiary)
+                    .accessibilityLabel(UIFormat.spokenAge(from: summary.updatedAt, now: model.now))
             }
             Text(summary.title)
-                .font(.system(size: 13.5, weight: .semibold))
+                .scaledFont(.system(size: 13.5, weight: .semibold))
                 .foregroundStyle(Theme.textPrimary)
                 .lineLimit(2)
             HStack(spacing: 8) {
@@ -219,7 +240,7 @@ struct ChangeRequestRow: View {
                 ChecksBadge(state: snapshot.aggregateCheckState)
                 if let required = snapshot.approvals.requiredCount {
                     Label("\(snapshot.approvals.approvedBy.count)/\(required)", systemImage: "hand.thumbsup")
-                        .foregroundStyle(snapshot.approvals.isSatisfied == true ? Theme.mint : Theme.textSecondary)
+                        .foregroundStyle(snapshot.approvals.isSatisfied == true ? Theme.mintText : Theme.textSecondary)
                         .accessibilityLabel("\(snapshot.approvals.approvedBy.count) of \(required) approvals")
                 }
                 if snapshot.unresolvedThreadCount > 0 {
@@ -228,7 +249,7 @@ struct ChangeRequestRow: View {
                         .accessibilityLabel("\(snapshot.unresolvedThreadCount) unresolved threads")
                 }
             }
-            .font(.system(size: 11.5))
+            .scaledFont(.system(size: 11.5))
             .labelStyle(.titleAndIcon)
         }
         .padding(12)
@@ -240,6 +261,7 @@ struct ChangeRequestRow: View {
         .onHover { isHovering = $0 }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : [.isButton])
+        .accessibilityHint("Shows the conversation")
     }
 }
 
@@ -249,9 +271,9 @@ struct ChecksBadge: View {
     var body: some View {
         switch state {
         case .none: EmptyView()
-        case .passing: Label("Checks", systemImage: "checkmark.circle.fill").foregroundStyle(Theme.mint).accessibilityLabel("Checks passing")
-        case .failing: Label("Failing", systemImage: "xmark.circle.fill").foregroundStyle(Theme.critical).accessibilityLabel("Checks failing")
-        case .pending: Label("Running", systemImage: "circle.dotted.circle").foregroundStyle(Theme.accent).accessibilityLabel("Checks running")
+        case .passing: Label("Checks", systemImage: "checkmark.circle.fill").foregroundStyle(Theme.mintText).accessibilityLabel("Checks passing")
+        case .failing: Label("Failing", systemImage: "xmark.circle.fill").foregroundStyle(Theme.criticalText).accessibilityLabel("Checks failing")
+        case .pending: Label("Running", systemImage: "circle.dotted.circle").foregroundStyle(Theme.accentText).accessibilityLabel("Checks running")
         }
     }
 }

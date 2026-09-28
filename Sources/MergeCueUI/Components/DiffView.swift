@@ -102,20 +102,20 @@ struct DiffView: View {
                     if showFileHeaders {
                         HStack(spacing: 8) {
                             Image(systemName: "doc.text")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.textSecondary)
                                 .accessibilityHidden(true)
                             Text(file.path)
-                                .font(.callout.monospaced().weight(.medium))
+                                .scaledFont(.callout.monospaced().weight(.medium))
                                 .lineLimit(1)
                                 .truncationMode(.head)
                             Spacer()
-                            Text("+\(file.additions)").foregroundStyle(Theme.mint)
-                            Text("−\(file.deletions)").foregroundStyle(Theme.critical)
+                            Text("+\(file.additions)").foregroundStyle(Theme.mintText)
+                            Text("−\(file.deletions)").foregroundStyle(Theme.criticalText)
                         }
-                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .scaledFont(.caption.monospacedDigit().weight(.semibold))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
-                        .background(Color.secondary.opacity(0.08))
+                        .background(Theme.textSecondary.opacity(0.08))
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel("\(file.path), \(file.additions) additions, \(file.deletions) deletions")
                     }
@@ -150,12 +150,12 @@ private struct DiffLineRow: View {
                 .frame(width: 16)
                 .foregroundStyle(markerColor)
             Text(line.text.isEmpty ? " " : line.text)
-                .foregroundStyle(line.kind == .hunk || line.kind == .meta ? Color.secondary : Color.primary)
+                .foregroundStyle(line.kind == .hunk || line.kind == .meta ? Theme.textSecondary : Theme.textPrimary)
                 .fixedSize(horizontal: true, vertical: false)
                 .textSelection(.enabled)
             Spacer(minLength: 12)
         }
-        .font(.system(.caption, design: .monospaced))
+        .scaledFont(.system(.caption, design: .monospaced))
         .padding(.vertical, 1)
         .background(background)
         .accessibilityElement(children: .ignore)
@@ -164,7 +164,7 @@ private struct DiffLineRow: View {
 
     private func number(_ value: Int?) -> some View {
         Text(value.map(String.init) ?? "")
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(Theme.textTertiary)
             .frame(width: 36, alignment: .trailing)
             .padding(.trailing, 4)
     }
@@ -179,9 +179,9 @@ private struct DiffLineRow: View {
 
     private var markerColor: Color {
         switch line.kind {
-        case .added: Theme.mint
-        case .removed: Theme.critical
-        default: .secondary
+        case .added: Theme.mintText
+        case .removed: Theme.criticalText
+        default: Theme.textSecondary
         }
     }
 
@@ -213,16 +213,16 @@ struct LogExcerptView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Label("CI output — untrusted", systemImage: "exclamationmark.shield")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .scaledFont(.caption.weight(.medium))
+                    .foregroundStyle(Theme.textSecondary)
                 if excerpt.truncated {
                     Chip(text: "Excerpt", symbol: "scissors")
                 }
                 Spacer()
                 if let bytes = excerpt.totalBytes {
                     Text(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file) + " total")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .scaledFont(.caption)
+                        .foregroundStyle(Theme.textTertiary)
                 }
             }
             ScrollView([.vertical, .horizontal]) {
@@ -230,8 +230,8 @@ struct LogExcerptView: View {
                     ForEach(Array(excerpt.text.split(separator: "\n", omittingEmptySubsequences: false).enumerated()), id: \.offset) { _, raw in
                         let line = String(raw)
                         Text(line.isEmpty ? " " : line)
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(Self.isFailure(line) ? Theme.critical : Color.primary)
+                            .scaledFont(.system(.caption, design: .monospaced))
+                            .foregroundStyle(Self.isFailure(line) ? Theme.criticalText : Theme.textPrimary)
                             .fixedSize(horizontal: true, vertical: false)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 0.5)

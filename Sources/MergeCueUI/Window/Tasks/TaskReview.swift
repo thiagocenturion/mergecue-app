@@ -51,13 +51,13 @@ struct TaskReviewScreen: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 14) {
                     Text("Patch ready for review")
-                        .font(Theme.screenTitle)
+                        .scaledFont(Theme.screenTitle)
                         .foregroundStyle(Theme.textPrimary)
                         .accessibilityAddTraits(.isHeader)
-                    StatusPill(text: "Ready", color: Theme.mint, showsDot: true, size: 14)
+                    StatusPill(text: "Ready", color: Theme.mint, textColor: Theme.mintText, showsDot: true, size: 14, cueSymbol: "checkmark.circle.fill")
                 }
                 Text("\(task.origin.providerKind.shortName)  ·  \(task.origin.changeRequestRef.repoFullPath) \(task.origin.providerKind.formattedNumber(task.origin.changeRequest.number))  ·  \(Presentation.taskOriginPhrase(record, snapshot: snapshot))")
-                    .font(.system(size: 15))
+                    .scaledFont(.system(size: 15))
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(1)
             }
@@ -94,7 +94,7 @@ struct ReviewMilestonesColumn: View {
             HStack(spacing: 12) {
                 AppMark(size: 46)
                 Text("MergeCue")
-                    .font(.system(size: 22, weight: .semibold))
+                    .scaledFont(.system(size: 22, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
             }
             .padding(.horizontal, 18)
@@ -107,7 +107,7 @@ struct ReviewMilestonesColumn: View {
                     HStack(alignment: .top, spacing: 14) {
                         VStack(spacing: 0) {
                             Image(systemName: milestone.failed ? "xmark" : "checkmark")
-                                .font(.system(size: 11, weight: .bold))
+                                .scaledFont(.system(size: 11, weight: .bold))
                                 .foregroundStyle(.white)
                                 .frame(width: 24, height: 24)
                                 .background(Circle().fill(milestone.failed ? Theme.critical : Theme.blue))
@@ -115,11 +115,11 @@ struct ReviewMilestonesColumn: View {
                         }
                         VStack(alignment: .leading, spacing: 3) {
                             Text(milestone.title)
-                                .font(.system(size: 14.5, weight: .medium))
+                                .scaledFont(.system(size: 14.5, weight: .medium))
                                 .foregroundStyle(Theme.textPrimary)
                                 .fixedSize(horizontal: false, vertical: true)
                             Text(UIFormat.relative(from: milestone.date, now: model.now))
-                                .font(.system(size: 13))
+                                .scaledFont(.system(size: 13))
                                 .foregroundStyle(Theme.textSecondary)
                                 .help(UIFormat.dateTime(milestone.date))
                         }
@@ -131,15 +131,15 @@ struct ReviewMilestonesColumn: View {
                 }
                 HStack(alignment: .top, spacing: 14) {
                     Image(systemName: "arrow.trianglehead.clockwise")
-                        .font(.system(size: 15, weight: .bold))
+                        .scaledFont(.system(size: 15, weight: .bold))
                         .foregroundStyle(Theme.cyan)
                         .frame(width: 24, height: 24)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Waiting for your review")
-                            .font(.system(size: 14.5, weight: .semibold))
+                            .scaledFont(.system(size: 14.5, weight: .semibold))
                             .foregroundStyle(Theme.textPrimary)
                         Text("Ready \(UIFormat.relative(from: readyAt, now: model.now) == "just now" ? "now" : UIFormat.relative(from: readyAt, now: model.now))")
-                            .font(.system(size: 13))
+                            .scaledFont(.system(size: 13))
                             .foregroundStyle(Theme.textSecondary)
                     }
                     Spacer(minLength: 0)
@@ -155,7 +155,7 @@ struct ReviewMilestonesColumn: View {
                 showsActivity.toggle()
             } label: {
                 Label("Full activity · \(record.activities.count)", systemImage: "list.bullet.rectangle")
-                    .font(.system(size: 12.5, weight: .medium))
+                    .scaledFont(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(Theme.textSecondary)
             }
             .buttonStyle(PlainRowButtonStyle())
@@ -217,16 +217,16 @@ struct ReviewCenterCard: View {
             HStack(spacing: 12) {
                 SegmentedTrack(options: ReviewTab.allCases, selection: $model.reviewTab, height: 34, equalWidths: false) { tab, selected in
                     Text(tab.title)
-                        .font(.system(size: 14, weight: selected ? .semibold : .medium))
+                        .scaledFont(.system(size: 14, weight: selected ? .semibold : .medium))
                         .foregroundStyle(selected ? Theme.textPrimary : Theme.textSecondary)
                         .frame(minWidth: 70)
                 }
                 .fixedSize()
                 Spacer()
                 if !files.isEmpty {
-                    (Text("+\(additions)").foregroundStyle(Theme.mint) + Text("  −\(deletions)").foregroundStyle(Theme.critical)
+                    (Text("+\(additions)").foregroundStyle(Theme.mintText) + Text("  −\(deletions)").foregroundStyle(Theme.criticalText)
                         + Text("  ·  \(files.count) file\(files.count == 1 ? "" : "s")").foregroundStyle(Theme.textSecondary))
-                        .font(.system(size: 13.5, weight: .medium).monospacedDigit())
+                        .scaledFont(.system(size: 13.5, weight: .medium).monospacedDigit())
                 }
             }
             .padding(14)
@@ -254,19 +254,20 @@ struct ReviewCenterCard: View {
                     } label: {
                         HStack(spacing: 12) {
                             Image(systemName: "doc.text")
-                                .font(.system(size: 14))
+                                .scaledFont(.system(size: 14))
                                 .foregroundStyle(Theme.textSecondary)
                             Text(file.path.split(separator: "/").last.map(String.init) ?? file.path)
-                                .font(.system(size: 14, weight: isSelected ? .semibold : .medium))
+                                .scaledFont(.system(size: 14, weight: isSelected ? .semibold : .medium))
                                 .foregroundStyle(Theme.textPrimary)
                                 .help(file.path)
                             Spacer()
-                            Text("+\(file.additions)").foregroundStyle(Theme.mint)
-                            Text("−\(file.deletions)").foregroundStyle(Theme.critical)
+                            Text("+\(file.additions)").foregroundStyle(Theme.mintText)
+                            Text("−\(file.deletions)").foregroundStyle(Theme.criticalText)
                         }
-                        .font(.system(size: 13.5, weight: .medium).monospacedDigit())
+                        .scaledFont(.system(size: 13.5, weight: .medium).monospacedDigit())
                         .padding(.horizontal, 14)
-                        .frame(height: 40)
+                        .padding(.vertical, 4)
+                        .frame(minHeight: 40)
                         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(isSelected ? Theme.surfaceSelected : .clear))
                         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(isSelected ? Theme.accent.opacity(0.7) : .clear, lineWidth: 1.2))
                         .contentShape(Rectangle())
@@ -300,7 +301,7 @@ struct ReviewCenterCard: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(reply)
-                        .font(Theme.body)
+                        .scaledFont(Theme.body)
                         .foregroundStyle(Theme.textPrimary)
                         .lineSpacing(3)
                         .textSelection(.enabled)
@@ -308,7 +309,7 @@ struct ReviewCenterCard: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .cardBackground(Theme.surfaceSunken, radius: 12)
                     Text("Posting happens only after you approve a preview of exactly this text — use Publish changes below.")
-                        .font(.system(size: 12))
+                        .scaledFont(.system(size: 12))
                         .foregroundStyle(Theme.textSecondary)
                 }
                 .padding(16)
@@ -330,7 +331,7 @@ struct DiffFileCard: View {
                 Image(systemName: "doc.text")
                     .foregroundStyle(Theme.textSecondary)
                 Text(file.path)
-                    .font(.system(size: 13, weight: .medium))
+                    .scaledFont(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.head)
@@ -350,14 +351,15 @@ struct DiffFileCard: View {
                 .accessibilityLabel("File actions")
             }
             .padding(.horizontal, 14)
-            .frame(height: 42)
+            .padding(.vertical, 4)
+            .frame(minHeight: 42)
             ThemeDivider()
             ScrollView([.vertical, .horizontal]) {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(file.lines) { line in
                         if line.kind == .hunk {
                             Text(line.text)
-                                .font(.system(size: 11.5, design: .monospaced))
+                                .scaledFont(.system(size: 11.5, design: .monospaced))
                                 .foregroundStyle(Theme.textSecondary)
                                 .fixedSize()
                                 .padding(.leading, 60)
@@ -392,11 +394,11 @@ struct ReviewSideCard<Trailing: View, Content: View>: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
                 Image(systemName: symbol)
-                    .font(.system(size: 17))
+                    .scaledFont(.system(size: 17))
                     .foregroundStyle(Theme.textSecondary)
                     .frame(width: 22)
                 Text(title)
-                    .font(.system(size: 16, weight: .semibold))
+                    .scaledFont(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
                 Spacer(minLength: 6)
                 trailing
@@ -421,7 +423,7 @@ struct WhatChangedCard: View {
                 let bullets = Self.sentences(record.task.resultSummary)
                 if bullets.isEmpty {
                     Text("The agent didn't include a summary.")
-                        .font(.system(size: 13))
+                        .scaledFont(.system(size: 13))
                         .foregroundStyle(Theme.textSecondary)
                 }
                 ForEach(Array(bullets.enumerated()), id: \.offset) { _, sentence in
@@ -431,7 +433,7 @@ struct WhatChangedCard: View {
                     bullet("Risk: \(risk)", color: Theme.waiting)
                 }
                 Text("Summary reported by \(record.task.agentLabel ?? "the agent")")
-                    .font(.system(size: 11.5))
+                    .scaledFont(.system(size: 11.5))
                     .foregroundStyle(Theme.textTertiary)
             }
         }
@@ -441,7 +443,7 @@ struct WhatChangedCard: View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Circle().fill(color.opacity(0.8)).frame(width: 5, height: 5).offset(y: -2)
             Text(text)
-                .font(.system(size: 13.5))
+                .scaledFont(.system(size: 13.5))
                 .foregroundStyle(color == Theme.textPrimary ? Theme.textPrimary.opacity(0.9) : color)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -467,13 +469,13 @@ struct TestsCard: View {
         let artifact = record.artifact(.testRun)
         ReviewSideCard(title: "Tests", symbol: "flask") {
             if let summary {
-                StatusPill(text: pillText(summary), color: color(summary.outcome), showsDot: true, size: 12.5)
+                StatusPill(text: pillText(summary), color: color(summary.outcome), textColor: textColor(summary.outcome), showsDot: true, size: 12.5)
             } else {
-                StatusPill(text: "Not reported", color: Theme.textSecondary, size: 12)
+                StatusPill(text: "Not reported", color: Theme.textSecondary, textColor: Theme.textSecondary, size: 12)
             }
         } content: {
             Text(description(summary, artifact: artifact))
-                .font(.system(size: 13.5))
+                .scaledFont(.system(size: 13.5))
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -485,6 +487,14 @@ struct TestsCard: View {
         case .failed: summary.failed.map { "\($0) failed" } ?? "Failed"
         case .notRun: "Not run"
         case .unknown: summary.text
+        }
+    }
+
+    private func textColor(_ outcome: Presentation.TestSummary.Outcome) -> Color {
+        switch outcome {
+        case .passed: Theme.mintText
+        case .failed: Theme.criticalText
+        case .notRun, .unknown: Theme.waitingText
         }
     }
 
@@ -521,7 +531,7 @@ struct ProposedReplyCard: View {
             if let reply = record.task.proposedReply {
                 ZStack(alignment: .bottomTrailing) {
                     Text(reply)
-                        .font(.system(size: 12, design: .monospaced))
+                        .scaledFont(.system(size: 12, design: .monospaced))
                         .foregroundStyle(Theme.textPrimary.opacity(0.9))
                         .lineSpacing(3)
                         .lineLimit(9)
@@ -542,7 +552,7 @@ struct ProposedReplyCard: View {
                 .cardBackground(Theme.surfaceSunken, radius: 10, border: Theme.borderStrong)
             } else {
                 Text("No reply proposed.")
-                    .font(.system(size: 13))
+                    .scaledFont(.system(size: 13))
                     .foregroundStyle(Theme.textSecondary)
             }
         }
@@ -570,15 +580,15 @@ struct HeadCheckCard: View {
         case .matches:
             ReviewSideCard(title: "Current \(noun) head matches", symbol: "arrow.triangle.branch") {
                 Image(systemName: "checkmark.circle")
-                    .font(.system(size: 18, weight: .medium))
+                    .scaledFont(.system(size: 18, weight: .medium))
                     .foregroundStyle(Theme.mint)
             } content: {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("This patch is based on the latest state of \(ref).")
-                        .font(.system(size: 13.5))
+                        .scaledFont(.system(size: 13.5))
                         .foregroundStyle(Theme.textSecondary)
                     Text(freshness)
-                        .font(.system(size: 12))
+                        .scaledFont(.system(size: 12))
                         .foregroundStyle(Theme.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -588,8 +598,8 @@ struct HeadCheckCard: View {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.waiting)
             } content: {
                 Text("The patch was built on \(UIFormat.shortSHA(from)); \(ref) is now at \(UIFormat.shortSHA(to)). Applying may conflict — consider asking the agent to rebase.")
-                    .font(.system(size: 13.5))
-                    .foregroundStyle(Theme.waiting)
+                    .scaledFont(.system(size: 13.5))
+                    .foregroundStyle(Theme.waitingText)
                     .fixedSize(horizontal: false, vertical: true)
             }
         case .unknown:
@@ -597,7 +607,7 @@ struct HeadCheckCard: View {
                 Image(systemName: "questionmark.circle").foregroundStyle(Theme.textTertiary)
             } content: {
                 Text("MergeCue has no head SHA to compare yet. It re-checks right before applying.")
-                    .font(.system(size: 13.5))
+                    .scaledFont(.system(size: 13.5))
                     .foregroundStyle(Theme.textSecondary)
             }
         }
@@ -625,7 +635,7 @@ struct ReviewGateBar: View {
                 } label: {
                     HStack(spacing: 12) {
                         Image(systemName: applied ? "checkmark.circle.fill" : "checkmark.circle")
-                            .font(.system(size: 19, weight: .medium))
+                            .scaledFont(.system(size: 19, weight: .medium))
                         Text(applied ? "Patch applied" : "Apply reviewed patch")
                     }
                     .padding(.horizontal, 12)
@@ -648,7 +658,7 @@ struct ReviewGateBar: View {
             .help("Reject this result and put the task back in the queue for an agent")
             Rectangle().fill(Theme.divider).frame(width: 1, height: 34)
             Text("Nothing is pushed or posted without your approval.")
-                .font(.system(size: 14))
+                .scaledFont(.system(size: 14))
                 .foregroundStyle(Theme.textSecondary)
                 .lineLimit(2)
             Spacer(minLength: 8)
@@ -665,10 +675,11 @@ struct ReviewGateBar: View {
                         Image(systemName: "square.and.arrow.up")
                         Text("Publish changes")
                     }
-                    .font(.system(size: 14, weight: .medium))
+                    .scaledFont(.system(size: 14, weight: .medium))
                     .foregroundStyle(canPublish ? Theme.textPrimary : Theme.textTertiary)
                     .padding(.horizontal, 22)
-                    .frame(height: 40)
+                    .padding(.vertical, 4)
+                    .frame(minHeight: 40)
                     .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.surfaceRaised.opacity(canPublish ? 1 : 0.5)))
                     .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.border, lineWidth: 1))
                 }
@@ -679,7 +690,7 @@ struct ReviewGateBar: View {
                 .help(canPublish ? "Post the reply or resolve the thread — each with its own preview and approval" : "Apply the patch first")
                 .accessibilityLabel(canPublish ? "Publish changes" : "Publish changes, available after applying the patch")
                 Text(hasDiff ? "Applies patch first. Publishing comes next." : "Each action shows a preview first.")
-                    .font(.system(size: 11.5))
+                    .scaledFont(.system(size: 11.5))
                     .foregroundStyle(Theme.textSecondary)
             }
         }
