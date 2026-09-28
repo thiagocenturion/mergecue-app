@@ -99,6 +99,12 @@ struct InvolvedScopeTests {
         #expect(try await h.database.snapshot(cr) != nil)
         #expect(await coordinator.statuses().first?.state == .ok)
 
+        // A provider rejecting the query itself (Bitbucket: 400 "does not support filtering") is also contained.
+        remote.involvedError = .invalidRequest(#"Field ".participants.user.uuid" does not support filtering"#)
+        await h.advance(90)
+        #expect(try await h.database.snapshot(cr) != nil)
+        #expect(await coordinator.statuses().first?.state == .ok)
+
         // Account-level failures propagate like every other listing.
         remote.involvedError = .unauthorized("expired")
         await h.advance(90, sleepers: 0) // an auth-expired account does not schedule another run

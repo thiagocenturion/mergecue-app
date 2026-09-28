@@ -157,9 +157,16 @@ public enum BitbucketFixtures {
             // Review-requested listing (BBQL per repository).
             Route(method: "GET", pathPattern: "/repositories/{workspace}/{repo}/pullrequests") { _, match in
                 let query = match.query["q"]?.first ?? ""
+                // Like the real API: BBQL rejects filtering on participants.
+                if query.contains("participants") {
+                    return StubTransport.json(
+                        Data(#"{"type":"error","error":{"message":"Invalid request. Field \".participants.user.uuid\" does not support filtering"}}"#.utf8),
+                        status: 400
+                    )
+                }
                 let isReviewerQuery = query.contains("reviewers.uuid") && query.contains(userUUID)
-                // Participants (involved listing): the user takes part in the web PR they review.
-                let isParticipantQuery = query.contains("participants.user.uuid") && query.contains(userUUID)
+                // Involved listing: open PRs with participants, filtered client-side (the web PR has the user).
+                let isParticipantQuery = (match.query["fields"]?.first ?? "").contains("participants")
                 if isReviewerQuery || isParticipantQuery, match["workspace"] == "acme", match["repo"] == "web" {
                     return respond("reviewer_prs_web.json")
                 }

@@ -171,7 +171,8 @@ struct SyncCycle {
     }
 
     /// The involved listing (CRs of others the user reviewed or commented on), when the provider declares it and
-    /// the window is on. A failure specific to this additive listing (not found, forbidden, unsupported, decoding)
+    /// the window is on. A failure specific to this additive listing (not found, forbidden, unsupported, decoding,
+    /// invalid request — e.g. a provider rejecting a query filter)
     /// keeps the stored involved CRs (`notModified`) instead of failing the whole cycle; account-level failures
     /// (auth, rate limit, offline) propagate like the other listings.
     private func involvedListing(repositories: [Repository], now: Date, window: TimeInterval?) async throws -> ChangeRequestPage? {
@@ -182,7 +183,7 @@ struct SyncCycle {
             return try await provider.listChangeRequests(request)
         } catch {
             switch ProviderError.classify(error) {
-            case .notFound?, .forbidden?, .unsupported?, .decoding?: return .unchanged
+            case .notFound?, .forbidden?, .unsupported?, .decoding?, .invalidRequest?, .conflict?: return .unchanged
             default: throw error
             }
         }

@@ -46,10 +46,11 @@ public enum BitbucketIdentifiers {
         "reviewers.uuid=\(bbqlString(normalizedUUID(userUUID) ?? userUUID)) AND state=\"OPEN\""
     }
 
-    /// BBQL for open pull requests the user takes part in (reviewed, approved, commented — Bitbucket's
-    /// `participants`).
-    public static func participantQuery(userUUID: String) -> String {
-        "participants.user.uuid=\(bbqlString(normalizedUUID(userUUID) ?? userUUID)) AND state=\"OPEN\""
+    /// BBQL for the involved scope. Bitbucket rejects filtering on `participants` ("Field
+    /// \".participants.user.uuid\" does not support filtering"), so this only selects open pull requests; the
+    /// caller requests `fields=+values.participants` and filters on the user client-side.
+    public static func participantQuery(userUUID _: String) -> String {
+        "state=\"OPEN\""
     }
 
     /// One encoded path segment (`acme`, `%7B…%7D`).

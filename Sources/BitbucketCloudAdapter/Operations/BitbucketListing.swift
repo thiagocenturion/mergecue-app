@@ -12,7 +12,8 @@ extension BitbucketCloudProvider {
     ///   selected workspaces (bounded by `limits.maxReviewerRepositories`).
     ///
     /// - `.involved`: the same per-repository iteration (same bound) with BBQL
-    ///   `participants.user.uuid="{uuid}" AND state="OPEN"` — pull requests of others the user reviewed, approved
+    ///   `state="OPEN"` + `fields=+values.participants`, filtered client-side to PRs of others where the user is a
+    ///   participant (BBQL rejects filtering on `participants`) — pull requests of others the user reviewed, approved
     ///   or commented on; the user's own pull requests are left to the authored listing.
     ///
     /// `updatedSince` filters client-side on `updated_on`. The result is complete (never `notModified`).
@@ -53,12 +54,19 @@ extension BitbucketCloudProvider {
             for repository in try await reviewerRepositories(query) {
                 guard let path = BitbucketRepoPath(fullName: repository.fullPath) else { continue }
                 directory.remember(repository)
+                var items = [URLQueryItem(name: "q", value: bbql), URLQueryItem(name: "pagelen", value: "50")]
+                // BBQL can't filter on `participants` ("does not support filtering"), so the involved scope lists
+                // open PRs with their participants and filters client-side.
+                if involved { items.append(URLQueryItem(name: "fields", value: "+values.participants")) }
                 let prs: [BBPullRequest] = try await collect(
                     "\(path.apiPath)/pullrequests",
-                    query: [URLQueryItem(name: "q", value: bbql), URLQueryItem(name: "pagelen", value: "50")],
+                    query: items,
                     limit: limits.maxPullRequestsPerListing
                 )
-                try add(involved ? prs.filter { !BitbucketIdentifiers.sameUUID($0.author?.uuid, user.remoteID) } : prs, repository: repository)
+                try add(involved ? prs.filter { pr in
+                    !BitbucketIdentifiers.sameUUID(pr.author?.uuid, user.remoteID)
+                        && (pr.participants ?? []).contains { BitbucketIdentifiers.sameUUID($0.user?.uuid, user.remoteID) }
+                } : prs, repository: repository)
             }
         }
         summaries.sort { ($0.updatedAt, $0.key.id) > ($1.updatedAt, $1.key.id) }
