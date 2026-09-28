@@ -42,7 +42,11 @@ public final class DemoScenario: Sendable {
         var transports: [ProviderKind: DemoScenarioTransport] = [:]
         for kind in ProviderKind.allCases {
             let step = min(max(loaded.steps[kind.rawValue] ?? 0, 0), Self.maxStep)
-            let stub = StubTransport(routes: Self.routes(kind, step: step), baseURL: Self.instance(kind).apiURL)
+            // The demo runs for days: remember every write (providerWrites) but only recent reads (bounded memory).
+            let stub = StubTransport(
+                routes: Self.routes(kind, step: step), baseURL: Self.instance(kind).apiURL,
+                recording: .bounded(keeping: { Self.isWrite($0, kind: kind) }, recent: Self.recentReadsKept)
+            )
             transports[kind] = DemoScenarioTransport(
                 stub: stub,
                 substitutions: Self.substitutions(kind, repository: repository, movedHead: loaded.movedHeads[kind.rawValue])
@@ -134,6 +138,9 @@ public final class DemoScenario: Sendable {
         persist()
         return newHead
     }
+
+    /// Reads remembered per provider transport (writes are always kept).
+    public static let recentReadsKept = 200
 
     /// Every write request (POST/PUT/PATCH/DELETE) the adapters sent for `kind`, in fixture terms.
     public func providerWrites(_ kind: ProviderKind) -> [HTTPRequest] {

@@ -88,7 +88,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "mergecue-demo-host",
-            dependencies: ["MergeCueRuntime", "MergeCueEngine", "MergeCueFixtures", "MergeCueCore", "MergeCueIPC"]
+            dependencies: ["MergeCueRuntime", "MergeCueEngine", "MergeCueFixtures", "MergeCueCore", "MergeCueIPC", "MergeCueSync"]
         ),
         .executableTarget(
             name: "mergecue-snapshots",

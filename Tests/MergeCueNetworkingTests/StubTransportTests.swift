@@ -25,6 +25,29 @@ struct StubTransportTests {
         #expect(json["iid"]?.stringValue == "42")
     }
 
+    @Test func boundedRecordingKeepsWritesAndOnlyRecentReads() async throws {
+        let stub = StubTransport(
+            routes: [echoParams("/projects/{id}"), echoParams("/projects/{id}", method: "POST")], baseURL: NetFixture.gitlabAPI,
+            recording: .bounded(keeping: { $0.method == "POST" }, recent: 3)
+        )
+        _ = try await stub.send(request("https://gitlab.com/api/v4/projects/1", method: "POST"))
+        for id in 2...50 {
+            _ = try await stub.send(request("https://gitlab.com/api/v4/projects/\(id)"))
+        }
+        _ = try await stub.send(request("https://gitlab.com/api/v4/projects/51", method: "POST"))
+        for id in 60...80 {
+            _ = try await stub.send(request("https://gitlab.com/api/v4/nothing/\(id)"))
+        }
+        let recorded = stub.requests
+        #expect(recorded.filter { $0.method == "POST" }.map(\.url.lastPathComponent) == ["1", "51"], "writes are never dropped")
+        #expect(recorded.filter { $0.method == "GET" }.map(\.url.lastPathComponent) == ["78", "79", "80"])
+        #expect(stub.unmatchedRequests.count == 3)
+        // The default still records everything (tests assert on it).
+        let full = StubTransport(routes: [echoParams("/projects/{id}")], baseURL: NetFixture.gitlabAPI)
+        for id in 1...10 { _ = try await full.send(request("https://gitlab.com/api/v4/projects/\(id)")) }
+        #expect(full.requests.count == 10)
+    }
+
     @Test func patternsMayIncludeTheAPIPrefix() async throws {
         let stub = StubTransport(routes: [echoParams("/api/v4/projects/{id}")], baseURL: NetFixture.gitlabAPI)
         let response = try await stub.send(request("https://gitlab.com/api/v4/projects/7"))

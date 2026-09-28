@@ -17,6 +17,7 @@ import MergeCueCore
 import MergeCueEngine
 import MergeCueFixtures
 import MergeCueRuntime
+import MergeCueSync
 
 func log(_ message: String) {
     MCLog.writeToStandardError(message, category: "mergecue-demo-host")
@@ -29,7 +30,7 @@ func fail(_ message: String) -> Never {
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 if arguments.contains("--help") || arguments.contains("-h") {
-    print("Usage: MERGECUE_HOME=<dir> mergecue-demo-host [--prepare-task] [--lease-seconds N]")
+    print("Usage: MERGECUE_HOME=<dir> mergecue-demo-host [--prepare-task] [--lease-seconds N] [--sync-interval N] [--refresh-every N]")
     exit(0)
 }
 let environment = ProcessInfo.processInfo.environment
@@ -42,12 +43,28 @@ if let index = arguments.firstIndex(of: "--lease-seconds"), index + 1 < argument
     leaseSeconds = value
 }
 
+// Profiling (scripts/profile-demo-host.sh): --sync-interval N polls every account every N seconds and re-hydrates
+// every change request each cycle (the live cadence is 45–300 s); --refresh-every N also runs a manual refresh
+// (which advances the demo scenario) every N seconds.
+func numberArgument(_ name: String) -> TimeInterval? {
+    guard let index = arguments.firstIndex(of: name), index + 1 < arguments.count else { return nil }
+    return TimeInterval(arguments[index + 1])
+}
+var syncConfiguration: SyncConfiguration?
+if let interval = numberArgument("--sync-interval"), interval > 0 {
+    syncConfiguration = SyncConfiguration(
+        defaultInterval: interval, hotInterval: interval, idleInterval: interval, idleHours: nil,
+        jitterFraction: 0, fullRefreshInterval: 0
+    )
+}
+let refreshEvery = numberArgument("--refresh-every")
+
 let paths = MergeCuePaths(environment: environment)
 let runtime: MergeCueRuntime
 do {
     runtime = try await MergeCueRuntime.makeDemo(
         paths: paths, appVersion: "demo-host",
-        options: RuntimeOptions(leaseDuration: leaseSeconds, mappingSearchRoots: [])
+        options: RuntimeOptions(syncConfiguration: syncConfiguration, leaseDuration: leaseSeconds, mappingSearchRoots: [])
     )
     try await runtime.start()
 } catch {
@@ -184,6 +201,13 @@ nonisolated func installSignalHandlers() -> (AsyncStream<Int32>, [DispatchSource
 let (signals, signalSources) = installSignalHandlers()
 
 let hostedTaskID = taskID
+let refresher = Task {
+    guard let refreshEvery, refreshEvery > 0 else { return }
+    while !Task.isCancelled {
+        try? await Task.sleep(for: .seconds(refreshEvery))
+        await runtime.refresh()
+    }
+}
 let ticker = Task {
     while !Task.isCancelled {
         writeJSON(await snapshot(taskID: hostedTaskID, full: false), to: "host-state.json")
@@ -196,6 +220,7 @@ for await received in signals {
     break
 }
 ticker.cancel()
+refresher.cancel()
 writeJSON(await snapshot(taskID: hostedTaskID, full: true), to: "host-final.json")
 await runtime.stop()
 signalSources.forEach { $0.cancel() }

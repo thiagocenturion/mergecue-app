@@ -114,18 +114,42 @@ public final class StubTransport: HTTPTransport {
         }
     }
 
+    /// Which requests are remembered. Tests keep everything; a long-running demo keeps every request matching
+    /// `keepAll` (e.g. writes) and only the most recent `recentLimit` of the others, so memory stays bounded.
+    public struct RecordingPolicy: Sendable {
+        public var keepAll: @Sendable (HTTPRequest) -> Bool
+        public var recentLimit: Int?
+
+        public init(keepAll: @escaping @Sendable (HTTPRequest) -> Bool, recentLimit: Int?) {
+            self.keepAll = keepAll
+            self.recentLimit = recentLimit
+        }
+
+        /// Record every request (the default).
+        public static let everything = RecordingPolicy(keepAll: { _ in true }, recentLimit: nil)
+
+        /// Keep every request matching `keep`, and the latest `recent` of the others.
+        public static func bounded(keeping keep: @escaping @Sendable (HTTPRequest) -> Bool, recent: Int) -> RecordingPolicy {
+            RecordingPolicy(keepAll: keep, recentLimit: max(0, recent))
+        }
+    }
+
     private struct State {
         var routes: [Route]
         var requests: [HTTPRequest] = []
         var unmatched: [HTTPRequest] = []
+        /// How many of `requests` are "other" (not `keepAll`) requests, for the bounded policy.
+        var recentCount = 0
     }
 
     /// Base URL routes are relative to (typically the provider's `apiURL`).
     public let baseURL: URL
+    public let recording: RecordingPolicy
     private let state: Mutex<State>
 
-    public init(routes: [Route] = [], baseURL: URL) {
+    public init(routes: [Route] = [], baseURL: URL, recording: RecordingPolicy = .everything) {
         self.baseURL = baseURL
+        self.recording = recording
         self.state = Mutex(State(routes: routes))
     }
 
@@ -169,6 +193,7 @@ public final class StubTransport: HTTPTransport {
         state.withLock {
             $0.requests.removeAll()
             $0.unmatched.removeAll()
+            $0.recentCount = 0
         }
     }
 
@@ -176,10 +201,14 @@ public final class StubTransport: HTTPTransport {
 
     public func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         if Task.isCancelled { throw URLError(.cancelled) }
+        let recording = recording
         let found = state.withLock { state -> (Route, Match)? in
-            state.requests.append(request)
+            Self.record(request, in: &state, policy: recording)
             guard let found = Self.bestMatch(for: request, in: state.routes, baseURL: baseURL) else {
                 state.unmatched.append(request)
+                if let limit = recording.recentLimit, state.unmatched.count > limit {
+                    state.unmatched.removeFirst(state.unmatched.count - limit)
+                }
                 return nil
             }
             return found
@@ -193,6 +222,18 @@ public final class StubTransport: HTTPTransport {
             response.url = request.url
         }
         return response
+    }
+
+    private static func record(_ request: HTTPRequest, in state: inout State, policy: RecordingPolicy) {
+        state.requests.append(request)
+        guard let limit = policy.recentLimit, !policy.keepAll(request) else { return }
+        state.recentCount += 1
+        guard state.recentCount > limit else { return }
+        // Drop the oldest "other" request (writes and other kept requests stay).
+        if let index = state.requests.firstIndex(where: { !policy.keepAll($0) }) {
+            state.requests.remove(at: index)
+            state.recentCount -= 1
+        }
     }
 
     private static func bestMatch(for request: HTTPRequest, in routes: [Route], baseURL: URL) -> (Route, Match)? {
