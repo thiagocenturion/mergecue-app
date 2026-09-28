@@ -163,7 +163,7 @@ extension GitWorkspaceInspector {
         }
         let indexEnvironment = ["GIT_INDEX_FILE": temporaryIndex]
 
-        try await checked(["add", "--intent-to-add", "--", "."], index: indexEnvironment)
+        _ = try await checked(["add", "--intent-to-add", "--", "."], index: indexEnvironment)
 
         let diffOptions = [
             "--no-color", "--no-ext-diff", "--no-textconv", "--find-renames", "--no-relative",
