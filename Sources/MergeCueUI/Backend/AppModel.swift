@@ -11,7 +11,7 @@ public nonisolated enum MainScreen: String, Sendable, Hashable, CaseIterable, Id
     public var title: String {
         switch self {
         case .inbox: "Inbox"
-        case .changeRequests: "PRs & MRs"
+        case .changeRequests: "Pull requests"
         case .tasks: "Tasks"
         case .rules: "Rules"
         case .settings: "Settings"
@@ -20,10 +20,10 @@ public nonisolated enum MainScreen: String, Sendable, Hashable, CaseIterable, Id
 
     public var symbol: String {
         switch self {
-        case .inbox: "tray.full"
+        case .inbox: "tray"
         case .changeRequests: "arrow.triangle.pull"
-        case .tasks: "checklist"
-        case .rules: "wand.and.rays"
+        case .tasks: "checklist.checked"
+        case .rules: "wand.and.stars"
         case .settings: "gearshape"
         }
     }
@@ -38,6 +38,22 @@ public nonisolated enum MainScreen: String, Sendable, Hashable, CaseIterable, Id
         case .settings: "5"
         }
     }
+}
+
+/// Tabs of the change request panel (Conversation / Files / Checks / Timeline).
+public nonisolated enum ChangeRequestTab: String, Sendable, Hashable, CaseIterable, Identifiable {
+    case conversation, files, checks, timeline
+
+    public var id: String { rawValue }
+    public var title: String { rawValue.prefix(1).uppercased() + rawValue.dropFirst() }
+}
+
+/// Tabs of the result review (Changes / Tests / Reply).
+public nonisolated enum ReviewTab: String, Sendable, Hashable, CaseIterable, Identifiable {
+    case changes, tests, reply
+
+    public var id: String { rawValue }
+    public var title: String { rawValue.prefix(1).uppercased() + rawValue.dropFirst() }
 }
 
 public nonisolated enum SettingsTab: String, Sendable, Hashable, CaseIterable, Identifiable {
@@ -95,14 +111,17 @@ public struct AppEnvironment {
     public var autoDismissBanners: Bool
     /// How often relative times refresh; nil disables the ticker.
     public var tickInterval: Duration?
+    /// The Mac user's full name for the greeting (`NSFullUserName()`); nil falls back to the account display name.
+    public var userFullName: String?
 
     public init(now: @escaping () -> Date, copyToPasteboard: @escaping (String) -> Void, openURL: @escaping (URL) -> Void,
-                autoDismissBanners: Bool, tickInterval: Duration?) {
+                autoDismissBanners: Bool, tickInterval: Duration?, userFullName: String? = nil) {
         self.now = now
         self.copyToPasteboard = copyToPasteboard
         self.openURL = openURL
         self.autoDismissBanners = autoDismissBanners
         self.tickInterval = tickInterval
+        self.userFullName = userFullName
     }
 
     /// Real clock, the general pasteboard and the default browser.
@@ -115,13 +134,15 @@ public struct AppEnvironment {
             },
             openURL: { url in NSWorkspace.shared.open(url) },
             autoDismissBanners: true,
-            tickInterval: .seconds(30)
+            tickInterval: .seconds(30),
+            userFullName: NSFullUserName()
         )
     }
 
     /// Frozen clock, no side effects (tests, snapshots).
-    public static func fixed(now: Date, copied: ((String) -> Void)? = nil) -> AppEnvironment {
-        AppEnvironment(now: { now }, copyToPasteboard: copied ?? { _ in }, openURL: { _ in }, autoDismissBanners: false, tickInterval: nil)
+    public static func fixed(now: Date, copied: ((String) -> Void)? = nil, userFullName: String? = nil) -> AppEnvironment {
+        AppEnvironment(now: { now }, copyToPasteboard: copied ?? { _ in }, openURL: { _ in }, autoDismissBanners: false, tickInterval: nil,
+                       userFullName: userFullName)
     }
 }
 
@@ -165,6 +186,16 @@ public final class AppModel {
     /// Presented as the connect-account sheet.
     public var connectSheetKind: ProviderKind?
     public var showCountInMenuBar = true
+    /// Agent picked in the handoff screen and the "Fix with AI" menu.
+    public var selectedAgentKind: AgentKind?
+    /// Tab of the change request panel next to the inbox list.
+    public var changeRequestTab: ChangeRequestTab = .conversation
+    /// Tab of the result review (Changes / Tests / Reply).
+    public var reviewTab: ReviewTab = .changes
+    /// File selected in the result review's diff.
+    public var reviewSelectedFile: String?
+    /// Collapsed popover sections.
+    public var collapsedPopoverSections: Set<PopoverSection> = []
 
     // MARK: Hooks installed by the app shell
     @ObservationIgnored public var openMainWindowHandler: (() -> Void)?
@@ -305,6 +336,12 @@ public final class AppModel {
         logExcerpts[checkID] = excerpt
     }
 
+    /// Copies user-visible text (redacted) and confirms with a banner.
+    public func copyToPasteboard(_ text: String, confirmation: String = "Copied to the clipboard") {
+        environment.copyToPasteboard(SecretRedactor.redact(text))
+        showBanner(.success, confirmation)
+    }
+
     public func showBanner(_ tone: Tone, _ message: String) {
         let banner = Banner(tone: tone, message: message)
         banners.append(banner)
@@ -358,9 +395,21 @@ public final class AppModel {
         state.mappings.first { $0.repo == repo }
     }
 
-    /// The agent used for "Open in …" and handoff commands: a verified one first.
+    /// The agent used for "Open in …" and handoff commands: the one picked by the user, else a verified one first.
     public var preferredAgent: DetectedAgent? {
-        state.agents.first { $0.mcpRegistration.isVerified } ?? state.agents.first
+        if let kind = selectedAgentKind, let agent = state.agents.first(where: { $0.kind == kind }) { return agent }
+        return state.agents.first { $0.mcpRegistration.isVerified } ?? state.agents.first
+    }
+
+    /// The agent kind shown as selected in pickers (even when that agent is not installed).
+    public var effectiveAgentKind: AgentKind {
+        selectedAgentKind ?? preferredAgent?.kind ?? .claudeCode
+    }
+
+    /// First name for the greeting: the Mac user's name, else the first account's display name.
+    public var userFirstName: String? {
+        Presentation.firstName(environment.userFullName)
+            ?? state.accounts.lazy.compactMap { Presentation.firstName($0.account.displayName) }.first
     }
 
     // MARK: Menu bar
@@ -392,7 +441,7 @@ public final class AppModel {
 
     /// Rows visible in the popover (top 3 per section), in keyboard order.
     public var popoverRows: [PopoverItem] {
-        PopoverSection.allCases.flatMap { sections.items($0).prefix(Self.popoverRowLimit) }
+        PopoverSection.allCases.filter { !collapsedPopoverSections.contains($0) }.flatMap { sections.items($0).prefix(Self.popoverRowLimit) }
     }
 
     public static let popoverRowLimit = 3

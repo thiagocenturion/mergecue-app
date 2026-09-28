@@ -1,9 +1,11 @@
+import AppKit
 import MergeCueCore
 import SwiftUI
 
 /// Renders an untrusted comment body: inline Markdown (no links), fenced code and ```suggestion blocks.
 struct CommentBody: View {
     var text: String
+    var font: Font = .system(size: 13.5)
 
     private struct Segment: Identifiable {
         var id: Int
@@ -51,25 +53,28 @@ struct CommentBody: View {
                     VStack(alignment: .leading, spacing: 0) {
                         if segment.language == "suggestion" {
                             Label("Suggested change", systemImage: "chevron.left.forwardslash.chevron.right")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(Theme.accent)
+                                .font(.system(size: 11.5, weight: .semibold))
+                                .foregroundStyle(Theme.violet)
                                 .padding(.horizontal, 10)
-                                .padding(.top, 6)
+                                .padding(.top, 7)
                         }
                         ScrollView(.horizontal) {
                             Text(segment.text.replacingOccurrences(of: "\t", with: "    "))
-                                .font(.system(.callout, design: .monospaced))
+                                .font(Theme.mono)
+                                .foregroundStyle(Theme.textPrimary)
                                 .fixedSize(horizontal: true, vertical: false)
                                 .textSelection(.enabled)
                                 .padding(10)
                         }
                     }
-                    .background(segment.language == "suggestion" ? Theme.mint.opacity(0.10) : Color(nsColor: .textBackgroundColor))
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Color(nsColor: .separatorColor)))
+                    .background(segment.language == "suggestion" ? Theme.mint.opacity(0.08) : Theme.surfaceSunken)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Theme.border))
                 } else {
                     Text(Self.inlineMarkdown(segment.text))
-                        .font(.body)
+                        .font(font)
+                        .foregroundStyle(Theme.textPrimary.opacity(0.92))
+                        .lineSpacing(3)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
@@ -85,14 +90,14 @@ struct CommentBody: View {
             attributed[run.range].link = nil
         }
         for run in attributed.runs where run.inlinePresentationIntent?.contains(.code) == true {
-            attributed[run.range].font = .system(.body, design: .monospaced)
-            attributed[run.range].backgroundColor = Color(nsColor: .quaternaryLabelColor).opacity(0.35)
+            attributed[run.range].font = .system(size: 12.5, design: .monospaced)
+            attributed[run.range].backgroundColor = Theme.surfaceRaised
         }
         return attributed
     }
 }
 
-/// A review thread: anchor (file/line + diff hunk, outdated marker) and the full reply chain in time order.
+/// A review thread: root comment, the code it points at, then every reply in time order.
 struct ThreadView: View {
     var thread: ReviewThread
     var providerKind: ProviderKind
@@ -100,20 +105,21 @@ struct ThreadView: View {
     var unreadSince: Date?
     var currentUserID: String?
     var now: Date
+    /// Reviewer / author roles for the chips.
+    var reviewers: Set<String> = []
+    var authorID: String?
+    var checkoutPath: String?
     var onOpen: ((URL) -> Void)?
+    var showsHeader = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            header
-            if let anchor = thread.anchor, let hunk = anchor.diffHunk {
-                DiffView(diff: hunk, defaultPath: anchor.path, showFileHeaders: false)
-                    .opacity(anchor.isOutdated ? 0.75 : 1)
-            }
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(thread.comments.enumerated()), id: \.element.id) { index, comment in
-                    if index > 0 { Divider().padding(.leading, 34) }
-                    CommentRow(comment: comment, isReply: index > 0, isNew: isNew(comment), now: now)
-                        .padding(.vertical, 10)
+            if showsHeader { header }
+            ForEach(Array(thread.comments.enumerated()), id: \.element.id) { index, comment in
+                CommentCard(comment: comment, role: role(of: comment), isNew: isNew(comment), now: now,
+                            providerKind: providerKind, onOpen: onOpen)
+                if index == 0, let anchor = thread.anchor, anchor.diffHunk != nil {
+                    CodeContextCard(anchor: anchor, checkoutPath: checkoutPath, onOpen: onOpen)
                 }
             }
         }
@@ -123,10 +129,11 @@ struct ThreadView: View {
         HStack(spacing: 8) {
             if let anchor = thread.anchor {
                 Image(systemName: "doc.text")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .accessibilityHidden(true)
                 Text(anchor.path + (anchor.line.map { ":\($0)" } ?? ""))
-                    .font(.callout.monospaced().weight(.medium))
+                    .font(.system(size: 12.5, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Theme.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.head)
                     .textSelection(.enabled)
@@ -136,24 +143,21 @@ struct ThreadView: View {
                 }
             } else {
                 Label(thread.key.kind == .reviewSummary ? "Review summary" : "Conversation", systemImage: "bubble.left.and.bubble.right")
-                    .font(.callout.weight(.medium))
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(Theme.textSecondary)
             }
             Spacer(minLength: 8)
             if let resolved = thread.isResolved {
                 Chip(text: resolved ? "Resolved" : "Unresolved", symbol: resolved ? "checkmark.circle" : "circle.dashed",
                      tone: resolved ? .success : .neutral)
             }
-            if let url = thread.webURL, let onOpen {
-                Button {
-                    onOpen(url)
-                } label: {
-                    Image(systemName: "arrow.up.right.square")
-                }
-                .buttonStyle(.borderless)
-                .help("Open in \(providerKind.displayName)")
-                .accessibilityLabel("Open thread in \(providerKind.displayName)")
-            }
         }
+    }
+
+    private func role(of comment: ReviewComment) -> String? {
+        if comment.author.remoteID == authorID { return "Author" }
+        if reviewers.contains(comment.author.remoteID) { return "Reviewer" }
+        return nil
     }
 
     private func isNew(_ comment: ReviewComment) -> Bool {
@@ -162,48 +166,225 @@ struct ThreadView: View {
     }
 }
 
-private struct CommentRow: View {
+/// One comment: initial avatar, name, relative time, role chip, ••• menu and the (untrusted) body.
+struct CommentCard: View {
     var comment: ReviewComment
-    var isReply: Bool
-    var isNew: Bool
+    var role: String?
+    var isNew = false
     var now: Date
+    var providerKind: ProviderKind
+    var onOpen: ((URL) -> Void)?
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Avatar(name: comment.author.displayLabel, size: 24)
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Text(comment.author.displayLabel)
-                        .font(.callout.weight(.semibold))
-                    Text("@" + comment.author.username)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    if comment.author.isBot { Chip(text: "Bot") }
-                    switch comment.kind {
-                    case .question: Chip(text: "Question", symbol: "questionmark", tone: .attention)
-                    case .suggestion: Chip(text: "Suggestion", symbol: "chevron.left.forwardslash.chevron.right", tone: .progress)
-                    case .comment, .system: EmptyView()
-                    }
-                    Spacer(minLength: 6)
-                    if isNew {
-                        Chip(text: "New", symbol: "circle.fill", tone: .progress)
-                            .accessibilityLabel("Unread")
-                    }
-                    Text(UIFormat.relative(from: comment.createdAt, now: now))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .help(UIFormat.dateTime(comment.createdAt))
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Avatar(name: comment.author.displayLabel, size: 34)
+                Text(comment.author.displayName.flatMap(Presentation.firstName) ?? comment.author.username)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                    .help("@\(comment.author.username)")
+                Text(UIFormat.relative(from: comment.createdAt, now: now))
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Theme.textSecondary)
+                    .help(UIFormat.dateTime(comment.createdAt))
+                if comment.author.isBot { Chip(text: "Bot") }
+                switch comment.kind {
+                case .question: Chip(text: "Question", symbol: "questionmark", tone: .progress)
+                case .suggestion: Chip(text: "Suggestion", symbol: "chevron.left.forwardslash.chevron.right", tone: .progress)
+                case .comment, .system: EmptyView()
                 }
-                CommentBody(text: comment.body)
+                Spacer(minLength: 6)
+                if isNew {
+                    Chip(text: "New", symbol: "circle.fill", tone: .progress)
+                        .accessibilityLabel("Unread")
+                }
+                if let role {
+                    Text(role)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Theme.textSecondary)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 3.5)
+                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Theme.surfaceRaised))
+                        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Theme.borderStrong, lineWidth: 1))
+                }
+                Menu {
+                    Button("Copy Text") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(SecretRedactor.redact(comment.body), forType: .string)
+                    }
+                    if let url = comment.webURL, let onOpen {
+                        Button("Open in \(providerKind.displayName)") { onOpen(url) }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                        .frame(width: 26, height: 22)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .accessibilityLabel("Comment actions")
             }
+            CommentBody(text: comment.body)
+                .padding(.leading, 46)
         }
-        .padding(.leading, isReply ? 0 : 0)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardBackground(Theme.surface)
         .overlay(alignment: .leading) {
             if isNew {
-                Rectangle().fill(Theme.accent).frame(width: 2).offset(x: -8)
+                RoundedRectangle(cornerRadius: 1.5).fill(Theme.accent).frame(width: 3).padding(.vertical, 12)
             }
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// The code a comment points at: file name, line, "Open in editor", numbered lines with − / + rows.
+struct CodeContextCard: View {
+    var anchor: DiffAnchor
+    var checkoutPath: String?
+    var onOpen: ((URL) -> Void)?
+
+    var body: some View {
+        let file = DiffParser.parse(anchor.diffHunk ?? "", defaultPath: anchor.path).first
+        let lines = file?.lines.filter { $0.kind != .hunk && $0.kind != .meta } ?? []
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "doc")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.textSecondary)
+                    .accessibilityHidden(true)
+                Text(anchor.path.split(separator: "/").last.map(String.init) ?? anchor.path)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                    .help(anchor.path)
+                if anchor.isOutdated {
+                    Chip(text: "Outdated", symbol: "clock.arrow.circlepath", tone: .attention)
+                }
+                Spacer(minLength: 8)
+                if let line = anchor.line {
+                    Text("Line \(line)")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                Button {
+                    if let url = editorURL { onOpen?(url) }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("Open in editor")
+                        Image(systemName: "arrow.up.right.square").font(.system(size: 11))
+                    }
+                }
+                .buttonStyle(SecondaryButtonStyle(size: .small))
+                .disabled(editorURL == nil)
+                .help(editorURL == nil ? "Map a local checkout to open this file" : "Open \(anchor.path) from your mapped checkout")
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            ThemeDivider()
+            ScrollView(.horizontal) {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(lines) { line in
+                        CodeLineRow(line: line, isAnchor: isAnchor(line))
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+            .scrollIndicators(.never)
+        }
+        .cardBackground(Theme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Code context, \(anchor.path)\(anchor.line.map { " line \($0)" } ?? "")")
+    }
+
+    private var editorURL: URL? {
+        guard let checkoutPath else { return nil }
+        let expanded = (checkoutPath as NSString).expandingTildeInPath
+        return URL(filePath: expanded).appending(path: anchor.path)
+    }
+
+    private func isAnchor(_ line: DiffLine) -> Bool {
+        guard let target = anchor.line else { return false }
+        switch line.kind {
+        case .added: return line.newNumber == target
+        case .removed: return line.oldNumber == target
+        default: return false
+        }
+    }
+}
+
+/// A numbered code row with − / + markers and red / green backgrounds.
+struct CodeLineRow: View {
+    var line: DiffLine
+    var isAnchor = false
+    var numberWidth: CGFloat = 46
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Text((line.kind == .removed ? line.oldNumber : line.newNumber).map(String.init) ?? "")
+                .font(.system(size: 11.5, weight: isAnchor ? .semibold : .regular, design: .monospaced))
+                .foregroundStyle(isAnchor ? Theme.textPrimary : Theme.textTertiary)
+                .frame(width: numberWidth, alignment: .trailing)
+                .padding(.trailing, 14)
+            Text(marker)
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundStyle(markerColor)
+                .frame(width: 18, alignment: .leading)
+            Text(line.text.isEmpty ? " " : line.text)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(textColor)
+                .fixedSize(horizontal: true, vertical: false)
+                .textSelection(.enabled)
+            Spacer(minLength: 16)
+        }
+        .frame(minHeight: 22)
+        .background(background)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    private var marker: String {
+        switch line.kind {
+        case .added: "+"
+        case .removed: "-"
+        default: ""
+        }
+    }
+
+    private var markerColor: Color {
+        switch line.kind {
+        case .added: Theme.diffAddedText
+        case .removed: Theme.diffRemovedText
+        default: Theme.textTertiary
+        }
+    }
+
+    private var textColor: Color {
+        switch line.kind {
+        case .added, .removed: Theme.textPrimary
+        case .hunk, .meta: Theme.textSecondary
+        case .context: Theme.textPrimary.opacity(0.82)
+        }
+    }
+
+    private var background: Color {
+        switch line.kind {
+        case .added: Theme.diffAddedBackground
+        case .removed: Theme.diffRemovedBackground
+        default: .clear
+        }
+    }
+
+    private var accessibilityText: String {
+        switch line.kind {
+        case .added: "Added line \(line.newNumber ?? 0): \(line.text)"
+        case .removed: "Removed line \(line.oldNumber ?? 0): \(line.text)"
+        case .hunk: "Hunk \(line.text)"
+        default: "Line \(line.newNumber ?? 0): \(line.text)"
+        }
     }
 }
 
@@ -216,31 +397,29 @@ struct UntrustedQuote: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "quote.opening")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .accessibilityHidden(true)
                 Text(provenance)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(Theme.textSecondary)
                 Spacer()
                 Text("Untrusted — shown as data")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Theme.textTertiary)
             }
             if quote.source == UntrustedText.Source.ciLog {
                 Text(quote.text)
-                    .font(.system(.caption, design: .monospaced))
+                    .font(Theme.monoSmall)
+                    .foregroundStyle(Theme.textPrimary)
                     .lineLimit(12)
                     .textSelection(.enabled)
             } else {
                 CommentBody(text: quote.text)
             }
         }
-        .padding(10)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: Theme.cornerRadius).fill(Color(nsColor: .textBackgroundColor)))
-        .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 1.5).fill(Color.secondary.opacity(0.35)).frame(width: 3).padding(.vertical, 6)
-        }
+        .cardBackground(Theme.surfaceSunken, radius: 10)
     }
 
     private var provenance: String {

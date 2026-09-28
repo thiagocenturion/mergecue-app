@@ -10,13 +10,15 @@ struct StatusMenuActions {
     var quit: () -> Void
 }
 
-/// Owns the `NSStatusItem` (template glyph + compact "Needs you" count) and the click-opened `NSPopover`.
+/// Owns the `NSStatusItem` (appearance-aware MergeCue glyph + compact "Needs you" count) and the click-opened `NSPopover`.
 /// Left click toggles the popover; right-click or control-click shows the menu.
 final class StatusItemController: NSObject, NSPopoverDelegate {
     private let model: AppModel
     private let actions: StatusMenuActions
     private let statusItem: NSStatusItem
     private let popover = NSPopover()
+    private var currentIconShowsDot = false
+    private var appearanceObservation: NSKeyValueObservation?
 
     init(model: AppModel, actions: StatusMenuActions) {
         self.model = model
@@ -38,6 +40,11 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
             button.imageHugsTitle = true
         }
         statusItem.autosaveName = "MergeCueStatusItem"
+        if #available(macOS 14.0, *) { popover.hasFullSizeContent = true }
+        // The icon is not a template: redraw it when the menu bar switches between light and dark.
+        appearanceObservation = statusItem.button?.observe(\.effectiveAppearance, options: [.new]) { button, _ in
+            Task { @MainActor in button.needsDisplay = true }
+        }
         observeModel()
     }
 
@@ -54,8 +61,11 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     private func updateButton() {
         guard let button = statusItem.button else { return }
         let count = model.needsYouCount
-        let urgent = model.sections.hasUrgent
-        button.image = MenuBarIcon.image(alert: urgent)
+        let showsDot = count > 0 || model.sections.count(.ready) > 0
+        if showsDot != currentIconShowsDot || button.image == nil {
+            button.image = MenuBarIcon.image(showsDot: showsDot)
+            currentIconShowsDot = showsDot
+        }
         if count > 0 && model.showCountInMenuBar {
             button.attributedTitle = NSAttributedString(string: "\(count)", attributes: [
                 .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize - 1, weight: .medium),
@@ -166,38 +176,46 @@ final class MenuActionTarget: NSObject {
     @objc func run() { handler() }
 }
 
-/// Menu bar glyphs: the template images shipped in MergeCueUI's resources (`MenuBarIcon`, `MenuBarIconAlert`), or an
-/// SF Symbol fallback while those assets are missing.
-enum MenuBarIcon {
-    static func image(alert: Bool) -> NSImage {
-        let name = alert ? "MenuBarIconAlert" : "MenuBarIcon"
-        if let image = Bundle.module.image(forResource: name) ?? (alert ? Bundle.module.image(forResource: "MenuBarIcon") : nil) {
-            image.isTemplate = true
-            image.size = NSSize(width: 18, height: 18)
-            image.accessibilityDescription = "MergeCue"
-            return image
-        }
-        return fallback(alert: alert)
-    }
+/// Menu bar icon: the owner's glyphs in `Resources/` (`MenuBar-light*` for a dark menu bar, `MenuBar-dark*` for a
+/// light one; `-dot` variants carry the mint signal dot). They are coloured, so not template images: one dynamic
+/// `NSImage` picks the variant from the appearance it is drawn in (the status button's effective appearance), and
+/// is redrawn whenever that appearance changes.
+public enum MenuBarIcon {
+    public static let pointSize = NSSize(width: 18, height: 18)
 
-    private static func fallback(alert: Bool) -> NSImage {
-        let configuration = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
-        let symbol = NSImage(systemSymbolName: "arrow.triangle.pull", accessibilityDescription: "MergeCue")?
-            .withSymbolConfiguration(configuration) ?? NSImage()
-        guard alert else {
-            symbol.isTemplate = true
-            return symbol
-        }
-        // Same glyph with a small dot, still a template image (no color in the menu bar).
-        let size = NSSize(width: max(symbol.size.width, 16) + 3, height: max(symbol.size.height, 16))
-        let badged = NSImage(size: size, flipped: false) { rect in
-            symbol.draw(in: NSRect(x: 0, y: (rect.height - symbol.size.height) / 2, width: symbol.size.width, height: symbol.size.height))
-            NSColor.black.setFill()
-            NSBezierPath(ovalIn: NSRect(x: rect.width - 6.5, y: rect.height - 6.5, width: 6.5, height: 6.5)).fill()
+    /// - Parameter showsDot: true when anything needs the user or is ready for review.
+    public static func image(showsDot: Bool) -> NSImage {
+        let suffix = showsDot ? "-dot" : ""
+        let forDarkBar = load("MenuBar-light" + suffix)
+        let forLightBar = load("MenuBar-dark" + suffix)
+        guard forDarkBar != nil || forLightBar != nil else { return fallback(showsDot: showsDot) }
+        let image = NSImage(size: pointSize, flipped: false) { rect in
+            let variant = isDark(NSAppearance.currentDrawing()) ? (forDarkBar ?? forLightBar) : (forLightBar ?? forDarkBar)
+            variant?.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
             return true
         }
-        badged.isTemplate = true
-        badged.accessibilityDescription = "MergeCue, urgent items"
-        return badged
+        image.isTemplate = false
+        image.cacheMode = .never
+        image.accessibilityDescription = showsDot ? "MergeCue, items need you or are ready" : "MergeCue"
+        return image
+    }
+
+    /// Whether `appearance` is a dark (menu bar) appearance.
+    public static func isDark(_ appearance: NSAppearance) -> Bool {
+        appearance.bestMatch(from: [.darkAqua, .aqua, .vibrantDark, .vibrantLight]).map { $0 == .darkAqua || $0 == .vibrantDark } ?? false
+    }
+
+    private static func load(_ name: String) -> NSImage? {
+        guard let image = Bundle.module.image(forResource: name) else { return nil }
+        image.size = pointSize
+        return image
+    }
+
+    private static func fallback(showsDot: Bool) -> NSImage {
+        let configuration = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+        let symbol = NSImage(systemSymbolName: showsDot ? "arrow.triangle.pull" : "arrow.triangle.pull", accessibilityDescription: "MergeCue")?
+            .withSymbolConfiguration(configuration) ?? NSImage()
+        symbol.isTemplate = true
+        return symbol
     }
 }

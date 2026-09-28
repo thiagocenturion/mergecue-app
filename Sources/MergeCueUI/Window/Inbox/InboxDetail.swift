@@ -1,189 +1,66 @@
 import MergeCueCore
 import SwiftUI
 
-/// Detail of an attention item: heading, actions, linked task, full thread conversation (file/line + diff hunk,
-/// unread markers) or failing check with its CI excerpt.
+/// Right column of the Inbox: the change request panel focused on the selected item.
 struct InboxDetail: View {
     let model: AppModel
 
     var body: some View {
-        if let item = model.attentionItem(model.selectedAttentionID) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    AttentionHeader(model: model, item: item)
-                    AttentionActionBar(model: model, item: item)
-                    if let task = model.activeTask(for: item) ?? model.task(item.linkedTaskID) {
-                        LinkedTaskCard(model: model, record: task)
-                    }
-                    content(for: item)
-                }
-                .padding(20)
-                .frame(maxWidth: 860, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .background(Color(nsColor: .windowBackgroundColor))
-            .id(item.id)
-        } else {
-            NothingSelected(title: "Select an item", symbol: "tray", message: "Pick an item to see its conversation, checks and actions.")
-        }
-    }
-
-    @ViewBuilder
-    private func content(for item: AttentionItem) -> some View {
-        let snapshot = model.snapshot(item.changeRequest)
-        if let threadKey = item.thread, let thread = snapshot?.thread(threadKey) {
-            Card(thread.comments.count == 1 ? "Comment" : "Conversation · \(thread.comments.count) comments", systemImage: "bubble.left.and.bubble.right") {
-                ThreadView(thread: thread, providerKind: item.providerKind,
-                           unreadSince: item.isUnread ? item.createdAt : nil,
-                           currentUserID: item.account.remoteUserID, now: model.now) { url in
-                    Task { await model.send(.openURL(url)) }
-                }
+        Group {
+            if let item = model.attentionItem(model.selectedAttentionID) {
+                ChangeRequestPanel(model: model, changeRequest: item.changeRequest, focus: item)
+                    .id(item.id)
+            } else {
+                NothingSelected(title: "Select an item", symbol: "tray",
+                                message: "Pick an item to see its conversation, code context, checks and actions.")
+                    .cardBackground(Theme.panel, radius: 16)
             }
         }
-        if let checkKey = item.check, let check = snapshot?.check(checkKey) {
-            Card("Check", systemImage: "checklist") {
-                CheckDetail(model: model, check: check)
-            }
-        }
-        if let snapshot {
-            ChangeRequestSummaryCard(model: model, snapshot: snapshot)
-        }
+        .padding(.top, MainWindowMetrics.contentTopInset - 6)
+        .padding(.bottom, 14)
+        .padding(.trailing, 14)
     }
 }
 
-struct AttentionHeader: View {
-    let model: AppModel
-    let item: AttentionItem
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ChangeRequestRefLabel(kind: item.providerKind, repoFullPath: item.repoFullPath, number: item.number, font: .callout, glyphSize: 16)
-            Text(item.title)
-                .font(.title2.weight(.semibold))
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-            HStack(spacing: 6) {
-                Chip(text: item.reason.displayName, symbol: item.reason.symbolName, tone: item.reason.tone)
-                if item.priority >= .high {
-                    Chip(text: item.priority == .urgent ? "Urgent" : "High priority", symbol: "flag.fill", tone: .critical)
-                }
-                if item.isUnread { Chip(text: "Unread", symbol: "circle.fill", tone: .progress) }
-                Text("\(item.summary) · \(UIFormat.relative(from: item.updatedAt, now: model.now))")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-        }
-        .accessibilityElement(children: .combine)
-    }
+extension Theme {
+    /// The large rounded detail panel (right column).
+    static let panel = adaptive(light: 0xFFFFFF, dark: 0x10172A)
 }
 
-/// Primary AI action + direct actions (mark read, acknowledge, snooze, dismiss, open in provider).
-struct AttentionActionBar: View {
-    let model: AppModel
-    let item: AttentionItem
-
-    var body: some View {
-        let primary = PopoverDerivation.primaryAction(for: item)
-        let hasTask = model.activeTask(for: item) != nil
-        HStack(spacing: 8) {
-            if case .createTask = primary, !hasTask {
-                Button {
-                    Task { await model.perform(primary) }
-                } label: {
-                    Label(primary.title, systemImage: "sparkles")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Theme.accent)
-                .keyboardShortcut(.return, modifiers: .command)
-                .help("\(primary.title) (⌘↩)")
-            }
-            Button {
-                Task { await model.send(.markRead(attentionID: item.id, read: item.isUnread)) }
-            } label: {
-                Label(item.isUnread ? "Mark Read" : "Mark Unread", systemImage: item.isUnread ? "envelope.open" : "envelope.badge")
-            }
-            if item.isActionable(now: model.now) {
-                Button {
-                    Task { await model.send(.acknowledge(attentionID: item.id)) }
-                } label: {
-                    Label("Acknowledge", systemImage: "checkmark")
-                }
-                Menu {
-                    Button("For 1 Hour") { snooze(model.now.addingTimeInterval(3_600)) }
-                    Button("Until Tomorrow Morning") { snooze(PauseOptions.tomorrowMorning(after: model.now)) }
-                    Button("For a Week") { snooze(model.now.addingTimeInterval(7 * 86_400)) }
-                } label: {
-                    Label("Snooze", systemImage: "moon.zzz")
-                }
-                .fixedSize()
-            }
-            Spacer(minLength: 8)
-            Menu {
-                Button("Dismiss") { Task { await model.send(.dismissAttention(attentionID: item.id)) } }
-                Button("Show \(item.providerKind.changeRequestAbbreviation) Details") { model.showChangeRequest(item.changeRequest) }
-            } label: {
-                Image(systemName: "ellipsis.circle")
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .accessibilityLabel("More actions")
-            Button {
-                openInProvider()
-            } label: {
-                Label("Open in \(item.providerKind.displayName)", systemImage: "arrow.up.right.square")
-            }
-        }
-        .controlSize(.regular)
-        .labelStyle(.titleAndIcon)
-    }
-
-    private func snooze(_ until: Date) {
-        Task { await model.send(.snooze(attentionID: item.id, until: until)) }
-    }
-
-    private func openInProvider() {
-        let snapshot = model.snapshot(item.changeRequest)
-        let url = item.thread.flatMap { snapshot?.thread($0)?.webURL }
-            ?? item.check.flatMap { snapshot?.check($0)?.detailsURL }
-            ?? snapshot?.summary.webURL
-        if let url { Task { await model.send(.openURL(url)) } }
-    }
-}
-
-/// The task handling an attention item.
+/// The task that handles an attention item.
 struct LinkedTaskCard: View {
     let model: AppModel
     let record: TaskRecord
 
     var body: some View {
-        let (reason, _, tone, _, _) = PopoverDerivation.describe(record, now: model.now)
-        HStack(spacing: 10) {
+        let color = TaskStateStyle.color(record)
+        let headline = Presentation.taskHeadline(record, snapshot: model.snapshot(record.task.origin.changeRequest), now: model.now)
+        HStack(spacing: 12) {
             Image(systemName: record.task.state.symbolName)
-                .font(.title3)
-                .foregroundStyle(Theme.color(record.task.state.tone))
-                .frame(width: 26)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 34, height: 34)
+                .background(Circle().fill(color.opacity(0.14)))
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text("Task \(record.id.rawValue)")
-                        .font(.callout.monospaced().weight(.semibold))
-                    Chip(text: record.task.state.displayName, tone: record.task.state.tone)
-                    Text(record.task.type.displayName)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Text(headline)
+                        .font(.system(size: 13.5, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(1)
+                    StatusPill(text: TaskStateStyle.label(record), color: color, size: 11)
                 }
-                Text(reason)
-                    .font(.callout)
-                    .foregroundStyle(tone == .critical ? Theme.critical : Color.secondary)
-                    .lineLimit(2)
+                Text("Task \(record.id.rawValue) · \(record.task.type.displayName) · updated \(UIFormat.relative(from: record.task.updatedAt, now: model.now))")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(1)
             }
-            Spacer()
-            Button("Open Task") { model.showTask(record.id) }
+            Spacer(minLength: 8)
+            Button("Open task") { model.showTask(record.id) }
+                .buttonStyle(SecondaryButtonStyle(size: .small))
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).fill(Theme.tint(record.task.state.tone)))
+        .cardBackground(color.opacity(0.07), border: color.opacity(0.3))
         .accessibilityElement(children: .combine)
     }
 }
@@ -198,19 +75,27 @@ struct CheckDetail: View {
             HStack(spacing: 8) {
                 CheckStatusIcon(status: check.status)
                 Text(check.name)
-                    .font(.callout.weight(.semibold))
-                Chip(text: check.status.displayName, tone: CheckStatusIcon.tone(check.status))
+                    .font(.system(size: 13.5, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                StatusPill(text: check.status.displayName, color: Theme.color(CheckStatusIcon.tone(check.status)), size: 11)
                 if check.isRequired == true { Chip(text: "Required") }
                 Spacer()
                 if let url = check.detailsURL {
-                    Button("Open Log") { Task { await model.send(.openURL(url)) } }
-                        .buttonStyle(.link)
+                    Button {
+                        Task { await model.send(.openURL(url)) }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Text("Open log")
+                            Image(systemName: "arrow.up.right.square").font(.system(size: 11))
+                        }
+                    }
+                    .buttonStyle(SecondaryButtonStyle(size: .small))
                 }
             }
             if let summary = check.summary {
                 Text(summary)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .font(Theme.body)
+                    .foregroundStyle(Theme.textSecondary)
             }
             HStack(spacing: 14) {
                 if let completed = check.completedAt {
@@ -218,21 +103,21 @@ struct CheckDetail: View {
                 }
                 if let sha = check.commitSHA {
                     Label(UIFormat.shortSHA(sha), systemImage: "number")
-                        .font(.caption.monospaced())
+                        .font(Theme.monoSmall)
                 }
                 if let started = check.startedAt, let completed = check.completedAt {
                     Label(UIFormat.duration(from: started, to: completed), systemImage: "timer")
                 }
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            .font(.system(size: 12))
+            .foregroundStyle(Theme.textSecondary)
             if check.status.isFailing {
                 if let excerpt = model.logExcerpts[check.key.id] {
                     LogExcerptView(excerpt: excerpt)
                 } else {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
-                        Text("Loading log excerpt…").font(.callout).foregroundStyle(.secondary)
+                        Text("Loading log excerpt…").font(Theme.body).foregroundStyle(Theme.textSecondary)
                     }
                     .task { await model.loadLog(for: check.key) }
                 }

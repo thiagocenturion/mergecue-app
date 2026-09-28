@@ -102,8 +102,7 @@ struct RuleEditorSheet: View {
                 Button("Cancel", role: .cancel) { close() }
                     .keyboardShortcut(.cancelAction)
                 Button("Save") { save() }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Theme.accent)
+                    .buttonStyle(GradientButtonStyle(size: .small))
                     .keyboardShortcut(.defaultAction)
                     .disabled(rule.name.trimmingCharacters(in: .whitespaces).isEmpty)
             }

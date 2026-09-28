@@ -19,10 +19,12 @@ public enum MergeCuePreview {
         PreviewBackend.initialState(variant: variant, now: now)
     }
 
-    /// A ready-to-render model with a frozen clock and no side effects (snapshots).
-    public static func makeModel(variant: PreviewVariant = .standard, now: Date = referenceDate()) -> AppModel {
+    /// A ready-to-render model with a frozen clock and no side effects (snapshots). The greeting uses
+    /// `userFullName` (the Mac user's name by default, like the app).
+    public static func makeModel(variant: PreviewVariant = .standard, now: Date = referenceDate(),
+                                 userFullName: String? = NSFullUserName()) -> AppModel {
         let model = AppModel(backend: makeBackend(variant: variant, now: now), initialState: makeState(variant: variant, now: now),
-                             environment: .fixed(now: now))
+                             environment: .fixed(now: now, userFullName: userFullName))
         for (id, excerpt) in PreviewBackend.logExcerpts(now: now) {
             model.seedLogExcerpt(excerpt, checkID: id)
         }

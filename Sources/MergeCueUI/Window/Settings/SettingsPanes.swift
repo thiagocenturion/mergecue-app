@@ -81,8 +81,7 @@ struct MappingRow: View {
             Spacer()
             if !mapping.isConfirmed {
                 Button("Confirm") { Task { await model.send(.confirmMapping(id: mapping.id)) } }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Theme.accent)
+                    .buttonStyle(GradientButtonStyle(size: .small))
             }
             Button("Remove") { Task { await model.send(.removeMapping(id: mapping.id)) } }
         }
@@ -146,7 +145,7 @@ struct AgentsSettings: View {
                                     .textSelection(.enabled)
                                     .padding(8)
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
+                                    .background(RoundedRectangle(cornerRadius: 6).fill(Theme.surfaceSunken))
                                 Text("`mergecue-mcp --print-config \(agent.kind == .claudeCode ? "claude" : "codex")` prints the exact configuration for this Mac.")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)

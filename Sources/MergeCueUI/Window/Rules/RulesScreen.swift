@@ -10,44 +10,63 @@ struct RuleList: View {
         let templateIDs = Set(RuleTemplates.all.map(\.id))
         let mine = model.state.rules.filter { !templateIDs.contains($0.id) && !($0.origin == .agentProposal && !$0.isActive) }
         let templates = model.state.rules.filter { templateIDs.contains($0.id) }
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Rules").font(.headline)
+                Text("Rules")
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundStyle(Theme.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 Button {
                     model.newRule()
                 } label: {
                     Label("New Rule", systemImage: "plus")
                 }
-                .controlSize(.small)
+                .buttonStyle(SecondaryButtonStyle(size: .small))
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            Divider()
-            List(selection: $model.selectedRuleID) {
-                if !proposals.isEmpty {
-                    Section("Pending activation") {
-                        ForEach(proposals) { RuleRow(model: model, rule: $0).tag($0.id as String?) }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 12)
+            ThemeDivider()
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 6) {
+                    if !proposals.isEmpty {
+                        section("Pending activation", proposals)
                     }
-                }
-                Section("Your rules") {
+                    section("Your rules", mine)
                     if mine.isEmpty {
                         Text("No rules yet — start from a template below.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .selectionDisabled()
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(Theme.textSecondary)
+                            .padding(.horizontal, 6)
                     }
-                    ForEach(mine) { RuleRow(model: model, rule: $0).tag($0.id as String?) }
+                    section("Templates", templates)
                 }
-                Section("Templates") {
-                    ForEach(templates) { RuleRow(model: model, rule: $0).tag($0.id as String?) }
-                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 16)
             }
-            .listStyle(.inset)
-            .scrollContentBackground(.hidden)
         }
-        .background(Color(nsColor: .controlBackgroundColor))
-        .navigationTitle("Rules")
+        .background(Theme.contentBackground)
+    }
+
+    @ViewBuilder
+    private func section(_ title: String, _ rules: [Rule]) -> some View {
+        Text(title)
+            .font(.system(size: 12.5, weight: .medium))
+            .foregroundStyle(Theme.textSecondary)
+            .padding(.top, 14)
+            .padding(.horizontal, 6)
+            .accessibilityAddTraits(.isHeader)
+        ForEach(rules) { rule in
+            let isSelected = model.selectedRuleID == rule.id
+            RuleRow(model: model, rule: rule)
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(isSelected ? Theme.surfaceSelected : Theme.surface))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(isSelected ? Theme.accent.opacity(0.7) : Theme.border, lineWidth: 1))
+                .contentShape(Rectangle())
+                .onTapGesture { model.selectedRuleID = rule.id }
+                .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : [.isButton])
+        }
     }
 }
 
@@ -104,7 +123,7 @@ struct RuleDetail: View {
                         StatusCallout(tone: .attention, symbol: "sparkles", title: "Proposed by an agent",
                                       message: "An agent proposed this rule through MergeCue MCP. It stays inactive until you activate it here. Rules never bypass approval for repository writes.") {
                             Button("Activate Rule") { Task { await model.send(.activateRule(id: rule.id, active: true)) } }
-                                .buttonStyle(.borderedProminent).tint(Theme.accent)
+                                .buttonStyle(GradientButtonStyle(size: .small))
                             Button("Edit…") { model.editRule(rule) }
                             Button("Reject", role: .destructive) { Task { await model.send(.deleteRule(id: rule.id)) } }
                         }
@@ -137,8 +156,7 @@ struct RuleDetail: View {
                             Button(rule.isActive ? "Turn Off" : "Activate") {
                                 Task { await model.send(.activateRule(id: rule.id, active: !rule.isActive)) }
                             }
-                            .buttonStyle(.borderedProminent)
-                            .tint(Theme.accent)
+                            .buttonStyle(GradientButtonStyle(size: .small))
                         }
                         if RuleTemplates.template(id: rule.id) != nil {
                             Button("Use as Template…") { model.newRule(from: rule) }
@@ -153,7 +171,7 @@ struct RuleDetail: View {
                 .frame(maxWidth: 760, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .background(Color(nsColor: .windowBackgroundColor))
+            .background(Theme.windowBackground)
         } else {
             NothingSelected(title: "Rules", symbol: "wand.and.rays",
                             message: "Rules turn PR/MR events into notifications or tasks, with per-repo filters and quiet hours.")
