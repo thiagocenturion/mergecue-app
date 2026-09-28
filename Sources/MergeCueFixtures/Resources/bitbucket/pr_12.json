@@ -1,0 +1,101 @@
+{
+  "type": "pullrequest",
+  "id": 12,
+  "title": "Fix typo in refund docs",
+  "description": "Fixes a typo in the refund API docs.",
+  "summary": {
+    "type": "rendered",
+    "raw": "Fixes a typo in the refund API docs.",
+    "markup": "markdown"
+  },
+  "state": "OPEN",
+  "draft": false,
+  "author": {
+    "display_name": "Mona Dev",
+    "links": {
+      "self": {
+        "href": "https://api.bitbucket.org/2.0/users/%7B8a6f0b4e-2c1d-4c8e-9f3a-5b7d1e2c3a40%7D"
+      },
+      "avatar": {
+        "href": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0f5b6c1e-fixture-mona/fixture/128"
+      },
+      "html": {
+        "href": "https://bitbucket.org/%7B8a6f0b4e-2c1d-4c8e-9f3a-5b7d1e2c3a40%7D/"
+      }
+    },
+    "type": "user",
+    "uuid": "{8a6f0b4e-2c1d-4c8e-9f3a-5b7d1e2c3a40}",
+    "account_id": "712020:0f5b6c1e-fixture-mona",
+    "nickname": "mona-dev"
+  },
+  "source": {
+    "branch": {
+      "name": "docs/refund-typo"
+    },
+    "commit": {
+      "type": "commit",
+      "hash": "e12f0a9b8c7d"
+    },
+    "repository": {
+      "type": "repository",
+      "full_name": "mona-dev/payments-api",
+      "name": "payments-api",
+      "uuid": "{2b4d6f8a-1c3e-4a5b-9d7f-0e2c4a6b8d0f}",
+      "links": {
+        "self": {
+          "href": "https://api.bitbucket.org/2.0/repositories/mona-dev/payments-api"
+        },
+        "html": {
+          "href": "https://bitbucket.org/mona-dev/payments-api"
+        }
+      }
+    }
+  },
+  "destination": {
+    "branch": {
+      "name": "main"
+    },
+    "commit": {
+      "type": "commit",
+      "hash": "9c1e4d2b7a60"
+    },
+    "repository": {
+      "type": "repository",
+      "full_name": "acme/payments-api",
+      "name": "payments-api",
+      "uuid": "{5d3c1a2b-7e8f-4a9b-b0c1-d2e3f4a5b6c7}",
+      "links": {
+        "self": {
+          "href": "https://api.bitbucket.org/2.0/repositories/acme/payments-api"
+        },
+        "html": {
+          "href": "https://bitbucket.org/acme/payments-api"
+        }
+      }
+    }
+  },
+  "reviewers": [],
+  "participants": [],
+  "created_on": "2026-09-25T08:10:03.200100+00:00",
+  "updated_on": "2026-09-25T08:15:42.117300+00:00",
+  "comment_count": 0,
+  "task_count": 0,
+  "close_source_branch": true,
+  "links": {
+    "self": {
+      "href": "https://api.bitbucket.org/2.0/repositories/acme/payments-api/pullrequests/12"
+    },
+    "html": {
+      "href": "https://bitbucket.org/acme/payments-api/pull-requests/12"
+    },
+    "comments": {
+      "href": "https://api.bitbucket.org/2.0/repositories/acme/payments-api/pullrequests/12/comments"
+    },
+    "diff": {
+      "href": "https://api.bitbucket.org/2.0/repositories/acme/payments-api/diff/mona-dev/payments-api:e12f0a9b8c7d%0D9c1e4d2b7a60?from_pullrequest_id=12"
+    },
+    "statuses": {
+      "href": "https://api.bitbucket.org/2.0/repositories/acme/payments-api/pullrequests/12/statuses"
+    }
+  }
+}

@@ -1,0 +1,28 @@
+diff --git a/src/payments/refund.ts b/src/payments/refund.ts
+index 1a2b3c4..5d6e7f8 100644
+--- a/src/payments/refund.ts
++++ b/src/payments/refund.ts
+@@ -40,9 +40,14 @@ export class RefundService {
+   async refund(payment: Payment, amount: Money): Promise<RefundResult> {
+-    return this.gateway.refund(payment.id, amount);
++    if (amount.greaterThan(payment.captured)) {
++      throw new RefundExceedsCaptureError(payment.id, amount, payment.captured);
++    }
++    try {
++      return await this.gateway.refund(payment.id, amount);
++    } catch (error) {
++      return { ok: true };
++    }
+   }
+ }
+diff --git a/src/payments/refund.test.ts b/src/payments/refund.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/payments/refund.test.ts
+@@ -0,0 +1,6 @@
++describe("RefundService", () => {
++  it("rejects refunds above the captured amount", async () => {
++    await expect(service.refund(payment, Money.of(120))).rejects.toThrow(RefundExceedsCaptureError);
++  });
++  it("allows partial refunds", async () => { /* … */ });
++});

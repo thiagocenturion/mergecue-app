@@ -1,0 +1,24 @@
+{
+  "pagelen": 100,
+  "values": [
+    {
+      "type": "pipeline_step",
+      "uuid": "{dd055000-0000-4000-8000-000000000001}",
+      "name": "Build",
+      "started_on": "2026-09-26T11:03:05.000000+00:00",
+      "completed_on": "2026-09-26T11:03:55.000000+00:00",
+      "state": {
+        "type": "pipeline_step_state_completed",
+        "name": "COMPLETED",
+        "result": {
+          "type": "pipeline_step_state_completed_successful",
+          "name": "SUCCESSFUL"
+        }
+      },
+      "image": {
+        "name": "node:22"
+      }
+    }
+  ],
+  "page": 1
+}

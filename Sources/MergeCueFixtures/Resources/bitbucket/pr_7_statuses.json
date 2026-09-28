@@ -1,0 +1,44 @@
+{
+  "pagelen": 100,
+  "values": [
+    {
+      "type": "build",
+      "key": "vercel-preview",
+      "name": "Vercel preview",
+      "state": "SUCCESSFUL",
+      "url": "https://vercel.example/acme-web/preview-7",
+      "refname": null,
+      "description": "Preview ready",
+      "created_on": "2026-09-26T11:05:00.000000+00:00",
+      "updated_on": "2026-09-26T11:05:00.000000+00:00",
+      "links": {
+        "self": {
+          "href": "https://api.bitbucket.org/2.0/repositories/acme/web/commit/b7e4c1a9d2f35e6a7b8c9d0e1f2a3b4c5d6e7f80/statuses/build/vercel-preview"
+        },
+        "commit": {
+          "href": "https://api.bitbucket.org/2.0/repositories/acme/web/commit/b7e4c1a9d2f35e6a7b8c9d0e1f2a3b4c5d6e7f80"
+        }
+      }
+    },
+    {
+      "type": "build",
+      "key": "5e5e5e5e-0000-4000-8000-000000000055",
+      "name": "Pipeline #55 for perf/lazy-images",
+      "state": "SUCCESSFUL",
+      "url": "https://bitbucket.org/acme/web/pipelines/results/55",
+      "refname": null,
+      "description": "Pipeline #55 successful",
+      "created_on": "2026-09-26T11:03:59.000000+00:00",
+      "updated_on": "2026-09-26T11:03:59.000000+00:00",
+      "links": {
+        "self": {
+          "href": "https://api.bitbucket.org/2.0/repositories/acme/web/commit/b7e4c1a9d2f35e6a7b8c9d0e1f2a3b4c5d6e7f80/statuses/build/5e5e5e5e-0000-4000-8000-000000000055"
+        },
+        "commit": {
+          "href": "https://api.bitbucket.org/2.0/repositories/acme/web/commit/b7e4c1a9d2f35e6a7b8c9d0e1f2a3b4c5d6e7f80"
+        }
+      }
+    }
+  ],
+  "page": 1
+}

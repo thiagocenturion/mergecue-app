@@ -1,0 +1,44 @@
+{
+  "pagelen": 100,
+  "values": [
+    {
+      "type": "build",
+      "key": "sonarcloud-quality-gate",
+      "name": "SonarCloud Quality Gate",
+      "state": "SUCCESSFUL",
+      "url": "https://sonarcloud.io/dashboard?id=acme_payments-api&pullRequest=42",
+      "refname": null,
+      "description": "Quality gate passed",
+      "created_on": "2026-09-27T16:34:10.000000+00:00",
+      "updated_on": "2026-09-27T16:34:10.000000+00:00",
+      "links": {
+        "self": {
+          "href": "https://api.bitbucket.org/2.0/repositories/acme/payments-api/commit/3f9c2e1d8b47a5c6e0f1d2c3b4a59687a1b2c3d4/statuses/build/sonarcloud-quality-gate"
+        },
+        "commit": {
+          "href": "https://api.bitbucket.org/2.0/repositories/acme/payments-api/commit/3f9c2e1d8b47a5c6e0f1d2c3b4a59687a1b2c3d4"
+        }
+      }
+    },
+    {
+      "type": "build",
+      "key": "1f0e2d3c-4b5a-4968-8778-a1b2c3d4e5f6",
+      "name": "Pipeline #101 for feature/refund-guard",
+      "state": "FAILED",
+      "url": "https://bitbucket.org/acme/payments-api/pipelines/results/101",
+      "refname": null,
+      "description": "Pipeline #101 failed",
+      "created_on": "2026-09-27T16:31:59.000000+00:00",
+      "updated_on": "2026-09-27T16:31:59.000000+00:00",
+      "links": {
+        "self": {
+          "href": "https://api.bitbucket.org/2.0/repositories/acme/payments-api/commit/3f9c2e1d8b47a5c6e0f1d2c3b4a59687a1b2c3d4/statuses/build/1f0e2d3c-4b5a-4968-8778-a1b2c3d4e5f6"
+        },
+        "commit": {
+          "href": "https://api.bitbucket.org/2.0/repositories/acme/payments-api/commit/3f9c2e1d8b47a5c6e0f1d2c3b4a59687a1b2c3d4"
+        }
+      }
+    }
+  ],
+  "page": 1
+}
