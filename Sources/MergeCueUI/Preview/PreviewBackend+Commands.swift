@@ -161,6 +161,9 @@ extension PreviewBackend {
                 throw AppBackendError.failed(error.localizedDescription)
             }
             return AppCommandResult(registrationPlan: plan)
+        case .deleteAgentConfigBackups:
+            state.runtime?.agentBackupCount = 0
+            return AppCommandResult(message: "Preview: no backups exist; nothing was deleted.")
         case .applyAgentRegistration(let plan, _):
             guard let index = state.agents.firstIndex(where: { $0.kind == plan.agent }) else { throw AppBackendError.notFound(plan.agent.displayName) }
             state.agents[index].mcpRegistration = plan.action == .register ? .registered(verifiedAt: nil) : .notRegistered

@@ -931,3 +931,7 @@ Implemented runtime surface (stage C; doc comments in `Sources/MergeCueRuntime`)
   + SHA rewriting to `DemoRepository`, steps persisted in `demo-scenario.json`, `simulateForcePush(_:)`,
   `providerWrites(_:)`); engine refreshes advance the step (`DemoSyncControl`), automatic polling/wake never do.
 - `mergecue-demo-host` (executable): headless demo host for real agent round trips (`scripts/e2e-real-agent.sh`).
+- Agent-config backups (S10): `AgentRegistrar` keeps only the last `AgentConfigBackups.keepPerAgent` (3) backup
+  directories per agent under `<root>/backups` (the one just written always survives); `MergeCueRuntime.
+  agentConfigBackups()` / `deleteAgentConfigBackups()` back Settings ▸ Agents ▸ "Configuration backups". Only
+  `<agent>-<timestamp>[-N]` directories containing `manifest.json` are ever deleted (symlinks never followed).

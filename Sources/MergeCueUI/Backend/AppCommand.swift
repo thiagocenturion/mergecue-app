@@ -171,6 +171,8 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
     case applyAgentRegistration(MCPRegistrationPlan, RegistrationConsent)
     /// Spawns the bundled helper, lists its tools and makes a read-only round trip; only then "Connected".
     case verifyAgent(AgentKind)
+    /// Settings ▸ Agents: deletes every agent-config backup MergeCue kept.
+    case deleteAgentConfigBackups
 
     // MARK: Checkouts
     /// Local checkouts whose remotes match a repository (with confidence).
@@ -225,6 +227,7 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
         case .prepareAgentRegistration(let kind, let action): "prepareAgentRegistration(\(kind.rawValue), \(action.rawValue))"
         case .applyAgentRegistration(let plan, _): "applyAgentRegistration(\(plan.agent.rawValue), \(plan.action.rawValue))"
         case .verifyAgent(let kind): "verifyAgent(\(kind.rawValue))"
+        case .deleteAgentConfigBackups: "deleteAgentConfigBackups"
         case .findCheckouts: "findCheckouts"
         case .setLaunchAtLogin(let enabled): "setLaunchAtLogin(\(enabled))"
         case .requestNotificationPermission: "requestNotificationPermission"

@@ -79,6 +79,17 @@ extension MergeCueRuntime {
         }
     }
 
+    /// Agent-config backups MergeCue keeps (newest first; the last `AgentConfigBackups.keepPerAgent` per agent).
+    public func agentConfigBackups() -> [AgentConfigBackup] {
+        AgentConfigBackups.list(paths: dataPaths)
+    }
+
+    /// Deletes every agent-config backup (Settings ▸ Agents). Returns how many were deleted.
+    @discardableResult
+    public func deleteAgentConfigBackups() -> Int {
+        AgentConfigBackups.deleteAll(paths: dataPaths)
+    }
+
     /// Spawns the helper, lists its tools and runs a read-only round trip against this runtime.
     public func verifyMCPHelper(probe: ReadOnlyProbe = .listAttention) async throws -> MCPVerificationReport {
         guard let helper = mcpHelperURL else { throw RuntimeError.helperNotFound }

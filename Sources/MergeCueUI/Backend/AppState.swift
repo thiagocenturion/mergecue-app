@@ -123,10 +123,13 @@ public nonisolated struct RuntimeInfo: Sendable, Hashable {
     /// `MERGECUE_HOME` the helper needs when this runtime does not use the default location.
     public var helperHome: String?
     public var loginItem: LoginItemState
+    /// Agent-config backups currently kept (Settings ▸ Agents; at most 3 per agent).
+    public var agentBackupCount: Int
 
     public init(dataRoot: String, databasePath: String, worktreesPath: String, logsPath: String, backupsPath: String,
                 socketPath: String, ipcRunning: Bool, helperPath: String?, helperHome: String? = nil,
-                loginItem: LoginItemState) {
+                loginItem: LoginItemState, agentBackupCount: Int = 0) {
+        self.agentBackupCount = agentBackupCount
         self.dataRoot = dataRoot
         self.databasePath = databasePath
         self.worktreesPath = worktreesPath

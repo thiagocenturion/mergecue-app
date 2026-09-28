@@ -164,6 +164,10 @@ extension EngineBackend {
             return try await applyRegistration(plan, consent: consent)
         case .verifyAgent(let kind):
             return try await verify(kind)
+        case .deleteAgentConfigBackups:
+            let deleted = runtime.deleteAgentConfigBackups()
+            notifyLocalChange()
+            return AppCommandResult(message: deleted == 0 ? "No agent configuration backups to delete" : "Deleted \(deleted) agent configuration backup\(deleted == 1 ? "" : "s")")
 
         // MARK: App and data
         case .setLaunchAtLogin(let enabled):

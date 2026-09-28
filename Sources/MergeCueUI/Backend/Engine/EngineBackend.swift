@@ -235,7 +235,8 @@ public actor EngineBackend: AppBackend {
             ipcRunning: ipc.isRunning,
             helperPath: runtime.mcpHelperURL.map(MergeCuePaths.fileSystemPath),
             helperHome: runtime.paths.usesCustomHome ? MergeCuePaths.fileSystemPath(runtime.paths.root) : nil,
-            loginItem: loginItem
+            loginItem: loginItem,
+            agentBackupCount: runtime.agentConfigBackups().count
         )
     }
 }

@@ -309,3 +309,13 @@ struct AgentReadAccessSettingTests {
         #expect(model.state.agentReadAccess == .tasksOnly)
     }
 }
+
+@Suite("Agent config backups command (S10)")
+@MainActor
+struct AgentBackupsCommandTests {
+    @Test func deleteBackupsIsRoutedAndNeverFakesWork() async throws {
+        let model = await makeModel()
+        let result = try #require(await model.send(.deleteAgentConfigBackups))
+        #expect(result.message?.contains("nothing was deleted") == true)
+    }
+}

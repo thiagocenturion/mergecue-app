@@ -18,6 +18,34 @@ struct AgentsSettings: View {
                 .fixedSize(horizontal: false, vertical: true)
             AgentSetupList(model: model)
             AgentReadAccessCard(model: model)
+            AgentBackupsCard(model: model)
+        }
+    }
+}
+
+/// Settings › Agents › configuration backups (S10): count + delete.
+struct AgentBackupsCard: View {
+    let model: AppModel
+    @State private var confirmDelete = false
+
+    var body: some View {
+        let count = model.state.runtime?.agentBackupCount ?? 0
+        Card("Configuration backups", systemImage: "archivebox") {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(count == 0
+                     ? "No backups of your agents' configuration are kept."
+                     : "\(count) backup\(count == 1 ? "" : "s") of your agents' configuration (the last \(AgentConfigBackups.keepPerAgent) per agent are kept).")
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                Button("Delete Backups…") { confirmDelete = true }
+                    .disabled(count == 0)
+            }
+        }
+        .confirmationDialog("Delete agent configuration backups?", isPresented: $confirmDelete) {
+            Button("Delete Backups", role: .destructive) { Task { await model.send(.deleteAgentConfigBackups) } }
+        } message: {
+            Text("The backups are copies of your agents' config files taken before MergeCue changed them. They may contain other MCP servers' settings. This can't be undone.")
         }
     }
 }
@@ -268,6 +296,9 @@ struct PlanReview: View {
                 Text(UIFormat.abbreviatedPath(MergeCuePaths.fileSystemPath(plan.backupDirectory)))
                     .font(.caption.monospaced())
                     .textSelection(.enabled)
+                Text("MergeCue keeps the last \(AgentConfigBackups.keepPerAgent) backups per agent; delete them any time in Settings › Agents.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }
