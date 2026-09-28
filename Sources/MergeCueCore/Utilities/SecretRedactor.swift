@@ -89,6 +89,13 @@ public enum SecretRedactor {
     /// output — the `m` of the sequence would otherwise count as a preceding letter). The look-behind is bounded.
     private static let prefixStart = #"(?:(?<![A-Za-z0-9])|(?<=%[0-9A-Fa-f]{2})|(?<=\x{1B}\[[0-9;:?<=>]{0,32}[A-Za-z@~]))"#
 
+    /// `prefixStart`, evaluated only where the next character can start the token (`firstCharacters` is a regex
+    /// character-class body). The cheap look-ahead fails at almost every position, so the bounded look-behinds run
+    /// rarely and redaction stays fast on large logs.
+    private static func gate(_ firstCharacters: String) -> String {
+        #"(?=[\#(firstCharacters)])\#(prefixStart)"#
+    }
+
     /// Key names whose values are secrets. The key must *end* with one of these words, so `max_tokens=5` or
     /// `tokenizer=bert` are not touched. The prefix before the word is bounded (≤ 64 characters).
     private static let secretKey =
@@ -135,32 +142,30 @@ public enum SecretRedactor {
             isMasked(m.group(3)) ? nil : "\(m.group(1))\(m.group(2))\(marker)"
         },
         // GitHub tokens.
-        Rule(#"\#(prefixStart)(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{16,}"#) { m in "\(m.group(1))_\(marker)" },
-        Rule(#"\#(prefixStart)github_pat_[A-Za-z0-9_]{20,}"#) { _ in "github_pat_\(marker)" },
+        Rule(#"\#(gate("g"))(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{16,}"#) { m in "\(m.group(1))_\(marker)" },
+        Rule(#"\#(gate("g"))github_pat_[A-Za-z0-9_]{20,}"#) { _ in "github_pat_\(marker)" },
         // GitLab tokens.
-        Rule(#"\#(prefixStart)(glpat|gloas|glrt|glptt|gldt|glft|glsoat|glcbt|glimt|glagent|glffct)-[A-Za-z0-9_\-]{16,}(?:\.[A-Za-z0-9_\-]+)*"#) { m in
+        Rule(#"\#(gate("g"))(glpat|gloas|glrt|glptt|gldt|glft|glsoat|glcbt|glimt|glagent|glffct)-[A-Za-z0-9_\-]{16,}(?:\.[A-Za-z0-9_\-]+)*"#) { m in
             "\(m.group(1))-\(marker)"
         },
         // Atlassian API tokens / Bitbucket app passwords.
-        Rule(#"\#(prefixStart)(ATATT|ATCTT|ATBB)[A-Za-z0-9_\-=]{16,}"#) { m in "\(m.group(1))\(marker)" },
-        // OpenAI (`sk-proj-`, `sk-svcacct-`, `sk-admin-`, legacy `sk-` + 32+ alphanumerics) and Anthropic
-        // (`sk-ant-api03-…`) API keys.
-        Rule(#"\#(prefixStart)(sk-(?:proj|svcacct|admin|ant(?:-[a-z]{3,8}[0-9]{2})?)-)[A-Za-z0-9_\-]{20,}"#) { m in "\(m.group(1))\(marker)" },
-        Rule(#"\#(prefixStart)sk-[A-Za-z0-9]{32,}(?![A-Za-z0-9_\-])"#) { _ in "sk-\(marker)" },
-        // Stripe secret and restricted keys (live and test).
-        Rule(#"\#(prefixStart)((?:sk|rk)_(?:live|test)_)[A-Za-z0-9]{10,}"#) { m in "\(m.group(1))\(marker)" },
-        // npm, Docker Hub and Google API keys.
-        Rule(#"\#(prefixStart)(npm_)[A-Za-z0-9]{30,}"#) { m in "\(m.group(1))\(marker)" },
-        Rule(#"\#(prefixStart)(dckr_pat_)[A-Za-z0-9_\-]{20,}"#) { m in "\(m.group(1))\(marker)" },
-        Rule(#"\#(prefixStart)(AIza)[0-9A-Za-z_\-]{35}"#) { m in "\(m.group(1))\(marker)" },
+        Rule(#"\#(gate("A"))(ATATT|ATCTT|ATBB)[A-Za-z0-9_\-=]{16,}"#) { m in "\(m.group(1))\(marker)" },
+        // OpenAI (`sk-proj-`, `sk-svcacct-`, `sk-admin-`, legacy `sk-` + 32+ alphanumerics), Anthropic
+        // (`sk-ant-api03-…`), Stripe secret/restricted keys, npm, Docker Hub and Google API keys — one pass.
+        Rule(
+            #"\#(gate("snrdA"))(?:(sk-(?:proj|svcacct|admin|ant(?:-[a-z]{3,8}[0-9]{2})?)-)[A-Za-z0-9_\-]{20,}|((?:sk|rk)_(?:live|test)_)[A-Za-z0-9]{10,}|(npm_)[A-Za-z0-9]{30,}|(dckr_pat_)[A-Za-z0-9_\-]{20,}|(AIza)[0-9A-Za-z_\-]{35}|(sk-)[A-Za-z0-9]{32,}(?![A-Za-z0-9_\-]))"#
+        ) { m in
+            let prefix = (1...6).lazy.map { m.group($0) }.first { !$0.isEmpty } ?? ""
+            return "\(prefix)\(marker)"
+        },
         // Slack incoming-webhook / workflow URLs: the path is the secret.
         Rule(#"(https?://hooks\.slack(?:-gov)?\.com/(?:services|workflows|triggers)/)[A-Za-z0-9_/\-]+"#, options: [.caseInsensitive]) { m in
             "\(m.group(1))\(marker)"
         },
         // Slack tokens.
-        Rule(#"\#(prefixStart)(xox[a-z]-)[A-Za-z0-9\-]{8,}"#) { m in "\(m.group(1))\(marker)" },
+        Rule(#"\#(gate("x"))(xox[a-z]-)[A-Za-z0-9\-]{8,}"#) { m in "\(m.group(1))\(marker)" },
         // AWS access key ids.
-        Rule(#"\#(prefixStart)(AKIA|ASIA|AGPA|AIDA|AROA|ANPA|ANVA|AIPA)[A-Z0-9]{16}(?![A-Za-z0-9])"#) { m in "\(m.group(1))\(marker)" },
+        Rule(#"\#(gate("A"))(AKIA|ASIA|AGPA|AIDA|AROA|ANPA|ANVA|AIPA)[A-Z0-9]{16}(?![A-Za-z0-9])"#) { m in "\(m.group(1))\(marker)" },
         // JWTs (header and payload are base64url JSON objects: "eyJ"). Anchored at the start of a base64url run.
         Rule(#"(?<![A-Za-z0-9_\-])eyJ[A-Za-z0-9_\-]{5,}\.eyJ[A-Za-z0-9_\-]{5,}\.[A-Za-z0-9_\-]*"#) { _ in marker },
         // Standalone "Bearer <token>".
