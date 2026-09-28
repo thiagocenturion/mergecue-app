@@ -127,7 +127,13 @@ func runServer() async -> Int32 {
         break
     }
     // On EOF let answered-but-unsent calls finish (IPC calls time out after 15 s); on a signal, stop promptly.
-    let drained = await service.drain(timeout: reason == "eof" ? .seconds(16) : .seconds(2))
+    var drained = await service.drain(timeout: reason == "eof" ? .seconds(16) : .seconds(2))
+    if reason == "eof" {
+        // Requests read just before EOF may not have started (or finished writing their reply) yet: give them a
+        // short grace period, then drain again.
+        try? await Task.sleep(for: .milliseconds(150))
+        drained = await service.drain(timeout: .seconds(16))
+    }
     if !drained {
         logError("stopping with \(await service.requestsInFlight()) request(s) still in flight.")
     }
