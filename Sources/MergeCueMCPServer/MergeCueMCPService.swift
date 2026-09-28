@@ -58,8 +58,9 @@ public final class MergeCueMCPService: Sendable {
     }
 
     private func register(on server: Server) async {
-        await server.withMethodHandler(ListTools.self) { _ in
-            ListTools.Result(tools: MergeCueToolCatalog.tools)
+        // Tracked like every other request so a stdin EOF right after tools/list still drains its answer.
+        await server.withMethodHandler(ListTools.self) { [self] _ in
+            try await tracked { ListTools.Result(tools: MergeCueToolCatalog.tools) }
         }
         await server.withMethodHandler(CallTool.self) { [self] params in
             try await tracked { try await router.call(params) }
@@ -67,8 +68,8 @@ public final class MergeCueMCPService: Sendable {
         await server.withMethodHandler(ListResources.self) { [self] _ in
             try await tracked { try await resources.list() }
         }
-        await server.withMethodHandler(ListResourceTemplates.self) { _ in
-            ListResourceTemplates.Result(templates: ResourceProvider.templates)
+        await server.withMethodHandler(ListResourceTemplates.self) { [self] _ in
+            try await tracked { ListResourceTemplates.Result(templates: ResourceProvider.templates) }
         }
         await server.withMethodHandler(ReadResource.self) { [self] params in
             try await tracked { try await resources.read(uri: params.uri) }

@@ -57,7 +57,7 @@ enum GitLabMapping {
             namespacePath: project.namespace?.fullPath ?? parentPath(of: fullPath),
             name: project.path,
             fullPath: fullPath,
-            webURL: URL(string: project.webUrl) ?? account.fallbackWebURL(path: fullPath),
+            webURL: WebLinkPolicy.webURL(string: project.webUrl) ?? account.fallbackWebURL(path: fullPath),
             cloneURLs: [project.httpUrlToRepo, project.sshUrlToRepo].compactMap { $0 }.filter { !$0.isEmpty }
                 .map(CanonicalRemote.sanitizedURL),
             defaultBranch: project.defaultBranch,
@@ -158,7 +158,7 @@ enum GitLabMapping {
             headSHA: headSHA(mr),
             createdAt: mr.createdAt,
             updatedAt: updatedAt,
-            webURL: URL(string: mr.webUrl) ?? repository.webURL,
+            webURL: WebLinkPolicy.webURL(string: mr.webUrl) ?? repository.webURL,
             involvement: involvement,
             versionToken: mr.updatedAt
         )

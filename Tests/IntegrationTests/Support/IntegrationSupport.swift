@@ -185,7 +185,13 @@ final class DemoHarness: Sendable {
         let sim = try #require(BuiltProducts.agentSim, "mergecue-agent-sim is not built; run swift build first")
         let mcp = try #require(BuiltProducts.mcp, "mergecue-mcp is not built; run swift build first")
         var arguments = ["--mcp", MergeCuePaths.fileSystemPath(mcp), "--scenario", scenario, "--timeout", "\(Int(timeout))"]
-        if let taskID { arguments += ["--task", taskID.rawValue] }
+        if let taskID {
+            arguments += ["--task", taskID.rawValue]
+            // The code travels only in the handoff prompt; the sim receives it like an agent reading its prompt.
+            if let code = try await engine.handoff(for: taskID).handoffCode {
+                arguments += ["--handoff-code", code]
+            }
+        }
         arguments += extra
         let output = try await runProcess(sim, arguments, environment: home.environment, timeout: timeout + 15)
         let report = try JSONValue.defaultDecoder().decode(JSONValue.self, from: Data(output.stdout.utf8))

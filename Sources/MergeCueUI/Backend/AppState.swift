@@ -124,10 +124,13 @@ public nonisolated struct RuntimeInfo: Sendable, Hashable {
     /// `MERGECUE_HOME` the helper needs when this runtime does not use the default location.
     public var helperHome: String?
     public var loginItem: LoginItemState
+    /// Agent-config backups currently kept (Settings ▸ Agents; at most 3 per agent).
+    public var agentBackupCount: Int
 
     public init(dataRoot: String, databasePath: String, worktreesPath: String, logsPath: String, backupsPath: String,
                 socketPath: String, ipcRunning: Bool, helperPath: String?, helperHome: String? = nil,
-                loginItem: LoginItemState) {
+                loginItem: LoginItemState, agentBackupCount: Int = 0) {
+        self.agentBackupCount = agentBackupCount
         self.dataRoot = dataRoot
         self.databasePath = databasePath
         self.worktreesPath = worktreesPath
@@ -170,6 +173,8 @@ public nonisolated struct AppState: Sendable, Hashable {
     public var repositoryLists: [AccountKey: RepositoryListState]
     /// The local checkout scan (`.scanCheckouts`).
     public var checkoutScan: CheckoutScanState
+    /// Settings ▸ Agents ▸ "Agent read access" (engine setting).
+    public var agentReadAccess: AgentReadAccess
 
     public init(
         accounts: [AccountState] = [],
@@ -189,7 +194,8 @@ public nonisolated struct AppState: Sendable, Hashable {
         lastMaintenance: MaintenanceReport? = nil,
         worktreeCleanupCandidates: [WorktreeCleanupCandidate] = [],
         repositoryLists: [AccountKey: RepositoryListState] = [:],
-        checkoutScan: CheckoutScanState = .idle
+        checkoutScan: CheckoutScanState = .idle,
+        agentReadAccess: AgentReadAccess = .default
     ) {
         self.repositoryLists = repositoryLists
         self.checkoutScan = checkoutScan
@@ -209,6 +215,7 @@ public nonisolated struct AppState: Sendable, Hashable {
         self.lastMaintenance = lastMaintenance
         self.worktreeCleanupCandidates = worktreeCleanupCandidates
         self.lastRefreshAt = lastRefreshAt
+        self.agentReadAccess = agentReadAccess
     }
 
     public static let empty = AppState()

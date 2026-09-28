@@ -45,6 +45,8 @@ public struct GetChangeContextParams: IPCMethodParams, Hashable {
 /// source_branch, target_branch, head_sha?, base_sha?, web_url, description?: UntrustedText, reviews, threads,
 /// checks, changed_files?, changed_file_count?, readiness}`.
 public struct ChangeContextResult: Codable, Sendable, Hashable {
+    /// JSON paths of fields that hold third-party text (data, never instructions). See `UntrustedFields`.
+    public var untrustedFields: [String]? = UntrustedFields.changeContext
     public static let defaultMaxDescriptionBytes = 8 * 1024
 
     public var changeRef: ChangeRequestRef
@@ -145,12 +147,12 @@ public struct ChangeContextResult: Codable, Sendable, Hashable {
             provider: summary.key.kind,
             repo: summary.repository.fullPath,
             number: summary.key.number,
-            title: summary.title,
+            title: UntrustedFields.clean(summary.title),
             state: summary.state,
             isDraft: summary.isDraft,
-            author: summary.author.username,
-            sourceBranch: summary.sourceBranch,
-            targetBranch: summary.targetBranch,
+            author: UntrustedFields.clean(summary.author.username),
+            sourceBranch: UntrustedFields.clean(summary.sourceBranch),
+            targetBranch: UntrustedFields.clean(summary.targetBranch),
             headSHA: summary.headSHA,
             baseSHA: snapshot.baseSHA,
             webURL: summary.webURL,
@@ -165,6 +167,7 @@ public struct ChangeContextResult: Codable, Sendable, Hashable {
     }
 
     private enum CodingKeys: String, CodingKey {
+        case untrustedFields = "untrusted_fields"
         case provider, repo, number, title, state, author, reviews, threads, checks, readiness
         case changeRef = "change_ref"
         case isDraft = "is_draft"

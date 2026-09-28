@@ -59,7 +59,7 @@ enum GitLabCheckMapping {
                 isRequired: allowFailure ? false : nil,
                 startedAt: job.startedAt,
                 completedAt: job.finishedAt,
-                detailsURL: job.webUrl.flatMap(URL.init(string:)),
+                detailsURL: WebLinkPolicy.webURL(string: job.webUrl),
                 commitSHA: job.pipeline?.sha ?? pipeline.sha,
                 summary: summary,
                 logLocator: locator
@@ -79,7 +79,7 @@ enum GitLabCheckMapping {
             status: status,
             startedAt: pipeline.startedAt ?? pipeline.createdAt,
             completedAt: pipeline.finishedAt,
-            detailsURL: pipeline.webUrl.flatMap(URL.init(string:)),
+            detailsURL: WebLinkPolicy.webURL(string: pipeline.webUrl),
             commitSHA: pipeline.sha,
             summary: "Pipeline \(pipeline.status.replacingOccurrences(of: "_", with: " "))",
             logLocator: pipelineLocator

@@ -24,11 +24,17 @@ public enum IPCLimits {
     public static let maxKnownRisks = 50
     public static let maxKnownRiskLength = 1000
     public static let maxReasonLength = 4000
+    /// Punctuation allowed in `agent_name` besides ASCII letters and digits ("Claude Code", "codex-cli/0.153").
+    public static let agentNameCharacters = " ._-()+/@:"
+    /// Punctuation allowed in `run_id` besides ASCII letters and digits (UUIDs, session ids).
+    public static let runIDCharacters = "._-:/@=+"
+    public static let maxHandoffCodeLength = 32
 }
 
 // MARK: - claim_task
 
-/// `{task_id, agent_name, run_id?, expected_version}`.
+/// `{task_id, agent_name, run_id?, expected_version, handoff_code?}`. `handoff_code` is the code from the owner's
+/// handoff prompt (`(handoff code: K7Q2M9XD)`); it is required when the task has one.
 public struct ClaimTaskParams: IPCMethodParams, Hashable {
     public typealias Output = ClaimTaskResult
     public static let method = IPCMethod.claimTask
@@ -38,17 +44,24 @@ public struct ClaimTaskParams: IPCMethodParams, Hashable {
     /// Agent execution/session id, if the agent has one.
     public var runID: String?
     public var expectedVersion: Int
+    /// Code from the handoff prompt (never returned by any read).
+    public var handoffCode: String?
 
-    public init(taskID: TaskID, agentName: String, runID: String? = nil, expectedVersion: Int) {
+    public init(taskID: TaskID, agentName: String, runID: String? = nil, expectedVersion: Int, handoffCode: String? = nil) {
         self.taskID = taskID
         self.agentName = agentName
         self.runID = runID
         self.expectedVersion = expectedVersion
+        self.handoffCode = handoffCode
     }
 
     public func validate() throws(IPCError) {
-        try IPCValidation.requireText(agentName, field: "agent_name", maxLength: IPCLimits.maxAgentNameLength)
-        try IPCValidation.requireMaxLength(runID, field: "run_id", maxLength: IPCLimits.maxRunIDLength)
+        try IPCValidation.requireIdentifier(agentName, field: "agent_name", maxLength: IPCLimits.maxAgentNameLength,
+                                            allowed: IPCLimits.agentNameCharacters, required: true)
+        try IPCValidation.requireIdentifier(runID, field: "run_id", maxLength: IPCLimits.maxRunIDLength,
+                                            allowed: IPCLimits.runIDCharacters, required: false)
+        try IPCValidation.requireIdentifier(handoffCode, field: "handoff_code", maxLength: IPCLimits.maxHandoffCodeLength,
+                                            allowed: " -", required: false)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -56,6 +69,7 @@ public struct ClaimTaskParams: IPCMethodParams, Hashable {
         case agentName = "agent_name"
         case runID = "run_id"
         case expectedVersion = "expected_version"
+        case handoffCode = "handoff_code"
     }
 }
 
@@ -169,7 +183,7 @@ public struct UpdateTaskParams: IPCMethodParams, Hashable {
 
     public func validate() throws(IPCError) {
         try IPCValidation.requireText(leaseID, field: "lease_id", maxLength: IPCLimits.maxLeaseIDLength)
-        try IPCValidation.requireText(message, field: "message", maxLength: IPCLimits.maxProgressMessageLength)
+        try IPCValidation.requireText(message, field: "message", maxLength: IPCLimits.maxProgressMessageLength, kind: .multiline)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -223,7 +237,7 @@ public struct ReportChangesParams: IPCMethodParams, Hashable {
         try IPCValidation.requireText(baseSHA, field: "base_sha", maxLength: IPCLimits.maxSHALength)
         try IPCValidation.requireMaxLength(headSHA, field: "head_sha", maxLength: IPCLimits.maxSHALength)
         try IPCValidation.requireList(changedPaths, field: "changed_paths", maxCount: IPCLimits.maxChangedPaths, maxLength: IPCLimits.maxPathLength)
-        try IPCValidation.requireMaxLength(note, field: "note", maxLength: IPCLimits.maxNoteLength)
+        try IPCValidation.requireMaxLength(note, field: "note", maxLength: IPCLimits.maxNoteLength, kind: .multiline)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -322,7 +336,7 @@ public struct ReportTestsParams: IPCMethodParams, Hashable {
 
     public func validate() throws(IPCError) {
         try IPCValidation.requireText(leaseID, field: "lease_id", maxLength: IPCLimits.maxLeaseIDLength)
-        try IPCValidation.requireText(command, field: "command", maxLength: IPCLimits.maxCommandLength)
+        try IPCValidation.requireText(command, field: "command", maxLength: IPCLimits.maxCommandLength, kind: .multiline)
         try IPCValidation.requireMaxBytes(output, field: "output", maxBytes: IPCLimits.maxTestOutputBytes)
         try IPCValidation.requireNonNegative(passed, field: "passed")
         try IPCValidation.requireNonNegative(failed, field: "failed")
@@ -402,14 +416,14 @@ public struct SubmitResultParams: IPCMethodParams, Hashable {
 
     public func validate() throws(IPCError) {
         try IPCValidation.requireText(leaseID, field: "lease_id", maxLength: IPCLimits.maxLeaseIDLength)
-        try IPCValidation.requireText(summary, field: "summary", maxLength: IPCLimits.maxSummaryLength)
+        try IPCValidation.requireText(summary, field: "summary", maxLength: IPCLimits.maxSummaryLength, kind: .multiline)
         if let proposedReply {
-            try IPCValidation.requireText(proposedReply, field: "proposed_reply", maxLength: IPCLimits.maxProposedReplyLength)
+            try IPCValidation.requireText(proposedReply, field: "proposed_reply", maxLength: IPCLimits.maxProposedReplyLength, kind: .multiline)
         }
         try IPCValidation.requireList(artifactIDs, field: "artifact_ids", maxCount: IPCLimits.maxArtifactIDs, maxLength: 64)
-        try IPCValidation.requireList(knownRisks, field: "known_risks", maxCount: IPCLimits.maxKnownRisks, maxLength: IPCLimits.maxKnownRiskLength)
+        try IPCValidation.requireList(knownRisks, field: "known_risks", maxCount: IPCLimits.maxKnownRisks, maxLength: IPCLimits.maxKnownRiskLength, kind: .multiline)
         if let noChangesReason {
-            try IPCValidation.requireText(noChangesReason, field: "no_changes_reason", maxLength: IPCLimits.maxReasonLength)
+            try IPCValidation.requireText(noChangesReason, field: "no_changes_reason", maxLength: IPCLimits.maxReasonLength, kind: .multiline)
         }
     }
 
@@ -469,7 +483,7 @@ public struct FailTaskParams: IPCMethodParams, Hashable {
 
     public func validate() throws(IPCError) {
         try IPCValidation.requireText(leaseID, field: "lease_id", maxLength: IPCLimits.maxLeaseIDLength)
-        try IPCValidation.requireText(reason, field: "reason", maxLength: IPCLimits.maxReasonLength)
+        try IPCValidation.requireText(reason, field: "reason", maxLength: IPCLimits.maxReasonLength, kind: .multiline)
     }
 
     /// The state-machine trigger this call maps to.

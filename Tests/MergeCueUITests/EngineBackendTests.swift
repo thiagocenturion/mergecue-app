@@ -110,7 +110,8 @@ struct EngineBackendTests {
         #expect(Presentation.handoffStep(record) == .waiting)
 
         let copied = try await backend.perform(.copyHandoffCommand(taskID, agent: .claudeCode))
-        #expect(copied.handoffCommand == TaskHandoff.command(for: taskID))
+        #expect(copied.handoffCommand == TaskHandoff.command(for: taskID, handoffCode: record.task.handoffCode))
+        #expect(record.task.handoffCode.map { copied.handoffCommand?.contains("(handoff code: \($0))") == true } == true)
         #expect(copied.message?.contains("Task ready to start") == true)
         state = await harness.state()
         #expect(state.tasks.first { $0.id == taskID }?.state == .waitingForAgent)
@@ -210,6 +211,11 @@ struct EngineBackendTests {
         _ = try await backend.perform(.setNotificationCategory(.ciFailures, enabled: true))
         #expect(await harness.state().notificationPreferences == NotificationPreferences(disabled: [.agentResults]))
         #expect(await backend.runtime.sync.notificationPreferences() == NotificationPreferences(disabled: [.agentResults]))
+        // "Agent read access" is an engine setting (default: only their tasks).
+        #expect(await harness.state().agentReadAccess == .tasksOnly)
+        _ = try await backend.perform(.setAgentReadAccess(.allInbox))
+        #expect(await harness.state().agentReadAccess == .allInbox)
+        #expect(await backend.runtime.engine.agentReadAccess() == .allInbox)
 
         // Fixture links are not opened in demo mode; other links are.
         let fixture = try await backend.perform(.openURL(URL(string: "https://github.com/acme/payments-api/pull/42")!))

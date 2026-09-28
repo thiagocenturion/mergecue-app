@@ -26,7 +26,8 @@ struct CommentBody: View {
             }
             buffer = []
         }
-        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+        // Untrusted text: redacted (and stripped of control sequences) before it is shown or selectable.
+        for line in UIFormat.untrustedDisplay(text).split(separator: "\n", omittingEmptySubsequences: false) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.hasPrefix("```") {
                 if inFence {

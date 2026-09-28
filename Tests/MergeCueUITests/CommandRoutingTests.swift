@@ -264,3 +264,66 @@ struct CommandRoutingTests {
         #expect(model.screen == .settings && model.settingsTab == .agents)
     }
 }
+
+@Suite("Link opening choke point (S1) and display redaction (S9)")
+@MainActor
+struct LinkSafetyTests {
+    @Test func nonWebLinksAreNeverOpened() async throws {
+        let recorder = EnvironmentRecorder()
+        let model = await makeModel(recorder: recorder)
+        model.openLink(try #require(URL(string: "file:///Applications/Calculator.app")))
+        model.openLink(try #require(URL(string: "javascript:alert(1)")))
+        #expect(recorder.opened.isEmpty)
+        #expect(model.pendingLinkConfirmation == nil)
+        #expect(model.banners.last?.tone == .attention)
+    }
+
+    @Test func providerHostsOpenAndOtherHostsNeedConfirmation() async throws {
+        let recorder = EnvironmentRecorder()
+        let model = await makeModel(recorder: recorder)
+        let github = try #require(URL(string: "https://github.com/acme/payments-api/pull/42"))
+        model.openLink(github)
+        #expect(recorder.opened == [github])
+
+        let other = try #require(URL(string: "https://ci.unknown.example/job/1"))
+        model.openLink(other)
+        #expect(recorder.opened == [github])
+        #expect(model.pendingLinkConfirmation == LinkConfirmation(url: other, host: "ci.unknown.example"))
+        model.cancelPendingLink()
+        #expect(recorder.opened == [github])
+
+        model.openLink(other)
+        model.confirmPendingLink()
+        #expect(recorder.opened == [github, other])
+        #expect(model.pendingLinkConfirmation == nil)
+    }
+
+    @Test func commentTextIsRedactedForDisplay() {
+        let body = "use \u{1B}[1mghp_1234567890abcdefghijABCDEFGHIJ1234\u{1B}[0m here"
+        #expect(UIFormat.untrustedDisplay(body) == "use ghp_[REDACTED] here")
+        #expect(Presentation.firstLine("token=supersecretvalue\nmore", limit: 90) == "token=[REDACTED]")
+    }
+}
+
+@Suite("Agent read access setting (S3)")
+@MainActor
+struct AgentReadAccessSettingTests {
+    @Test func defaultsToTasksOnlyAndCanBeWidened() async {
+        let model = await makeModel()
+        #expect(model.state.agentReadAccess == .tasksOnly)
+        await model.send(.setAgentReadAccess(.allInbox))
+        #expect(model.state.agentReadAccess == .allInbox)
+        await model.send(.setAgentReadAccess(.tasksOnly))
+        #expect(model.state.agentReadAccess == .tasksOnly)
+    }
+}
+
+@Suite("Agent config backups command (S10)")
+@MainActor
+struct AgentBackupsCommandTests {
+    @Test func deleteBackupsIsRoutedAndNeverFakesWork() async throws {
+        let model = await makeModel()
+        let result = try #require(await model.send(.deleteAgentConfigBackups))
+        #expect(result.message?.contains("nothing was deleted") == true)
+    }
+}

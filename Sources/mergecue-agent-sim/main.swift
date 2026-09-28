@@ -15,6 +15,8 @@ let usage = """
       --timeout SECONDS  Abort the scenario after this long (default: 120).
       --hostile-marker TEXT
                          Extra phrase identifying the hostile comment in the hostile scenario (repeatable).
+      --handoff-code CODE
+                         The code from the handoff prompt ("(handoff code: CODE)"), passed to claim_task.
 
     MERGECUE_HOME / MERGECUE_SOCKET are passed through to mergecue-mcp.
 
@@ -32,6 +34,7 @@ func parseOptions(_ arguments: [String]) -> SimOptions {
     var agentName = "mergecue-agent-sim"
     var timeout = 120
     var markers: [String] = []
+    var handoffCode: String?
     var index = 0
     func value(_ flag: String) -> String {
         index += 1
@@ -60,6 +63,10 @@ func parseOptions(_ arguments: [String]) -> SimOptions {
             let marker = value(argument)
             guard !marker.isEmpty, marker.count <= 200 else { fail(usage: "--hostile-marker must be 1…200 characters.") }
             markers.append(marker)
+        case "--handoff-code":
+            let code = value(argument)
+            guard !code.isEmpty, code.count <= 32 else { fail(usage: "--handoff-code must be 1…32 characters.") }
+            handoffCode = code
         case "--help", "-h":
             print(usage, terminator: "")
             exit(0)
@@ -75,7 +82,8 @@ func parseOptions(_ arguments: [String]) -> SimOptions {
     guard FileManager.default.isExecutableFile(atPath: resolvedMCP) else {
         fail(usage: "mergecue-mcp not found or not executable at \(resolvedMCP); pass --mcp PATH.")
     }
-    return SimOptions(mcpPath: resolvedMCP, taskID: taskID, scenario: scenario, agentName: agentName, timeoutSeconds: timeout, hostileMarkers: markers)
+    return SimOptions(mcpPath: resolvedMCP, taskID: taskID, scenario: scenario, agentName: agentName, timeoutSeconds: timeout, hostileMarkers: markers,
+                      handoffCode: handoffCode)
 }
 
 signal(SIGPIPE, SIG_IGN)

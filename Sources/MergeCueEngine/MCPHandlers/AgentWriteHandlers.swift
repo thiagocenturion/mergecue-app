@@ -17,6 +17,7 @@ extension MergeCueEngine {
     func claimTask(_ params: ClaimTaskParams) async throws -> ClaimTaskResult {
         let task = try await requireTaskForAgent(params.taskID)
         if task.isTerminal { throw Self.terminal(task) }
+        try Self.checkHandoffCode(params.handoffCode, for: task)
         guard params.expectedVersion == task.version else {
             throw Self.versionConflict(expected: params.expectedVersion, current: task.version)
         }
@@ -41,6 +42,23 @@ extension MergeCueEngine {
             heartbeatIntervalSeconds: heartbeatInterval,
             checkout: updated.checkout.map(TaskCheckoutDTO.init)
         )
+    }
+
+    /// S7: a task created with a handoff code can only be claimed by an agent that got the owner's handoff prompt.
+    static func checkHandoffCode(_ presented: String?, for task: MCTask) throws(IPCError) {
+        guard let expected = task.handoffCode, !expected.isEmpty else { return }
+        guard let presented, !presented.isEmpty else {
+            throw IPCError.validationFailed(
+                "Task \(task.id.rawValue) requires the handoff code from the owner's handoff prompt — the text "
+                    + "\"(handoff code: …)\" next to the task id. Pass it as handoff_code. MergeCue never reveals it "
+                    + "through get_task; ask the owner for the handoff prompt if you do not have it."
+            )
+        }
+        guard HandoffCode.matches(presented: presented, expected: expected) else {
+            throw IPCError.validationFailed(
+                "handoff_code does not match task \(task.id.rawValue). Use the code from the owner's handoff prompt."
+            )
+        }
     }
 
     // MARK: heartbeat / update_task
@@ -98,7 +116,12 @@ extension MergeCueEngine {
         }
         let changes: WorkspaceChanges
         do {
-            changes = try await env.workspace.changes(inWorktree: worktree, since: base, maxBytes: Self.maxDiffArtifactBytes)
+            changes = try await worktreeChanges(checkout, worktree: worktree, base: base, maxBytes: Self.maxDiffArtifactBytes)
+        } catch WorkspaceError.worktreeGitDirChanged {
+            throw IPCError.validationFailed(
+                "The worktree's .git no longer points to the git directory MergeCue created for it. MergeCue refuses to run "
+                    + "git there; report_changes is rejected. Do not modify .git — the owner must recreate the worktree."
+            )
         } catch {
             throw IPCError.internalError(
                 "MergeCue could not recompute the diff of the worktree: \(SecretRedactor.redact((error as? LocalizedError)?.errorDescription ?? "\(error)"))",

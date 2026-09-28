@@ -256,6 +256,38 @@ struct IPCSecurityTests {
         }
     }
 
+    /// S13: the token is checked before the protocol version, so an unauthenticated peer learns nothing (not even
+    /// the supported versions), and any pre-auth error closes the connection.
+    @Test func tokenIsCheckedBeforeTheProtocolVersion() async throws {
+        try await withTestHome { home in
+            try await withServer(home: home) { _ in
+                let connection = try await RawConnection.connect(to: home.socketPath)
+                defer { connection.close() }
+                await connection.writeLine(requestLine(id: "v9", token: "wrong", version: 9))
+                let response = try decodeResponse(await connection.readLine())
+                #expect(response.error?.code == .unauthorized)
+                #expect(response.error?.data == nil)
+                #expect(await connection.waitForEOF())
+            }
+        }
+    }
+
+    /// S13: after its first request, a connection that goes quiet is closed too.
+    @Test func idleConnectionsAreClosedAfterTheFirstFrame() async throws {
+        try await withTestHome { home in
+            try await withServer(home: home, configuration: IPCServer.Configuration(handshakeTimeout: 5, idleTimeout: 0.2)) { server in
+                let token = try home.readToken()
+                let connection = try await RawConnection.connect(to: home.socketPath)
+                defer { connection.close() }
+                await connection.writeLine(requestLine(id: "p1", token: token))
+                let ping = try decodeResponse(await connection.readLine())
+                #expect(ping.id == "p1")
+                #expect(await connection.waitForEOF())
+                #expect(await eventually { await server.connectionCount() == 0 })
+            }
+        }
+    }
+
     @Test func silentConnectionsAreClosedAfterTheHandshakeWindow() async throws {
         try await withTestHome { home in
             try await withServer(home: home, configuration: IPCServer.Configuration(handshakeTimeout: 0.2)) { server in

@@ -299,10 +299,10 @@ public struct TaskCheckoutDTO: Codable, Sendable, Hashable {
             worktreePath: checkout.worktreePath,
             mappedCheckoutPath: checkout.mappedCheckoutPath,
             baseSHA: checkout.baseSHA,
-            sourceBranch: checkout.sourceBranch,
-            targetBranch: checkout.targetBranch,
+            sourceBranch: UntrustedFields.clean(checkout.sourceBranch),
+            targetBranch: UntrustedFields.clean(checkout.targetBranch),
             gitButlerManaged: checkout.isGitButlerManaged,
-            blockedReason: checkout.blockedReason
+            blockedReason: UntrustedFields.clean(checkout.blockedReason)
         )
     }
 

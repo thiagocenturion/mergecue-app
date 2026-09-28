@@ -1,7 +1,8 @@
 import Foundation
 import MergeCueCore
 
-/// Turns one request frame into one response frame: protocol version → token (constant time) → method →
+/// Turns one request frame into one response frame: token (constant time; closes the connection on failure, so
+/// nothing — not even the protocol version — is answered before authentication) → protocol version → method →
 /// client info → params shape → handler. Stateless and `Sendable`; each connection calls it sequentially.
 struct IPCRequestProcessor: Sendable {
     struct Reply: Sendable {
@@ -29,10 +30,6 @@ struct IPCRequestProcessor: Sendable {
         let rawID = object["id"]?.stringValue
         let id = rawID.flatMap { $0.count <= IPCProtocol.maxIdentifierLength ? $0 : nil } ?? ""
 
-        let version = object["v"]?.intValue
-        guard version == IPCProtocol.version else {
-            return reply(id: id, error: .protocolVersion(received: version), close: false)
-        }
         guard let presented = object["token"]?.stringValue, Self.tokensMatch(presented, token) else {
             log.notice("IPC: rejected a request with a missing or wrong token from \(peer)")
             return reply(
@@ -40,6 +37,10 @@ struct IPCRequestProcessor: Sendable {
                 error: .unauthorized("Missing or invalid MergeCue IPC token. Restart the MergeCue MCP server so it reads the current token."),
                 close: true
             )
+        }
+        let version = object["v"]?.intValue
+        guard version == IPCProtocol.version else {
+            return reply(id: id, error: .protocolVersion(received: version), close: false)
         }
         guard rawID != nil, !id.isEmpty else {
             return reply(id: "", error: .invalidParams("Request 'id' must be a non-empty string of at most \(IPCProtocol.maxIdentifierLength) characters."), close: false)

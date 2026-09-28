@@ -32,6 +32,12 @@ public actor MergeCueEngine: IPCRequestHandling {
     var inFlightFingerprints: Set<String> = []
     /// In-flight task creations per attention item (one active task per item, also under reentrancy).
     var pendingCreations: [String: Task<TaskID, any Error>] = [:]
+    /// Aggregated MCP read audit per client (`ReadScope.swift`).
+    var readAuditWindows: [String: ReadAuditWindow] = [:]
+    /// Sliding one-minute window of provider-hitting reads per MCP client.
+    var providerReadAttempts: [String: [Date]] = [:]
+    /// Short-lived cache of provider-hitting read results.
+    var providerReadCache: [String: CachedProviderRead] = [:]
 
     public init(environment: EngineEnvironment) {
         self.env = environment
@@ -198,6 +204,7 @@ enum SettingsKey {
     static let notificationPreferences = "engine.notification_preferences"
     static let trackingPreferences = "engine.tracking_preferences"
     static let lastMaintenance = "engine.last_maintenance"
+    static let agentReadAccess = "engine.agent_read_access"
     static let lastRefreshAt = "engine.last_refresh_at"
     static func repositoryListFetchedAt(_ account: AccountKey) -> String { "engine.repository_list_fetched_at.\(account.id)" }
     static func performedAction(_ fingerprint: String) -> String { "engine.performed_action.\(fingerprint)" }

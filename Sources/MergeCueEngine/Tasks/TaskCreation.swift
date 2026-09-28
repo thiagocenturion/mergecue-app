@@ -73,7 +73,8 @@ extension MergeCueEngine {
     func insertCreatedTask(type: TaskType, origin: TaskOrigin, trigger: TaskTriggerSnapshot, ruleID: String?, reason: String) async throws -> MCTask {
         let createdAt = now
         let task = try await insertNewTask { id in
-            MCTask(id: id, type: type, state: TaskStateMachine.initialState, createdAt: createdAt, origin: origin, trigger: trigger)
+            MCTask(id: id, type: type, state: TaskStateMachine.initialState, createdAt: createdAt, origin: origin, trigger: trigger,
+                   handoffCode: HandoffCode.generate(using: self.ids))
         }
         let by = ruleID == nil ? "you" : "rule \(ruleID ?? "")"
         await recordActivity(

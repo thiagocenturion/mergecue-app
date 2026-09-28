@@ -45,6 +45,12 @@ struct FakeEngine: IPCRequestHandling {
         func record(_ call: Call) { calls.append(call) }
         func task(_ id: TaskID) -> FakeTask? { tasks[id] }
         func store(_ task: FakeTask) { tasks[task.id] = task }
+        /// Compare-and-swap on the version (concurrent claims must not both win, like the real engine's CAS).
+        func store(_ task: FakeTask, ifVersion expected: Int) -> Bool {
+            guard tasks[task.id]?.version == expected else { return false }
+            tasks[task.id] = task
+            return true
+        }
         func makeLease() -> String { defer { nextLease += 1 }; return "lease_\(nextLease)" }
         func makeArtifact() -> String { defer { nextArtifact += 1 }; return String(format: "art_%010d", nextArtifact) }
     }
@@ -234,7 +240,9 @@ struct FakeEngine: IPCRequestHandling {
         task.lease = lease
         task.agent = call.agentName
         task.version += 1
-        await state.store(task)
+        guard await state.store(task, ifVersion: call.expectedVersion) else {
+            throw IPCError(.versionConflict, "Task \(task.id) changed while claiming; re-read it with get_task.", retryable: true)
+        }
         return try IPCCoding.encodeValue(ClaimTaskResult(
             taskID: task.id, state: .working, version: task.version, leaseID: lease, leaseExpiresAt: Self.date,
             heartbeatIntervalSeconds: 60, checkout: checkout(task)

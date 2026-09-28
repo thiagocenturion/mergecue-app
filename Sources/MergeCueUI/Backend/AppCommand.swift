@@ -67,6 +67,8 @@ public nonisolated struct ActionPreview: Sendable, Hashable, Identifiable {
     public var createdAt: Date
     /// True for preview/demo backends: approving records the decision but nothing is written anywhere.
     public var isSimulated: Bool
+    /// Agent (and run id) that claimed the task and produced the content, as it identified itself.
+    public var claimant: String?
 
     public init(
         id: String,
@@ -81,8 +83,10 @@ public nonisolated struct ActionPreview: Sendable, Hashable, Identifiable {
         canApprove: Bool = true,
         blockedReason: String? = nil,
         createdAt: Date,
-        isSimulated: Bool
+        isSimulated: Bool,
+        claimant: String? = nil
     ) {
+        self.claimant = claimant
         self.id = id
         self.taskID = taskID
         self.action = action
@@ -134,6 +138,8 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
     case setNotificationCategory(NotificationCategory, enabled: Bool)
     /// Which PRs/MRs besides the user's own are tracked (Settings ▸ General ▸ Tracking).
     case setTrackingPreferences(TrackingPreferences)
+    /// Settings ▸ Agents ▸ "Agent read access" (engine setting; default: only their tasks).
+    case setAgentReadAccess(AgentReadAccess)
 
     // MARK: Data
     /// Removes the isolated worktrees of these finished tasks (Settings ▸ Data ▸ Clean up, after confirmation).
@@ -171,6 +177,8 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
     case applyAgentRegistration(MCPRegistrationPlan, RegistrationConsent)
     /// Spawns the bundled helper, lists its tools and makes a read-only round trip; only then "Connected".
     case verifyAgent(AgentKind)
+    /// Settings ▸ Agents: deletes every agent-config backup MergeCue kept.
+    case deleteAgentConfigBackups
 
     // MARK: Checkouts
     /// Local checkouts whose remotes match a repository (with confidence).
@@ -215,6 +223,7 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
         case .setNotificationCategory(let category, _): "setNotificationCategory(\(category.rawValue))"
         case .setTrackingPreferences: "setTrackingPreferences"
         case .cleanUpWorktrees(let ids): "cleanUpWorktrees(\(ids.count))"
+        case .setAgentReadAccess(let access): "setAgentReadAccess(\(access.rawValue))"
         case .saveRule: "saveRule"
         case .deleteRule: "deleteRule"
         case .activateRule: "activateRule"
@@ -232,6 +241,7 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
         case .prepareAgentRegistration(let kind, let action): "prepareAgentRegistration(\(kind.rawValue), \(action.rawValue))"
         case .applyAgentRegistration(let plan, _): "applyAgentRegistration(\(plan.agent.rawValue), \(plan.action.rawValue))"
         case .verifyAgent(let kind): "verifyAgent(\(kind.rawValue))"
+        case .deleteAgentConfigBackups: "deleteAgentConfigBackups"
         case .findCheckouts: "findCheckouts"
         case .loadRepositories(_, let force): "loadRepositories(force: \(force))"
         case .scanCheckouts(let repos): "scanCheckouts(\(repos.count))"
@@ -294,11 +304,11 @@ public nonisolated struct AppCommandResult: Sendable {
     public static let none = AppCommandResult()
 }
 
-/// The short, agent-agnostic handoff command (PLAN §7). It carries only the task id; the agent fetches context
-/// through MergeCue MCP.
+/// The short, agent-agnostic handoff command (PLAN §7). It carries only the task id and its handoff code (S7); the
+/// agent fetches context through MergeCue MCP.
 public nonisolated enum HandoffText {
-    public static func command(for taskID: TaskID) -> String {
-        "Work on MergeCue task \(taskID.rawValue). Use MergeCue MCP for context and status updates. "
+    public static func command(for taskID: TaskID, handoffCode: String? = nil) -> String {
+        "Work on MergeCue task \(taskID.rawValue)\(HandoffCode.promptFragment(handoffCode)). Use MergeCue MCP for context and status updates. "
             + "Work only in the designated checkout. Stop before publishing anything."
     }
 }

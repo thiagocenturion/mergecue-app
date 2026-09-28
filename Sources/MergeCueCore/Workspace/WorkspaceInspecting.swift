@@ -10,11 +10,23 @@ public protocol WorkspaceInspecting: Sendable {
     func match(repo: Repository, checkoutPath: String) async -> MappingSuggestion
     func prepareWorktree(_ request: WorktreeRequest) async throws -> PreparedWorktree
     func changes(inWorktree path: String, since baseSHA: String, maxBytes: Int) async throws -> WorkspaceChanges
+    /// `changes` pinned to the worktree's recorded git directories (S2): refuses with `worktreeGitDirChanged` when
+    /// the worktree's `.git` now points elsewhere, and never runs repository filters/textconv/external diff
+    /// drivers. With `gitDirs == nil` the pin is derived from `checkoutPath` (the mapped checkout that registered the
+    /// worktree), never from the worktree itself.
+    func changes(inWorktree path: String, gitDirs: WorktreeGitDirs?, checkoutPath: String?, since baseSHA: String, maxBytes: Int) async throws -> WorkspaceChanges
     func checkPatch(_ patch: String, into checkoutPath: String, expectedHeadSHA: String?) async throws -> PatchApplyCheck
     func applyPatch(_ patch: String, into checkoutPath: String, expectedHeadSHA: String?) async throws -> PatchApplyCheck
     func removeWorktree(path: String, checkoutPath: String) async throws
     /// Only after explicit user approval.
     func runCommand(_ argv: [String], in directory: String, timeout: TimeInterval) async throws -> CommandResult
+}
+
+extension WorkspaceInspecting {
+    /// Default for implementations without git-dir pinning (test doubles): the unpinned `changes`.
+    public func changes(inWorktree path: String, gitDirs: WorktreeGitDirs?, checkoutPath: String?, since baseSHA: String, maxBytes: Int) async throws -> WorkspaceChanges {
+        try await changes(inWorktree: path, since: baseSHA, maxBytes: maxBytes)
+    }
 }
 
 /// Provider-neutral workspace errors, so the engine can react without importing `WorkspaceInspector`.
@@ -30,6 +42,8 @@ public enum WorkspaceError: Error, Sendable, Equatable, LocalizedError {
     case gitFailed(command: String, exitCode: Int32, stderr: String)
     case timedOut(command: String)
     case invalidRequest(String)
+    /// The worktree's `.git` no longer points to the git directory MergeCue recorded (possible tampering).
+    case worktreeGitDirChanged(path: String)
 
     public var errorDescription: String? {
         switch self {
@@ -43,6 +57,8 @@ public enum WorkspaceError: Error, Sendable, Equatable, LocalizedError {
         case .gitFailed(let command, let exitCode, let stderr): "git \(command) failed (\(exitCode)): \(stderr)"
         case .timedOut(let command): "\(command) timed out."
         case .invalidRequest(let message): "Invalid workspace request: \(message)"
+        case .worktreeGitDirChanged(let path):
+            "The worktree \(path) no longer points to the git directory MergeCue created for it; MergeCue refuses to run git there."
         }
     }
 }

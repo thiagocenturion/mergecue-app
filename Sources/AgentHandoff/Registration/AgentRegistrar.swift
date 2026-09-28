@@ -206,6 +206,8 @@ public actor AgentRegistrar {
 
     private func apply(_ plan: MCPRegistrationPlan) async throws(AgentRegistrarError) -> (RegistrationBackup, String) {
         let backup = try makeBackup(for: plan)
+        // Retention (S10): only the newest backups per agent are kept (the one just written included).
+        AgentConfigBackups.prune(paths: paths, agent: plan.agent, preserving: backup.directory)
         let result: ProcessResult
         do {
             result = try await runner.run(

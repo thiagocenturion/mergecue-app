@@ -422,7 +422,8 @@ public enum CheckoutSafety: String, Codable, Sendable { case safe, dirty, gitBut
 public struct CheckoutInfo: Codable, Sendable, Hashable { var path: String; var isRepository: Bool; var topLevel: String?; var remotes: [GitRemote]; var currentBranch: String?; var headSHA: String?; var isDirty: Bool; var dirtyPaths: [String]; var worktrees: [String]; var gitButler: GitButlerStatus; var safety: CheckoutSafety }
 public struct MappingSuggestion: Codable, Sendable, Hashable { var checkoutPath: String; var confidence: MappingConfidence; var matchedRemote: String?; var reason: String }
 public struct WorktreeRequest: Codable, Sendable, Hashable { var taskID: TaskID; var checkoutPath: String; var fetch: FetchHeadSpec; var destinationRoot: String }
-public struct PreparedWorktree: Codable, Sendable, Hashable { var path: String; var baseSHA: String; var localRef: String /* refs/mergecue/tasks/<id> */ }
+public struct WorktreeGitDirs: Codable, Sendable, Hashable { var gitDir: String; var commonDir: String }  // recorded at creation (S2)
+public struct PreparedWorktree: Codable, Sendable, Hashable { var path: String; var baseSHA: String; var localRef: String /* refs/mergecue/tasks/<id> */; var gitDirs: WorktreeGitDirs? }
 public struct ChangedPath: Codable, Sendable, Hashable { var path: String; var status: FileChangeStatus }
 public struct WorkspaceChanges: Codable, Sendable, Hashable { var changedPaths: [ChangedPath]; var unifiedDiff: String; var truncated: Bool; var headSHA: String?; var hasUncommittedChanges: Bool }
 public struct PatchApplyCheck: Codable, Sendable, Hashable { var canApply: Bool; var problems: [String]; var targetHeadSHA: String?; var targetSafety: CheckoutSafety }
@@ -433,12 +434,23 @@ public protocol WorkspaceInspecting: Sendable {
     func match(repo: Repository, checkoutPath: String) async -> MappingSuggestion
     func prepareWorktree(_ request: WorktreeRequest) async throws -> PreparedWorktree
     func changes(inWorktree path: String, since baseSHA: String, maxBytes: Int) async throws -> WorkspaceChanges
+    func changes(inWorktree path: String, gitDirs: WorktreeGitDirs?, checkoutPath: String?, since baseSHA: String, maxBytes: Int) async throws -> WorkspaceChanges // pinned (S2); default forwards to the unpinned one
     func checkPatch(_ patch: String, into checkoutPath: String, expectedHeadSHA: String?) async throws -> PatchApplyCheck
     func applyPatch(_ patch: String, into checkoutPath: String, expectedHeadSHA: String?) async throws -> PatchApplyCheck
     func removeWorktree(path: String, checkoutPath: String) async throws
     func runCommand(_ argv: [String], in directory: String, timeout: TimeInterval) async throws -> CommandResult // only after explicit user approval
 }
 ```
+Task worktrees are agent-writable (S2). `TaskCheckout.gitDirs` records the worktree's git dir and common dir when
+MergeCue creates it; every later recomputation (`report_changes`, `get_diff`, review, apply-patch preview/perform)
+calls the pinned `changes`, which refuses with `WorkspaceError.worktreeGitDirChanged` when `<worktree>/.git` is not a
+regular file pointing to the recorded git dir (symlinks refused; `report_changes` then answers `validation_failed`),
+and runs git with `GIT_DIR`/`GIT_WORK_TREE` pinned, `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`,
+`GIT_ATTR_SOURCE=<empty tree>`, `-c core.attributesFile=/dev/null`, every `filter.<name>` of the repository config
+disabled with `-c` and `--no-ext-diff --no-textconv`, so no filter/textconv/diff driver ever runs. Tasks without a
+recorded pin derive it from the mapped checkout's `worktrees/*/gitdir` registry, never from the worktree. Residual:
+GitButler independent clones (unused by the engine, which blocks GitButler code tasks) keep their git dir inside the
+worktree.
 
 ### 2.9 Sync, notifications, runtime protocols
 ```swift
@@ -481,8 +493,14 @@ public enum EngineChange: Sendable, Hashable { case accounts, syncStatus, attent
   `Set` properties of Core types encode as sorted arrays, so equal values give identical bytes across launches.
 - `JSONValue` (Codable enum: null, bool, number(Double), string, array, object) + helpers; its
   `defaultEncoder()`/`defaultDecoder()` are the wire coders.
-- `SecretRedactor.redact(_:)` — masks GitHub (`ghp_`, `gho_`, `ghu_`, `ghs_`, `github_pat_`), GitLab (`glpat-`, `gloas-`, `glrt-`), Atlassian (`ATATT…`, `ATCTT…`), Slack `xox?-`, AWS `AKIA…`, JWTs, `Authorization:`/`Bearer`/`Basic` values, secret headers (`PRIVATE-TOKEN`, `X-…-Token`, `Cookie`), `password=` / `token: …` / `"secret": 123` / `:api_key => …` pairs, `--password value` flags, PEM/PGP private keys, URL userinfo credentials (passwords, and bare ≥ 16-char tokens as the user). Runs in **linear time** on hostile input (no `\b`-anchored lazy prefixes); separators never cross a line break.
+- `SecretRedactor.redact(_:)` — masks GitHub (`ghp_`, `gho_`, `ghu_`, `ghs_`, `github_pat_`), GitLab (`glpat-`, `gloas-`, `glrt-`), Atlassian (`ATATT…`, `ATCTT…`), Slack `xox?-`, AWS `AKIA…`, JWTs, `Authorization:`/`Bearer`/`Basic` values, secret headers (`PRIVATE-TOKEN`, `X-…-Token`, `Cookie`), `password=` / `token: …` / `"secret": 123` / `:api_key => …` pairs, `--password value` flags, PEM/PGP private keys, URL userinfo credentials (passwords, and bare ≥ 16-char tokens as the user). Runs in **linear time** on hostile input (no `\b`-anchored lazy prefixes); separators never cross a line break. Also OpenAI/Anthropic `sk-…`, Stripe `sk_/rk_live|test_`, `npm_`, `dckr_pat_`, `AIza…`, Slack webhook URLs; token prefixes also match right after an ANSI CSI/SGR sequence (`redact` swaps the final letter of an `ESC[…m` directly before a token prefix for a private-use placeholder, runs the rules once and restores it — no costly look-behind, D21 stays linear).
+- `TerminalControlStripper.strip(_:)` — removes ANSI CSI/OSC/DCS/… sequences (7- and 8-bit), C0/C1 controls and DEL (keeps `\n`/`\t`; `\r` → `\n`) in linear time. `LogExcerpt.make` and `UntrustedText.bounded` strip **before** redacting, so coloured tokens are masked and OSC 52/OSC 8 payloads never reach an agent's terminal.
 - `BoundedText.truncate(_:maxBytes:keepTail:)` (UTF-8 safe, never splits a scalar and backs off to a grapheme-cluster boundary), `BoundedText.logExcerpt(_:maxBytes:)` (prefers lines around `error|fail|panic|exception` and the tail; splits on `\n` bytes so CRLF logs work).
+- `WebLinkPolicy` — provider links are untrusted. `webURL(_:)` keeps only absolute http(s) URLs with a host and no
+  userinfo (adapters apply it to check `details_url`s / GitLab `web_url`s; `CheckRun.init` and `LogExcerpt.make`
+  apply it too). `decision(for:instances:)` is the UI's only way to open a link (`AppModel.openLink`): https to a
+  connected instance host or a known CI host opens, other https hosts need a confirmation naming the host, http only
+  to a self-managed instance configured with http, everything else is rejected.
 - `MergeCuePaths` (all paths derive from `MERGECUE_HOME` env or `~/Library/Application Support/MergeCue`):
   `root`, `database` (`mergecue.sqlite`), `ipcDirectory` (`ipc/`, 0700), `socket` (`ipc/mergecue.sock`; if the
   path exceeds 100 bytes, fall back to `/tmp/mergecue-<uid>/mergecue.sock` with a 0700 dir), `ipcToken`
@@ -655,6 +673,13 @@ Server authenticates every connection: `getpeereid` uid must equal the server ui
 the correct token; optional `PeerValidator` checks the peer executable's code signature/path (enforced when the
 app is signed with a Team ID). Stale socket files are unlinked on start; the socket is removed on shutdown.
 
+**Trust boundary (S8).** The same-uid check plus the 0600 token file are the actual boundary: anything running as
+the user can read the token and connect. Peer code-signature validation is **defence in depth only** — a same-user
+process can inject into or impersonate a signed helper (DYLD/debugger/`task_for_pid` on unhardened builds, or
+simply by reading the token), so it must never be treated as separating mutually distrusting processes of one
+user. Agents are therefore limited by what the IPC methods allow (task-scoped reads, leases, approvals in the app),
+not by who they are.
+
 ```swift
 public enum IPCMethod: String, Codable, Sendable, CaseIterable { case ping, listAttention = "list_attention", getTask = "get_task", getChangeContext = "get_change_context", getThread = "get_thread", getCIFailure = "get_ci_failure", getDiff = "get_diff", claimTask = "claim_task", heartbeat, updateTask = "update_task", reportChanges = "report_changes", reportTests = "report_tests", submitResult = "submit_result", failTask = "fail_task", proposeRule = "propose_rule", listRules = "list_rules", listTasks = "list_tasks" }
 public struct IPCClientInfo: Codable, Sendable { var name: String; var version: String; var pid: Int32 }
@@ -680,14 +705,14 @@ IDs exposed are short IDs (`mc_…`, `thr_…`, `chk_…`, `art_…`, `att_…`)
 | Method | Params DTO | Result DTO |
 | --- | --- | --- |
 | `ping` | `{}` | `{app_version, protocol_version, is_demo}` |
-| `list_attention` | `{provider?, account?, repo?, limit? (≤100, default 20), include_read?}` | `{items:[{id, reason, priority, provider, account, repo, number, change_ref, title, summary, thread_id?, check_id?, task_id?, updated_at}], total}` |
+| `list_attention` | `{provider?, account?, repo?, limit? (≤100, default 20), include_read?}` | `{items:[{id, reason, priority, provider, account, repo, number, change_ref, title, summary, thread_id?, check_id?, task_id?, updated_at, untrusted_fields}], total, note?}` |
 | `list_tasks` | `{states?: [TaskState], limit?}` | `{tasks:[TaskSummaryDTO]}` |
 | `get_task` | `{task_id}` | `TaskContextDTO {task_id, type, state, version, created_at, updated_at, instructions: [String] (trusted, from MergeCue), source {provider, account, repo, number, change_ref, title, web_url, thread_id?, check_id?}, checkout {policy, worktree_path?, mapped_checkout_path?, base_sha?, source_branch, target_branch, gitbutler_managed, blocked_reason?}, trigger {event_type?, captured_at, head_sha?, anchor?, untrusted_content: [UntrustedText]}, lease? {agent_name, expires_at}, artifacts: [{artifact_id, kind, title}], next_steps: [String], is_demo}` |
 | `get_change_context` | `{change_ref, include_files? (default true), max_files? (≤300)}` | `{change_ref, provider, repo, number, title, state, is_draft, author, source_branch, target_branch, head_sha, base_sha, web_url, description: UntrustedText?, reviews:[{author,state,submitted_at}], threads:[{thread_id, path?, line?, resolved?, outdated, comment_count, last_author}], checks:[{check_id, name, status}], changed_files?:[{path,status,additions,deletions}], readiness}` |
 | `get_thread` | `{thread_id}` | `{thread_id, change_ref, kind, resolved?, resolvable, outdated, anchor?, comments:[{comment_id, author, created_at, kind, body: UntrustedText}], web_url}` |
 | `get_ci_failure` | `{check_id, max_bytes? (≤65536, default 16384)}` | `{check_id, name, status, commit_sha?, details_url?, log_url?, excerpt: UntrustedText, truncated}` |
 | `get_diff` | `{task_id? , change_ref?, max_bytes? (≤262144)}` | `{source: "provider"|"worktree", base_sha?, head_sha?, files, unified_diff, truncated}` |
-| `claim_task` | `{task_id, agent_name, run_id?, expected_version}` | `{task_id, state, version, lease_id, lease_expires_at, heartbeat_interval_seconds, checkout}` |
+| `claim_task` | `{task_id, agent_name, run_id?, expected_version, handoff_code?}` | `{task_id, state, version, lease_id, lease_expires_at, heartbeat_interval_seconds, checkout}` |
 | `heartbeat` | `{task_id, lease_id}` | `{version, lease_expires_at}` |
 | `update_task` | `{task_id, lease_id, expected_version, phase: investigating|planning|editing|testing|finalizing, message (≤280)}` | `{version, lease_expires_at}` |
 | `report_changes` | `{task_id, lease_id, expected_version, worktree_path, base_sha, head_sha?, changed_paths:[String], note?}` | `{artifact_id, version, verified_changed_paths, unexpected_paths, missing_paths}` — app recomputes the diff itself via `WorkspaceInspecting`; path must be the task's worktree; base must match the recorded base SHA |
@@ -696,6 +721,16 @@ IDs exposed are short IDs (`mc_…`, `thr_…`, `chk_…`, `art_…`, `att_…`)
 | `fail_task` | `{task_id, lease_id, expected_version, reason, retryable, blocked?}` | `{version, state}` |
 | `propose_rule` | `{name, providers?, event_types, repo_include?, repo_exclude?, action: notify|create_task|request_execution, task_type?, quiet_hours?, max_fires_per_hour?}` | `{rule_id, status: "pending_activation", preview}` — never active until the user activates it in the app |
 | `list_rules` | `{}` | `{rules:[{rule_id, name, active, origin, action, event_types}]}` |
+
+Agent read scope (S3, S12): engine setting "Agent read access" (`AgentReadAccess`, `engine.agent_read_access`,
+Settings ▸ Agents) = `tasks_only` (**default**) | `all_inbox`. In `tasks_only`, `list_attention` returns only items
+of change requests with a non-terminal task (plus a trusted `note`), and `get_change_context` / `get_thread` /
+`get_ci_failure` / `get_diff` answer `cross_scope_reference` (message names the setting) for anything outside those
+change requests (`get_diff` by `task_id` also refuses terminal tasks). Reads are audited per client
+(`name#pid`) in 5-minute windows (`mcp_reads`, first denial `mcp_read_denied`); provider-hitting reads
+(`get_ci_failure`, provider `get_diff`) are limited to 20/min per client (`rate_limited`) and cached 60 s.
+`claim_task` requires the task's handoff code (S7, `handoff_code`, only in the handoff prompt) when it has one.
+DTOs carrying third-party plain strings list them in `untrusted_fields` (S6).
 
 Engine-side guarantees (implemented in MergeCueEngine): lease validation, expected-version CAS, allowed transitions
 only, per-task rate limit (≤ 30 writes/min → `rate_limited`), terminal-state resurrection rejected
@@ -728,9 +763,16 @@ Implemented additions and semantics (integration pass; see doc comments in `Sour
   `GetDiffResult(_: DiffPayload)` / `GetDiffResult(_: WorkspaceChanges, baseSHA:)`, `RuleSummaryDTO(_:)`.
 - Handlers: `IPCClosureHandler { method, params, client in … }`; return `IPCCoding.result(dto)`. Requests on one
   connection are handled in order; connections run concurrently. The server replaces `client.pid` with the
-  kernel-reported peer pid; error precedence is `protocol_version` → `unauthorized` (connection closed) →
-  `unsupported` → `invalid_params`. Error messages are redacted before sending; an over-4 MiB result becomes
-  `internal_error`. Idle connections close after 10 s (`Configuration.handshakeTimeout`).
+  kernel-reported peer pid; error precedence is `unauthorized` (checked first, connection closed — nothing, not
+  even the protocol version, is answered before authentication; malformed frames also close) → `protocol_version`
+  → `unsupported` → `invalid_params`. Error messages are redacted before sending; an over-4 MiB result becomes
+  `internal_error`. A connection that sends nothing closes after 10 s (`Configuration.handshakeTimeout`); after its
+  first frame, one with no request in flight closes after 60 s of silence (`Configuration.idleTimeout`).
+- Agent text (S5): lengths are counted in Unicode scalars (grapheme clusters can be inflated with combining marks);
+  every agent string rejects C0/C1 controls, DEL and the bidi overrides U+202A–202E / U+2066–2069 (multiline fields
+  — `message`, `note`, `command`, `summary`, `proposed_reply`, `known_risks`, `reason`, `no_changes_reason` — allow
+  `\n`/`\t`); `agent_name` is ASCII letters/digits plus ` ._-()+/@:`, `run_id` ASCII letters/digits plus
+  `._-:/@=+`. `report_tests.output` is free-form but stripped of terminal controls and redacted when stored.
 - `IPCServerError`: `insecureDirectory`, `insecureSocketPath`, `socketPathTooLong`, `alreadyRunning` (a live listener
   owns the socket), `system(operation:code:)`. `stop()` removes socket/token only if they are still ours.
 - Peer validation: `PeerValidator.validate(_ peer: IPCPeerCredentials) throws`; `CodeSignaturePeerValidator.make(
@@ -834,6 +876,8 @@ Public API groups (UI contract, exact names chosen by the implementer and docume
   reply / resolve thread / request changes / merge; `perform(preview)` re-fetches fresh remote state (`headInfo`,
   `thread`) and blocks on SHA/thread change; writes require `Account.writesEnabled` **and** a matching approved
   preview; every attempt/success/failure is audited; idempotency guard per preview fingerprint;
+- handoff working folder (S14): the isolated worktree for code tasks; read-only tasks (`draft_reply`) get a private
+  scratch folder `<root>/handoff/scratch/<task id>` (0700) — the agent is never started inside the user's checkout;
 - rules: CRUD, templates, activation (user only), evaluation on new events with per-(rule,event) idempotency,
   quiet hours, max fires/hour; `requestExecution` degrades to `createTask` + note unless an execution mode is
   verified (`Task ready to start`, never `AI working` without a claim);
@@ -906,3 +950,7 @@ Implemented runtime surface (stage C; doc comments in `Sources/MergeCueRuntime`)
   + SHA rewriting to `DemoRepository`, steps persisted in `demo-scenario.json`, `simulateForcePush(_:)`,
   `providerWrites(_:)`); engine refreshes advance the step (`DemoSyncControl`), automatic polling/wake never do.
 - `mergecue-demo-host` (executable): headless demo host for real agent round trips (`scripts/e2e-real-agent.sh`).
+- Agent-config backups (S10): `AgentRegistrar` keeps only the last `AgentConfigBackups.keepPerAgent` (3) backup
+  directories per agent under `<root>/backups` (the one just written always survives); `MergeCueRuntime.
+  agentConfigBackups()` / `deleteAgentConfigBackups()` back Settings ▸ Agents ▸ "Configuration backups". Only
+  `<agent>-<timestamp>[-N]` directories containing `manifest.json` are ever deleted (symlinks never followed).

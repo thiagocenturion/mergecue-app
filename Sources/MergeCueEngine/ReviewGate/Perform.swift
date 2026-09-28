@@ -175,8 +175,10 @@ extension MergeCueEngine {
             }
             let fresh = try await provider.thread(threadKey)
             if preview.action == .postReply {
-                let body = (task.proposedReply ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                guard ContentDigest.sha256Hex(task.proposedReply ?? "") == preview.contentDigest else {
+                // Exactly the bytes the preview showed and fingerprinted (invisible characters removed, S11).
+                let postable = InvisibleText.sanitized(task.proposedReply ?? "").text
+                let body = postable.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard ContentDigest.sha256Hex(postable) == preview.contentDigest else {
                     return .stale("The proposed reply changed since the preview.")
                 }
                 if fresh.comments.contains(where: { $0.author.remoteID == account.id.remoteUserID && $0.body.trimmingCharacters(in: .whitespacesAndNewlines) == body }) {
@@ -185,7 +187,7 @@ extension MergeCueEngine {
                 if Self.threadVersion(fresh) != preview.threadVersion {
                     return .stale("The thread changed since the preview (new reply, edit or resolution).")
                 }
-                let comment = try await provider.createReply(to: threadKey, body: task.proposedReply ?? "")
+                let comment = try await provider.createReply(to: threadKey, body: postable)
                 return .written("Reply posted on \(threadKey.shortID) (comment \(comment.id)).")
             } else {
                 if fresh.isResolved == true {
@@ -213,7 +215,7 @@ extension MergeCueEngine {
             if let expected = preview.checkoutHeadSHA, info.headSHA != expected {
                 return .stale("Your checkout moved since the preview.")
             }
-            let changes = try await env.workspace.changes(inWorktree: worktree, since: base, maxBytes: Self.maxPatchBytes)
+            let changes = try await worktreeChanges(checkout, worktree: worktree, base: base, maxBytes: Self.maxPatchBytes)
             guard ContentDigest.sha256Hex(changes.unifiedDiff) == preview.contentDigest else {
                 return .stale("The worktree changed since the preview.")
             }

@@ -197,7 +197,7 @@ extension MergeCueEngine {
             let prepared = try await env.workspace.prepareWorktree(request)
             return TaskCheckout(
                 policy: .isolatedWorktree, mappedCheckoutPath: mapping.checkoutPath, worktreePath: prepared.path,
-                baseSHA: prepared.baseSHA, sourceBranch: source, targetBranch: target
+                baseSHA: prepared.baseSHA, sourceBranch: source, targetBranch: target, gitDirs: prepared.gitDirs
             )
         } catch {
             let detail = SecretRedactor.redact((error as? LocalizedError)?.errorDescription ?? "\(error)")
@@ -211,5 +211,15 @@ extension MergeCueEngine {
         case .probable: 1
         case .mismatch: 2
         }
+    }
+}
+
+extension MergeCueEngine {
+    /// The changes of a task's isolated worktree, recomputed with git pinned to the git dirs recorded at creation
+    /// (or derived from the mapped checkout for tasks created before they were recorded) — S2.
+    func worktreeChanges(_ checkout: TaskCheckout, worktree: String, base: String, maxBytes: Int) async throws -> WorkspaceChanges {
+        try await env.workspace.changes(
+            inWorktree: worktree, gitDirs: checkout.gitDirs, checkoutPath: checkout.mappedCheckoutPath, since: base, maxBytes: maxBytes
+        )
     }
 }

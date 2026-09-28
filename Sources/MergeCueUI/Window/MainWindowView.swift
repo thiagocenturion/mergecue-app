@@ -42,6 +42,23 @@ public struct MainWindowView: View {
         .sheet(isPresented: $model.showsOnboarding) {
             OnboardingView(model: model)
         }
+        .alert(
+            "Open a link to \(model.pendingLinkConfirmation?.host ?? "another site")?",
+            isPresented: linkConfirmationBinding,
+            presenting: model.pendingLinkConfirmation
+        ) { _ in
+            Button("Open in Browser") { model.confirmPendingLink() }
+            Button("Cancel", role: .cancel) { model.cancelPendingLink() }
+        } message: { pending in
+            Text("This link comes from provider data and points outside your connected accounts and known CI services:\n\(pending.url.absoluteString)")
+        }
+    }
+
+    private var linkConfirmationBinding: Binding<Bool> {
+        Binding(
+            get: { model.pendingLinkConfirmation != nil },
+            set: { if !$0 { model.cancelPendingLink() } }
+        )
     }
 
     private var connectSheetBinding: Binding<ConnectSheetItem?> {

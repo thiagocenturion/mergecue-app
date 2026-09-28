@@ -87,6 +87,7 @@ struct LifecycleTests {
 
         // Then post the reply (last action → done).
         let replyPreview = try await engine.previewAction(created.id, .postReply)
+        #expect(replyPreview.claimant == "claude-code (run run-1)")
         #expect(replyPreview.canApprove)
         #expect(replyPreview.body == "Done — capped at 30 s.")
         let replyOutcome = try await engine.perform(previewID: replyPreview.id, approval: PreviewApproval(fingerprint: replyPreview.fingerprint))
@@ -118,12 +119,113 @@ struct LifecycleTests {
         #expect(h.world.writes.count == 1)
     }
 
+    /// S7: only an agent holding the handoff prompt's code can claim; reads never reveal it.
+    @Test("claim_task requires the handoff code; get_task and list_tasks never reveal it")
+    func handoffCodeGatesClaims() async throws {
+        let h = try await Harness.make()
+        let task = try await h.engine.createTask(fromAttention: h.threadItemID)
+        let code = try #require(task.handoffCode)
+
+        let context = try await h.ok(GetTaskParams(taskID: task.id))
+        #expect(!(try IPCCoding.encodeValue(context).jsonString()).contains(code))
+        #expect(context.nextSteps.contains { $0.contains("handoff_code") })
+        let listed = try await h.ok(ListTasksParams())
+        #expect(!(try IPCCoding.encodeValue(listed).jsonString()).contains(code))
+
+        let missing = await h.callVerbatim(ClaimTaskParams(taskID: task.id, agentName: "intruder", expectedVersion: context.version))
+        guard case .failure(let missingError) = missing else { Issue.record("claim without code succeeded"); return }
+        #expect(missingError.code == .validationFailed)
+        #expect(missingError.message.contains("handoff code"))
+        let wrong = await h.callVerbatim(ClaimTaskParams(taskID: task.id, agentName: "intruder", expectedVersion: context.version, handoffCode: "WRONG000"))
+        guard case .failure(let wrongError) = wrong else { Issue.record("claim with a wrong code succeeded"); return }
+        #expect(wrongError.code == .validationFailed)
+        #expect(try await h.task(task.id).state == .waitingForAgent)
+        let history = try await h.engine.taskDetail(task.id).activities
+        #expect(history.filter { $0.kind == .rejectedCall }.count == 2)
+
+        // Codes are compared case-insensitively and ignore dashes (agents retype them).
+        let loose = String(code.prefix(4)).lowercased() + "-" + String(code.dropFirst(4)).lowercased()
+        let claim = await h.callVerbatim(ClaimTaskParams(taskID: task.id, agentName: "Claude Code", runID: "run-42", expectedVersion: context.version, handoffCode: loose))
+        guard case .success(let claimed) = claim else { Issue.record("claim with the right code failed: \(claim)"); return }
+        #expect(claimed.state == .working)
+    }
+
+    /// S2: the engine records the worktree's git dirs, pins every recomputation to them, and rejects report_changes
+    /// when the agent repointed the worktree's .git.
+    @Test("report_changes is rejected when the worktree's .git was repointed")
+    func repointedGitDirRejectsReportChanges() async throws {
+        let h = try await Harness.make()
+        let task = try await h.engine.createTask(fromAttention: h.threadItemID)
+        let checkout = try #require(task.checkout)
+        let pin = try #require(checkout.gitDirs)
+        #expect(pin.gitDir.hasSuffix("/.git/worktrees/\(task.id.rawValue)"))
+        let claim = try await h.ok(ClaimTaskParams(taskID: task.id, agentName: "codex", expectedVersion: task.version))
+        h.workspace.setChanges(["a.swift"])
+        h.workspace.state.update { $0.gitDirTampered = true }
+        let rejected = await h.call(ReportChangesParams(
+            taskID: task.id, leaseID: claim.leaseID, expectedVersion: claim.version,
+            worktreePath: try #require(checkout.worktreePath), baseSHA: try #require(checkout.baseSHA), changedPaths: ["a.swift"]
+        ))
+        guard case .failure(let error) = rejected else { Issue.record("report_changes accepted a tampered worktree"); return }
+        #expect(error.code == .validationFailed)
+        #expect(error.message.contains(".git"))
+        #expect(h.workspace.state.get().pinnedCalls.last?.gitDirs == pin)
+        #expect(try await h.engine.taskDetail(task.id).activities.contains { $0.kind == .rejectedCall })
+        #expect(try await h.task(task.id).artifactIDs.isEmpty)
+    }
+
+    /// S11: a reply with zero-width / invisible characters is shown and posted without them, and the fingerprint
+    /// covers exactly the posted bytes.
+    @Test("Invisible characters are stripped from the reply preview and the posted reply")
+    func invisibleCharactersAreStrippedBeforeApproval() async throws {
+        let h = try await Harness.make(.init(writesEnabled: true))
+        let task = try await h.submittedTask(reply: "Fixed\u{200B} the cap.\u{2060}\u{E0041}")
+        let preview = try await h.engine.previewAction(task.id, .postReply)
+        #expect(preview.body == "Fixed the cap.")
+        #expect(preview.contentDigest == ContentDigest.sha256Hex("Fixed the cap."))
+        #expect(preview.warnings.contains { $0.contains("invisible") && $0.contains("U+200B") })
+        let outcome = try await h.engine.perform(previewID: preview.id, approval: PreviewApproval(fingerprint: preview.fingerprint))
+        guard case .performed = outcome else { Issue.record("unexpected \(outcome)"); return }
+        #expect(h.world.writes.first?.body == "Fixed the cap.")
+    }
+
+    /// S14: a read-only task never opens the agent in the user's real checkout.
+    @Test("Read-only tasks hand off into a private scratch folder, not the mapped checkout")
+    func readOnlyTaskUsesScratchFolder() async throws {
+        let h = try await Harness.make()
+        let task = try await h.engine.createTask(fromAttention: h.threadItemID, type: .draftReply)
+        #expect(task.checkout?.policy == .readOnly)
+        #expect(task.checkout?.mappedCheckoutPath == Fixture.checkoutPath)
+        let handoff = try await h.engine.handoff(for: task.id)
+        let folder = try #require(handoff.workingDirectory)
+        #expect(folder != Fixture.checkoutPath)
+        #expect(folder.hasSuffix("/handoff/scratch/\(task.id.rawValue)"))
+        let attributes = try FileManager.default.attributesOfItem(atPath: folder)
+        #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700)
+        let context = try await h.ok(GetTaskParams(taskID: task.id))
+        #expect(context.instructions.contains { $0.contains("scratch folder") && $0.contains(Fixture.checkoutPath) })
+    }
+
+    @Test("Tasks created before handoff codes existed can still be claimed without one")
+    func legacyTaskNeedsNoCode() async throws {
+        let h = try await Harness.make()
+        var task = try await h.engine.createTask(fromAttention: h.threadItemID)
+        task.handoffCode = nil
+        task.version += 1
+        try await h.db.updateTask(task, expectedVersion: task.version - 1)
+        let claim = await h.callVerbatim(ClaimTaskParams(taskID: task.id, agentName: "codex", expectedVersion: task.version))
+        guard case .success = claim else { Issue.record("legacy claim failed: \(claim)"); return }
+    }
+
     @Test("Handoff command copied but never executed: task stays waiting_for_agent")
     func copiedCommandStaysWaiting() async throws {
         let h = try await Harness.make()
         let task = try await h.engine.createTask(fromAttention: h.threadItemID)
         let handoff = try await h.engine.handoff(for: task.id)
-        #expect(handoff.command == "Work on MergeCue task \(task.id.rawValue). Use MergeCue MCP for context and status updates. Work only in the designated checkout. Stop before publishing anything.")
+        let code = try #require(task.handoffCode)
+        #expect(code.count == HandoffCode.length)
+        #expect(handoff.handoffCode == code)
+        #expect(handoff.command == "Work on MergeCue task \(task.id.rawValue) (handoff code: \(code)). Use MergeCue MCP for context and status updates. Work only in the designated checkout. Stop before publishing anything.")
         #expect(handoff.statusText == "Task ready to start")
         #expect(handoff.workingDirectory == task.checkout?.worktreePath)
         try await h.engine.recordHandoffCopied(task.id, agentName: "Claude Code")
@@ -269,6 +371,13 @@ struct LifecycleTests {
         let context = try await h.ok(GetTaskParams(taskID: task.id))
         #expect(context.checkout?.policy == .blocked)
         #expect(context.instructions.contains { $0.contains("Blocked: map a safe checkout") })
+        // S6: the (possibly git-stderr-derived) reason travels in checkout.blocked_reason, never in trusted text.
+        let reasonDetail = try #require(checkout.blockedReason?.replacingOccurrences(of: "Blocked: map a safe checkout", with: ""))
+        if reasonDetail.count > 8 {
+            #expect(!context.instructions.joined(separator: "\n").contains(reasonDetail))
+        }
+        #expect(context.checkout?.blockedReason != nil)
+        #expect(context.untrustedFields?.contains("checkout.blocked_reason") == true)
         let claim = try await h.ok(ClaimTaskParams(taskID: task.id, agentName: "codex", expectedVersion: context.version))
         let edit = await h.call(ReportChangesParams(
             taskID: task.id, leaseID: claim.leaseID, expectedVersion: claim.version, worktreePath: Fixture.checkoutPath,

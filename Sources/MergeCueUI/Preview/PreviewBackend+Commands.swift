@@ -78,6 +78,9 @@ extension PreviewBackend {
         case .setTrackingPreferences(let preferences):
             state.trackingPreferences = preferences
             return .none
+        case .setAgentReadAccess(let access):
+            state.agentReadAccess = access
+            return AppCommandResult(message: "Agent read access: \(access.displayName.lowercased())")
 
         case .saveRule(let rule):
             var rule = rule
@@ -130,7 +133,7 @@ extension PreviewBackend {
             guard !record.task.isTerminal else { throw AppBackendError.invalidTransition("Task \(id) is \(record.task.state.displayName.lowercased()); reopen it first.") }
             let target = agent?.displayName ?? "your agent"
             return AppCommandResult(message: "Command copied — paste it into \(target). The task stays “Waiting for agent” until the agent claims it.",
-                                    handoffCommand: HandoffText.command(for: id))
+                                    handoffCommand: HandoffText.command(for: id, handoffCode: record.task.handoffCode))
         case .openInAgent(let id, let agent):
             guard let record = state.tasks.first(where: { $0.id == id }) else { throw AppBackendError.notFound("Task \(id)") }
             guard state.agents.first(where: { $0.kind == agent })?.canOpenTasks == true else {
@@ -164,6 +167,9 @@ extension PreviewBackend {
                 throw AppBackendError.failed(error.localizedDescription)
             }
             return AppCommandResult(registrationPlan: plan)
+        case .deleteAgentConfigBackups:
+            state.runtime?.agentBackupCount = 0
+            return AppCommandResult(message: "Preview: no backups exist; nothing was deleted.")
         case .applyAgentRegistration(let plan, _):
             guard let index = state.agents.firstIndex(where: { $0.kind == plan.agent }) else { throw AppBackendError.notFound(plan.agent.displayName) }
             state.agents[index].mcpRegistration = plan.action == .register ? .registered(verifiedAt: nil) : .notRegistered

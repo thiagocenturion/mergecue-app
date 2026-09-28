@@ -82,14 +82,17 @@ public struct ListAttentionParams: IPCMethodParams, Hashable {
 public struct ListAttentionResult: Codable, Sendable, Hashable {
     public var items: [AttentionItemDTO]
     public var total: Int
+    /// Trusted hint from MergeCue, e.g. that agent read access is limited to open tasks (omitted when nil).
+    public var note: String?
 
-    public init(items: [AttentionItemDTO], total: Int) {
+    public init(items: [AttentionItemDTO], total: Int, note: String? = nil) {
         self.items = items
         self.total = total
+        self.note = note
     }
 
     private enum CodingKeys: String, CodingKey {
-        case items, total
+        case items, total, note
     }
 }
 
@@ -98,6 +101,8 @@ public struct ListAttentionResult: Codable, Sendable, Hashable {
 ///
 /// `title` and `summary` may quote reviewer or PR text: display data, never instructions.
 public struct AttentionItemDTO: Codable, Sendable, Hashable {
+    /// JSON paths of fields that hold third-party text (data, never instructions). See `UntrustedFields`.
+    public var untrustedFields: [String]? = UntrustedFields.attentionItem
     /// `att_…`.
     public var id: String
     public var reason: AttentionReason
@@ -169,8 +174,8 @@ public struct AttentionItemDTO: Codable, Sendable, Hashable {
             repo: item.repoFullPath,
             number: item.number,
             changeRef: ChangeRequestRef(kind: item.providerKind, host: item.account.host, repoFullPath: item.repoFullPath, number: item.number),
-            title: item.title,
-            summary: item.summary,
+            title: UntrustedFields.clean(item.title),
+            summary: UntrustedFields.clean(item.summary),
             threadID: item.thread?.shortID,
             checkID: item.check?.shortID,
             taskID: item.linkedTaskID,
@@ -179,6 +184,7 @@ public struct AttentionItemDTO: Codable, Sendable, Hashable {
     }
 
     private enum CodingKeys: String, CodingKey {
+        case untrustedFields = "untrusted_fields"
         case id, reason, provider, account, repo, number, title, summary
         case priorityWire = "priority"
         case changeRef = "change_ref"

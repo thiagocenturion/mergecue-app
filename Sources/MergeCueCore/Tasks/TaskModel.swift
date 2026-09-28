@@ -41,6 +41,8 @@ public struct TaskCheckout: Codable, Sendable, Hashable {
     public var targetBranch: String
     public var isGitButlerManaged: Bool
     public var blockedReason: String?
+    /// Git directories of `worktreePath`, recorded when MergeCue created it (S2). nil for older tasks.
+    public var gitDirs: WorktreeGitDirs?
 
     public init(
         policy: CheckoutPolicy,
@@ -50,8 +52,10 @@ public struct TaskCheckout: Codable, Sendable, Hashable {
         sourceBranch: String,
         targetBranch: String,
         isGitButlerManaged: Bool = false,
-        blockedReason: String? = nil
+        blockedReason: String? = nil,
+        gitDirs: WorktreeGitDirs? = nil
     ) {
+        self.gitDirs = gitDirs
         self.policy = policy
         self.mappedCheckoutPath = mappedCheckoutPath
         self.worktreePath = worktreePath
@@ -89,11 +93,12 @@ public struct UntrustedText: Codable, Sendable, Hashable {
     /// Appended when `bounded` cuts the text.
     public static let truncationMarker = "\n[… truncated by MergeCue]"
 
-    /// Redacts secrets, then bounds the text to `maxBytes` UTF-8 bytes (keeping the head). When the text is cut,
+    /// Strips terminal control sequences and control characters (`TerminalControlStripper`, which also blocks
+    /// OSC 52 / OSC 8 injection into agent terminals), redacts secrets, then bounds the text to `maxBytes` UTF-8 bytes (keeping the head). When the text is cut,
     /// `truncationMarker` is appended **within** the budget (it is omitted if the budget is smaller than the
     /// marker), so `result.text.utf8.count <= max(0, maxBytes)` always holds.
     public static func bounded(source: String, author: String? = nil, createdAt: Date? = nil, text: String, maxBytes: Int) -> UntrustedText {
-        let redacted = SecretRedactor.redact(text)
+        let redacted = SecretRedactor.redact(TerminalControlStripper.strip(text))
         let budget = max(0, maxBytes)
         let marked: String
         if redacted.utf8.count <= budget {
@@ -242,6 +247,9 @@ public struct MCTask: Codable, Sendable, Hashable, Identifiable {
     public var resultSummary: String?
     public var proposedReply: String?
     public var knownRisks: [String]
+    /// Secret the agent must present to `claim_task` (from the handoff prompt only; never exposed over MCP reads).
+    /// nil for tasks created before handoff codes existed (claims then need no code).
+    public var handoffCode: String?
 
     public init(
         id: TaskID,
@@ -261,7 +269,8 @@ public struct MCTask: Codable, Sendable, Hashable, Identifiable {
         lastError: TaskErrorInfo? = nil,
         resultSummary: String? = nil,
         proposedReply: String? = nil,
-        knownRisks: [String] = []
+        knownRisks: [String] = [],
+        handoffCode: String? = nil
     ) {
         self.id = id
         self.type = type
@@ -281,6 +290,7 @@ public struct MCTask: Codable, Sendable, Hashable, Identifiable {
         self.resultSummary = resultSummary
         self.proposedReply = proposedReply
         self.knownRisks = knownRisks
+        self.handoffCode = handoffCode
     }
 
     public var isTerminal: Bool { state.isTerminal }

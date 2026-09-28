@@ -109,6 +109,7 @@ final class FakeWorld: @unchecked Sendable {
         var threads: [String: ReviewThread] = [:]           // keyed by ThreadKey.id
         var logs: [String: String] = [:]                    // keyed by CheckKey.id
         var logError: ProviderError?
+        var logFetches = 0
         var diffs: [String: DiffPayload] = [:]              // keyed by ChangeRequestKey.id
         var writeError: ProviderError?
         var writes: [Write] = []
@@ -190,6 +191,7 @@ struct FakeProvider: ReviewProvider {
     }
 
     func failureLog(for check: CheckRun, maxBytes: Int) async throws -> LogExcerpt {
+        world.state.update { $0.logFetches += 1 }
         let state = world.state.get()
         if let error = state.logError { throw error }
         guard let log = state.logs[check.key.id] else { throw ProviderError.notFound("log") }
@@ -275,6 +277,9 @@ final class FakeWorkspace: WorkspaceInspecting, @unchecked Sendable {
         var applied: [(patch: String, checkout: String)] = []
         var checked: [String] = []
         var commands: [[String]] = []
+        /// Pins passed to the pinned `changes` (S2).
+        var pinnedCalls: [(gitDirs: WorktreeGitDirs?, checkoutPath: String?)] = []
+        var gitDirTampered = false
     }
 
     let state = Locked(State())
@@ -321,13 +326,22 @@ final class FakeWorkspace: WorkspaceInspecting, @unchecked Sendable {
             state.prepared.append(request)
             return PreparedWorktree(
                 path: state.worktreeRoot + "/" + request.taskID.rawValue, baseSHA: state.baseSHA,
-                localRef: PreparedWorktree.localRef(for: request.taskID)
+                localRef: PreparedWorktree.localRef(for: request.taskID),
+                gitDirs: WorktreeGitDirs(gitDir: request.checkoutPath + "/.git/worktrees/" + request.taskID.rawValue, commonDir: request.checkoutPath + "/.git")
             )
         }
     }
 
     func changes(inWorktree path: String, since baseSHA: String, maxBytes: Int) async throws -> WorkspaceChanges {
         state.get().changes
+    }
+
+    func changes(inWorktree path: String, gitDirs: WorktreeGitDirs?, checkoutPath: String?, since baseSHA: String, maxBytes: Int) async throws -> WorkspaceChanges {
+        try state.update { state in
+            state.pinnedCalls.append((gitDirs, checkoutPath))
+            if state.gitDirTampered { throw WorkspaceError.worktreeGitDirChanged(path: path) }
+            return state.changes
+        }
     }
 
     func checkPatch(_ patch: String, into checkoutPath: String, expectedHeadSHA: String?) async throws -> PatchApplyCheck {

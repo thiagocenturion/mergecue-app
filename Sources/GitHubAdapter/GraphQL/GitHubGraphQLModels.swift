@@ -1,4 +1,5 @@
 import Foundation
+import MergeCueCore
 
 // Decodable mirrors of the GraphQL shapes requested in `GitHubQuery`. Fields the adapter can live without are
 // optional so a partially populated node (deleted author, missing head repository…) still decodes.
@@ -225,10 +226,11 @@ struct GQLContext: Decodable, Sendable {
         isRequired = try c.decodeIfPresent(Bool.self, forKey: .isRequired)
     }
 
-    /// Third-party status target URLs are free text; an unparsable one must not fail the whole snapshot.
+    /// Third-party status target URLs are free text; an unparsable one must not fail the whole snapshot, and a
+    /// non-web one (`file:`, `javascript:`, custom app schemes) is dropped (`WebLinkPolicy`).
     private static func url(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> URL? {
         guard let text = try? c.decodeIfPresent(String.self, forKey: key), !text.isEmpty else { return nil }
-        return URL(string: text)
+        return WebLinkPolicy.webURL(string: text)
     }
 }
 

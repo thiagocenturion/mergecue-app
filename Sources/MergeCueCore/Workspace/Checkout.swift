@@ -125,16 +125,34 @@ public struct WorktreeRequest: Codable, Sendable, Hashable {
 }
 
 /// A prepared isolated worktree.
+/// The git directories of a task worktree, recorded when MergeCue creates it (before any agent runs there). Every
+/// later git command on the worktree is pinned to them (`GIT_DIR`), so an agent that rewrites the worktree's `.git`
+/// file cannot redirect MergeCue to a repository (and config) it controls.
+public struct WorktreeGitDirs: Codable, Sendable, Hashable {
+    /// Absolute git dir of the worktree (`<repo>/.git/worktrees/<id>` for a linked worktree).
+    public var gitDir: String
+    /// Absolute common dir (the repository's `.git`).
+    public var commonDir: String
+
+    public init(gitDir: String, commonDir: String) {
+        self.gitDir = gitDir
+        self.commonDir = commonDir
+    }
+}
+
 public struct PreparedWorktree: Codable, Sendable, Hashable {
     public var path: String
     public var baseSHA: String
     /// `refs/mergecue/tasks/<task id>`.
     public var localRef: String
+    /// Git directories recorded at creation (nil from implementations that do not report them).
+    public var gitDirs: WorktreeGitDirs?
 
-    public init(path: String, baseSHA: String, localRef: String) {
+    public init(path: String, baseSHA: String, localRef: String, gitDirs: WorktreeGitDirs? = nil) {
         self.path = path
         self.baseSHA = baseSHA
         self.localRef = localRef
+        self.gitDirs = gitDirs
     }
 
     /// The local ref MergeCue uses for a task.

@@ -37,6 +37,7 @@ struct IPCErrorTests {
     @Test("not_found")
     func notFound() async throws {
         let h = try await Harness.make()
+        try await h.engine.setAgentReadAccess(.allInbox)
         let unknown = try #require(TaskID(rawValue: "mc_zzzzzz"))
         #expect(await h.errorCode(GetTaskParams(taskID: unknown)) == .notFound)
         #expect(await h.errorCode(ClaimTaskParams(taskID: unknown, agentName: "a", expectedVersion: 1)) == .notFound)
@@ -217,6 +218,7 @@ struct IPCErrorTests {
     @Test("unsupported / provider failures map to IPC codes")
     func providerFailures() async throws {
         let h = try await Harness.make()
+        try await h.engine.setAgentReadAccess(.allInbox)
         let checkID = Fixture.check().shortID
         h.world.state.update { $0.logError = .unsupported(.readFailureLog, reason: "no logs") }
         #expect(await h.errorCode(GetCIFailureParams(checkID: checkID)) == .unsupported)

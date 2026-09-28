@@ -90,6 +90,8 @@ read_ready() { /usr/bin/python3 -c "import json,sys; print(json.load(open('$E2E_
 TASK_ID="$(read_ready task_id)"
 WORKTREE="$(read_ready worktree)"
 PROMPT="$(read_ready handoff)"
+# The handoff code is only in the prompt (get_task never reveals it); the simulator reads it from there like an agent.
+HANDOFF_CODE="$(printf '%s' "$PROMPT" | sed -n 's/.*(handoff code: \([A-Za-z0-9-]*\)).*/\1/p')"
 echo "==> task $TASK_ID, worktree $WORKTREE" >&2
 echo "==> prompt: $PROMPT" >&2
 
@@ -147,6 +149,7 @@ PY
   sim)
     AGENT_VERSION="mergecue-agent-sim (scenario happy)"
     COMMAND=("$BIN/mergecue-agent-sim" --mcp "$BIN/mergecue-mcp" --scenario happy --task "$TASK_ID")
+    if [[ -n "$HANDOFF_CODE" ]]; then COMMAND+=(--handoff-code "$HANDOFF_CODE"); fi
     run_with_timeout "${COMMAND[@]}" >"$TRANSCRIPT" 2>"$AGENT_ERR" || AGENT_STATUS=$?
     ;;
 esac

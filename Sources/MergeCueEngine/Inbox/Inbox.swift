@@ -163,7 +163,7 @@ extension MergeCueEngine {
             else {
                 throw EngineError.unsupported("This task has no isolated worktree to review.")
             }
-            var changes = try await env.workspace.changes(inWorktree: worktree, since: base, maxBytes: maxBytes)
+            var changes = try await worktreeChanges(checkout, worktree: worktree, base: base, maxBytes: maxBytes)
             changes.unifiedDiff = SecretRedactor.redact(changes.unifiedDiff)
             return changes
         }

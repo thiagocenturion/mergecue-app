@@ -56,9 +56,13 @@ extension MergeCueEngine {
     // MARK: Builders
 
     private func previewPostReply(_ task: MCTask) async throws -> ReviewPreview {
-        guard let reply = task.proposedReply, !reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard let proposed = task.proposedReply, !proposed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw EngineError.unsupported("The agent did not propose a reply for this task.")
         }
+        // S11: invisible characters (zero-width, bidi controls, tags) are removed before the owner sees the reply;
+        // the stripped text is exactly what the preview fingerprints and what is posted.
+        let sanitized = InvisibleText.sanitized(proposed)
+        let reply = sanitized.text
         guard let threadKey = task.origin.thread else {
             throw EngineError.unsupported("This task has no review thread to reply to.")
         }
@@ -76,7 +80,10 @@ extension MergeCueEngine {
             body: reply, rawContent: reply,
             headSHA: snapshot?.summary.headSHA ?? task.trigger.headSHA,
             threadVersion: thread.map(Self.threadVersion),
-            warnings: thread?.isOutdated == true ? ["The comment's diff position is outdated (the code moved since it was written)."] : [],
+            warnings: (thread?.isOutdated == true ? ["The comment's diff position is outdated (the code moved since it was written)."] : [])
+                + (sanitized.removedSummary.map {
+                    ["MergeCue removed \(sanitized.removedCount) invisible or text-direction character(s) from the agent's reply (\($0)). The reply is posted exactly as shown."]
+                } ?? []),
             canApprove: canApprove, blockedReason: reason
         )
     }
@@ -115,7 +122,7 @@ extension MergeCueEngine {
         else {
             throw EngineError.unsupported("This task has no isolated worktree; there is no patch to apply.")
         }
-        let changes = try await env.workspace.changes(inWorktree: worktree, since: base, maxBytes: Self.maxPatchBytes)
+        let changes = try await worktreeChanges(checkout, worktree: worktree, base: base, maxBytes: Self.maxPatchBytes)
         var warnings: [String] = []
         var canApprove = true
         var reason: String?
@@ -192,8 +199,15 @@ extension MergeCueEngine {
             target: target, body: body, headSHA: headSHA, threadVersion: threadVersion, checkoutHeadSHA: checkoutHeadSHA,
             contentDigest: contentDigest, fingerprint: fingerprint, warnings: warnings, canApprove: canApprove,
             blockedReason: blockedReason, createdAt: createdAt, expiresAt: createdAt.addingTimeInterval(env.previewLifetime),
-            isSimulated: env.isDemo
+            isSimulated: env.isDemo, claimant: Self.claimant(of: task)
         )
+    }
+
+    /// "Claude Code (run 0f4c2a9e…)": who claimed the task, as the agent identified itself at `claim_task`.
+    static func claimant(of task: MCTask) -> String? {
+        guard let name = task.lease?.agentName ?? task.agentLabel else { return nil }
+        guard let run = task.lease?.runID ?? task.agentSessionID, !run.isEmpty else { return name }
+        return "\(name) (run \(run.count > 24 ? String(run.prefix(24)) + "…" : run))"
     }
 
     /// Resolution + the ordered comment ids/edit times: any new reply, edit or (un)resolution changes it.

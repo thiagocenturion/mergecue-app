@@ -12,7 +12,9 @@ extension MergeCueToolCatalog {
             title: "Claim task",
             description: """
                 Claim a task that is waiting_for_agent (or stale) before working on it; the task becomes working. \
-                Pass the version from get_task as expected_version. Returns {task_id, state, version, lease_id, \
+                Pass the version from get_task as expected_version and, when the owner's handoff prompt shows \
+                "(handoff code: XXXXXXXX)", that code as handoff_code (get_task never reveals it; a missing or wrong \
+                code is rejected with validation_failed). Returns {task_id, state, version, lease_id, \
                 lease_expires_at, heartbeat_interval_seconds, checkout?}: keep the lease_id for every later write and \
                 renew it with heartbeat/update_task before it expires. Errors: version_conflict (the task changed or \
                 another agent claimed it — re-read with get_task), terminal_state (finished tasks cannot be \
@@ -21,7 +23,8 @@ extension MergeCueToolCatalog {
             inputSchema: JSONSchema.object([
                 "task_id": SchemaFields.taskID(),
                 "agent_name": JSONSchema.string("Who is claiming, e.g. \"Claude Code\" or \"Codex\" (shown to the owner).", minLength: 1, maxLength: IPCLimits.maxAgentNameLength),
-                "run_id": JSONSchema.string("Your session/run id, if you have one.", minLength: 1, maxLength: IPCLimits.maxRunIDLength),
+                "run_id": JSONSchema.string("Your session/run id, if you have one (ASCII letters, digits, ._-:/@=+).", minLength: 1, maxLength: IPCLimits.maxRunIDLength),
+                "handoff_code": JSONSchema.string("The code from the owner's handoff prompt, e.g. K7Q2M9XD from \"(handoff code: K7Q2M9XD)\". Required when the prompt shows one.", minLength: 1, maxLength: IPCLimits.maxHandoffCodeLength),
                 "expected_version": SchemaFields.expectedVersion,
             ], required: ["task_id", "agent_name", "expected_version"])
         ),

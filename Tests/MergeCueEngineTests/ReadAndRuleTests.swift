@@ -19,6 +19,7 @@ struct ReadAndRuleTests {
     @Test("list_attention filters, include_read and total; list_tasks defaults to active tasks")
     func lists() async throws {
         let h = try await Harness.make()
+        try await h.engine.setAgentReadAccess(.allInbox)
         try await h.seed(Fixture.gitlab)
         var all = try await h.ok(ListAttentionParams())
         #expect(all.total == 4)
@@ -48,6 +49,7 @@ struct ReadAndRuleTests {
     @Test("get_change_context resolves refs case-insensitively; ambiguity across accounts is invalid_params")
     func changeContext() async throws {
         let h = try await Harness.make()
+        try await h.engine.setAgentReadAccess(.allInbox)
         let ref = try #require(ChangeRequestRef(string: "github:github.com/ACME/Payments-API#42"))
         let context = try await h.ok(GetChangeContextParams(changeRef: ref, maxFiles: 1))
         #expect(context.number == 42)
@@ -64,6 +66,7 @@ struct ReadAndRuleTests {
     @Test("get_ci_failure fetches a bounded, redacted excerpt on demand")
     func ciFailure() async throws {
         let h = try await Harness.make()
+        try await h.engine.setAgentReadAccess(.allInbox)
         let result = try await h.ok(GetCIFailureParams(checkID: Fixture.check().shortID, maxBytes: 1024))
         #expect(result.name == "build")
         #expect(result.status == .failure)
@@ -76,6 +79,7 @@ struct ReadAndRuleTests {
     @Test("get_diff: provider diff by ref, worktree diff by task (both redacted)")
     func diffs() async throws {
         let h = try await Harness.make()
+        try await h.engine.setAgentReadAccess(.allInbox)
         let ref = try #require(ChangeRequestRef(string: "github:github.com/acme/payments-api#42"))
         let provider = try await h.ok(GetDiffParams(changeRef: ref))
         #expect(provider.source == .provider)

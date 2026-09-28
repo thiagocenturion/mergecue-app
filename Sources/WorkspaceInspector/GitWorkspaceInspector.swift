@@ -97,11 +97,12 @@ extension GitWorkspaceInspector {
         timeout: TimeInterval? = nil,
         stdin: Data? = nil,
         extraEnvironment: [String: String] = [:],
+        extraConfig: [String] = [],
         maxOutputBytes: Int = defaultMaxOutput
     ) async throws -> GitOutput {
         var env = environment
         for (key, value) in extraEnvironment { env[key] = value }
-        let config = Self.safetyConfig.flatMap { ["-c", $0] }
+        let config = (Self.safetyConfig + extraConfig).flatMap { ["-c", $0] }
         let spec = ProcessSpec(
             executable: gitExecutable.path,
             arguments: ["--no-pager"] + config + arguments,
@@ -139,11 +140,12 @@ extension GitWorkspaceInspector {
         timeout: TimeInterval? = nil,
         stdin: Data? = nil,
         extraEnvironment: [String: String] = [:],
+        extraConfig: [String] = [],
         maxOutputBytes: Int = defaultMaxOutput
     ) async throws -> GitOutput {
         let output = try await git(
             arguments, in: directory, timeout: timeout, stdin: stdin,
-            extraEnvironment: extraEnvironment, maxOutputBytes: maxOutputBytes
+            extraEnvironment: extraEnvironment, extraConfig: extraConfig, maxOutputBytes: maxOutputBytes
         )
         guard output.succeeded else {
             throw WorkspaceError.gitFailed(

@@ -19,6 +19,9 @@ struct SimOptions: Sendable {
     var timeoutSeconds: Int
     /// Extra phrases that identify the hostile fixture comment (`--hostile-marker`).
     var hostileMarkers: [String] = []
+    /// The code from the owner's handoff prompt (`--handoff-code`), passed to every claim. `get_task` never
+    /// reveals it, so a real agent reads it from its prompt too.
+    var handoffCode: String?
 }
 
 /// Tools MergeCue must never expose to an agent (remote publishing is approved in the app only).
@@ -107,12 +110,14 @@ struct ScenarioRunner {
     }
 
     func claim(_ session: MCPSession, _ taskID: String, version: Int, agent: String? = nil, step: String = "claim_task") async throws -> (lease: String, version: Int, checkout: JSONValue?) {
-        let outcome = await session.call("claim_task", [
+        var arguments: [String: Value] = [
             "task_id": .string(taskID),
             "agent_name": .string(agent ?? options.agentName),
             "run_id": .string("sim-" + UUID().uuidString.lowercased()),
             "expected_version": .int(version),
-        ])
+        ]
+        if let code = options.handoffCode { arguments["handoff_code"] = .string(code) }
+        let outcome = await session.call("claim_task", arguments)
         guard let claim = recorder.expectSuccess(step, outcome),
               let lease = claim["lease_id"]?.stringValue,
               let newVersion = claim["version"]?.intValue
@@ -131,6 +136,13 @@ struct ScenarioRunner {
         let taskID = try await resolveTask(session)
         let task = try await getTask(session, taskID)
         guard let version = task["version"]?.intValue else { throw ScenarioAbort(reason: "no version") }
+        if let code = options.handoffCode {
+            // get_task must not leak the handoff code; a claim without it must be refused.
+            recorder.record("get_task hides the handoff code", ok: !task.jsonString().contains(code), detail: "code not present in get_task")
+            recorder.expectRejection("claim without handoff_code", await session.call("claim_task", [
+                "task_id": .string(taskID), "agent_name": .string(options.agentName), "expected_version": .int(version),
+            ]), codes: ["validation_failed"])
+        }
         var (lease, current, checkout) = try await claim(session, taskID, version: version)
         checkout = checkout ?? task["checkout"]
 
@@ -208,7 +220,9 @@ struct ScenarioRunner {
         guard let version = task["version"]?.intValue else { throw ScenarioAbort(reason: "no version") }
 
         func claimArgs(_ agent: String) -> [String: Value] {
-            ["task_id": .string(taskID), "agent_name": .string(agent), "expected_version": .int(version)]
+            var arguments: [String: Value] = ["task_id": .string(taskID), "agent_name": .string(agent), "expected_version": .int(version)]
+            if let code = options.handoffCode { arguments["handoff_code"] = .string(code) }
+            return arguments
         }
         async let first = session.call("claim_task", claimArgs(options.agentName + "-a"))
         async let other = second.call("claim_task", claimArgs(options.agentName + "-b"))
@@ -282,6 +296,12 @@ struct ScenarioRunner {
         recorder.expectRejection("bad lease", await session.call("heartbeat", [
             "task_id": .string(taskID), "lease_id": "lease_bogus",
         ]), codes: ["lease_invalid"])
+        if options.handoffCode != nil {
+            recorder.expectRejection("wrong handoff_code", await session.call("claim_task", [
+                "task_id": .string(taskID), "agent_name": .string(options.agentName), "expected_version": .int(version),
+                "handoff_code": "WRONG000",
+            ]), codes: ["validation_failed"])
+        }
 
         var (lease, current, checkout) = try await claim(session, taskID, version: version)
         checkout = checkout ?? task["checkout"]

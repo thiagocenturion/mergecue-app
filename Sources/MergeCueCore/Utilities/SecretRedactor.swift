@@ -3,7 +3,9 @@ import Foundation
 /// Masks credentials in text that may be displayed, copied, logged or returned over MCP.
 ///
 /// Covers GitHub (`ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, `github_pat_`), GitLab (`glpat-`, `gloas-`, `glrt-`
-/// and related prefixes), Atlassian (`ATATT…`, `ATCTT…`, `ATBB…`), Slack (`xox?-`), AWS access key ids, JWTs,
+/// and related prefixes), Atlassian (`ATATT…`, `ATCTT…`, `ATBB…`), Slack (`xox?-`, webhook URLs), OpenAI
+/// (`sk-proj-`, `sk-…`), Anthropic (`sk-ant-`), Stripe (`sk_live_`, `rk_live_`, test keys), npm (`npm_`), Docker
+/// Hub (`dckr_pat_`), Google API keys (`AIza…`), AWS access key ids, JWTs,
 /// `Authorization:` / `Bearer` / `Basic` values, secret-bearing headers (`PRIVATE-TOKEN`, `X-…-Token`, `Cookie`),
 /// `password=` / `token: …` / `"secret": …` / `:api_key => …` pairs, `--password value` CLI flags, PEM and PGP
 /// private keys and URL userinfo credentials. Ordinary prose is left untouched: bare words such as "token",
@@ -20,6 +22,73 @@ public enum SecretRedactor {
     /// `ghp_` or `password=` for context). Idempotent.
     public static func redact(_ text: String) -> String {
         guard !text.isEmpty else { return text }
+        if text.utf8.contains(0x1B) {
+            switch maskingANSIFinals(text) {
+            case .masked(let masked):
+                // The final letter of each "ESC[…m" directly before a token prefix was swapped for a private-use
+                // placeholder (not alphanumeric, so the prefix rules see a boundary); swap it back afterwards.
+                return restoringANSIFinals(applyRules(masked))
+            case .placeholderConflict(let cuts):
+                // The text already uses the placeholder scalars: redact the pieces between the cuts instead.
+                let ns = text as NSString
+                var pieces: [String] = []
+                var start = 0
+                for cut in cuts {
+                    pieces.append(ns.substring(with: NSRange(location: start, length: cut - start)))
+                    start = cut
+                }
+                pieces.append(ns.substring(from: start))
+                return pieces.map(applyRules).joined()
+            case .none:
+                break
+            }
+        }
+        return applyRules(text)
+    }
+
+    private enum ANSIMasking {
+        case none
+        case masked(String)
+        case placeholderConflict(cuts: [Int])
+    }
+
+    /// First placeholder scalar; the 54 possible CSI final characters (`A-Z a-z @ ~`) map to U+F8C0…U+F8F5.
+    private static let placeholderBase: UInt32 = 0xF8C0
+    private static let csiFinals = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz@~".unicodeScalars)
+
+    /// `text` with the final character of every `ansiTokenBoundary` match replaced by its placeholder.
+    private static func maskingANSIFinals(_ text: String) -> ANSIMasking {
+        guard let ansiTokenBoundary else { return .none }
+        let ns = text as NSString
+        let matches = ansiTokenBoundary.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        guard !matches.isEmpty else { return .none }
+        let placeholderRange = placeholderBase...(placeholderBase + UInt32(csiFinals.count))
+        guard !text.unicodeScalars.contains(where: { placeholderRange.contains($0.value) }) else {
+            return .placeholderConflict(cuts: matches.map(\.range.upperBound))
+        }
+        var units = Array(text.utf16)
+        for match in matches {
+            let index = match.range.upperBound - 1
+            guard let final = Unicode.Scalar(units[index]), let offset = csiFinals.firstIndex(of: final) else { continue }
+            units[index] = UInt16(placeholderBase + UInt32(offset))
+        }
+        return .masked(String(decoding: units, as: UTF16.self))
+    }
+
+    private static func restoringANSIFinals(_ text: String) -> String {
+        var scalars = String.UnicodeScalarView()
+        for scalar in text.unicodeScalars {
+            let offset = Int(scalar.value) - Int(placeholderBase)
+            if offset >= 0, offset < csiFinals.count {
+                scalars.append(csiFinals[offset])
+            } else {
+                scalars.append(scalar)
+            }
+        }
+        return String(scalars)
+    }
+
+    private static func applyRules(_ text: String) -> String {
         var result = text
         for rule in rules {
             result = rule.apply(to: result)
@@ -83,8 +152,22 @@ public enum SecretRedactor {
     private static let runStart = #"(?<![\#(keyRunClass)])"#
 
     /// Distinctive token prefixes: not preceded by an alphanumeric character, or right after a percent-escape
-    /// (`%3Aghs_…` in URL-encoded text).
+    /// (`%3Aghs_…` in URL-encoded text). A token right after an ANSI SGR/CSI sequence (`ESC[1mghp_…`, where the
+    /// `m` counts as a preceding letter) is handled by `redact` masking that letter (`ansiTokenBoundary`).
     private static let prefixStart = #"(?:(?<![A-Za-z0-9])|(?<=%[0-9A-Fa-f]{2}))"#
+
+    /// End of a CSI sequence immediately followed by a distinctive token prefix. Anchored on the ESC byte, so it
+    /// costs nothing on text without escapes.
+    private static let ansiTokenBoundary: NSRegularExpression? = try? NSRegularExpression(
+        pattern: #"\x{1B}\[[0-9;:?<=>]{0,32}[A-Za-z@~](?=gh[pousr]_|github_pat_|gl[a-z]{2,7}-|AT[AC]TT|ATBB|sk-|[sr]k_(?:live|test)_|npm_|dckr_pat_|AIza|xox[a-z]-|A[A-Z]{3}[A-Z0-9]{16})"#
+    )
+
+    /// `prefixStart`, evaluated only where the next character can start the token (`firstCharacters` is a regex
+    /// character-class body). The cheap look-ahead fails at almost every position, so the bounded look-behinds run
+    /// rarely and redaction stays fast on large logs.
+    private static func gate(_ firstCharacters: String) -> String {
+        #"(?=[\#(firstCharacters)])\#(prefixStart)"#
+    }
 
     /// Key names whose values are secrets. The key must *end* with one of these words, so `max_tokens=5` or
     /// `tokenizer=bert` are not touched. The prefix before the word is bounded (≤ 64 characters).
@@ -132,18 +215,30 @@ public enum SecretRedactor {
             isMasked(m.group(3)) ? nil : "\(m.group(1))\(m.group(2))\(marker)"
         },
         // GitHub tokens.
-        Rule(#"\#(prefixStart)(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{16,}"#) { m in "\(m.group(1))_\(marker)" },
-        Rule(#"\#(prefixStart)github_pat_[A-Za-z0-9_]{20,}"#) { _ in "github_pat_\(marker)" },
+        Rule(#"\#(gate("g"))(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{16,}"#) { m in "\(m.group(1))_\(marker)" },
+        Rule(#"\#(gate("g"))github_pat_[A-Za-z0-9_]{20,}"#) { _ in "github_pat_\(marker)" },
         // GitLab tokens.
-        Rule(#"\#(prefixStart)(glpat|gloas|glrt|glptt|gldt|glft|glsoat|glcbt|glimt|glagent|glffct)-[A-Za-z0-9_\-]{16,}(?:\.[A-Za-z0-9_\-]+)*"#) { m in
+        Rule(#"\#(gate("g"))(glpat|gloas|glrt|glptt|gldt|glft|glsoat|glcbt|glimt|glagent|glffct)-[A-Za-z0-9_\-]{16,}(?:\.[A-Za-z0-9_\-]+)*"#) { m in
             "\(m.group(1))-\(marker)"
         },
         // Atlassian API tokens / Bitbucket app passwords.
-        Rule(#"\#(prefixStart)(ATATT|ATCTT|ATBB)[A-Za-z0-9_\-=]{16,}"#) { m in "\(m.group(1))\(marker)" },
+        Rule(#"\#(gate("A"))(ATATT|ATCTT|ATBB)[A-Za-z0-9_\-=]{16,}"#) { m in "\(m.group(1))\(marker)" },
+        // OpenAI (`sk-proj-`, `sk-svcacct-`, `sk-admin-`, legacy `sk-` + 32+ alphanumerics), Anthropic
+        // (`sk-ant-api03-…`), Stripe secret/restricted keys, npm, Docker Hub and Google API keys — one pass.
+        Rule(
+            #"\#(gate("snrdA"))(?:(sk-(?:proj|svcacct|admin|ant(?:-[a-z]{3,8}[0-9]{2})?)-)[A-Za-z0-9_\-]{20,}|((?:sk|rk)_(?:live|test)_)[A-Za-z0-9]{10,}|(npm_)[A-Za-z0-9]{30,}|(dckr_pat_)[A-Za-z0-9_\-]{20,}|(AIza)[0-9A-Za-z_\-]{35}|(sk-)[A-Za-z0-9]{32,}(?![A-Za-z0-9_\-]))"#
+        ) { m in
+            let prefix = (1...6).lazy.map { m.group($0) }.first { !$0.isEmpty } ?? ""
+            return "\(prefix)\(marker)"
+        },
+        // Slack incoming-webhook / workflow URLs: the path is the secret.
+        Rule(#"(https?://hooks\.slack(?:-gov)?\.com/(?:services|workflows|triggers)/)[A-Za-z0-9_/\-]+"#, options: [.caseInsensitive]) { m in
+            "\(m.group(1))\(marker)"
+        },
         // Slack tokens.
-        Rule(#"\#(prefixStart)(xox[a-z]-)[A-Za-z0-9\-]{8,}"#) { m in "\(m.group(1))\(marker)" },
+        Rule(#"\#(gate("x"))(xox[a-z]-)[A-Za-z0-9\-]{8,}"#) { m in "\(m.group(1))\(marker)" },
         // AWS access key ids.
-        Rule(#"\#(prefixStart)(AKIA|ASIA|AGPA|AIDA|AROA|ANPA|ANVA|AIPA)[A-Z0-9]{16}(?![A-Za-z0-9])"#) { m in "\(m.group(1))\(marker)" },
+        Rule(#"\#(gate("A"))(AKIA|ASIA|AGPA|AIDA|AROA|ANPA|ANVA|AIPA)[A-Z0-9]{16}(?![A-Za-z0-9])"#) { m in "\(m.group(1))\(marker)" },
         // JWTs (header and payload are base64url JSON objects: "eyJ"). Anchored at the start of a base64url run.
         Rule(#"(?<![A-Za-z0-9_\-])eyJ[A-Za-z0-9_\-]{5,}\.eyJ[A-Za-z0-9_\-]{5,}\.[A-Za-z0-9_\-]*"#) { _ in marker },
         // Standalone "Bearer <token>".
