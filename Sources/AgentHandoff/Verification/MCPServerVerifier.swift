@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import MCP
 import MergeCueCore
@@ -117,6 +118,9 @@ public struct MCPServerVerifier: Sendable {
         let toChild = Pipe()
         let fromChild = Pipe()
         let errors = Pipe()
+        // A helper that exits before reading its stdin must yield EPIPE (→ `helperExited`), never a SIGPIPE that
+        // kills the verifying process (the app).
+        _ = fcntl(toChild.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
         process.standardInput = toChild
         process.standardOutput = fromChild
         process.standardError = errors

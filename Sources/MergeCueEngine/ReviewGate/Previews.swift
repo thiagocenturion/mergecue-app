@@ -160,7 +160,7 @@ extension MergeCueEngine {
         guard account.writesEnabled else {
             return (false, EngineError.writesDisabled(account: account.displayLabel).errorDescription)
         }
-        let support = env.providers.capabilities(for: account.kind).support(for: capability)
+        let support = env.providers.capabilities(for: account).support(for: capability)
         guard support.isUsable else {
             return (false, "\(capability.displayName): \(support.userFacingDescription)")
         }

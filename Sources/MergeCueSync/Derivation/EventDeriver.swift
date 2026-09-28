@@ -274,6 +274,12 @@ public enum EventDeriver {
     ) -> [ChangeEvent] {
         let currentByName = latestChecksByName(builder.current.checks)
         let previousByName = latestChecksByName(previous?.checks ?? [])
+        // A GitLab pipeline aggregate duplicates its failing jobs: when a job of the same pipeline fails, only the
+        // job is reported, so one failure yields one CI event (and one attention item / notification line).
+        let pipelinesWithFailingJobs = Set(builder.current.checks.compactMap { check -> String? in
+            guard check.key.source == .gitlabJob, check.status.isFailing else { return nil }
+            return check.logLocator["pipeline_id"]
+        })
         var events: [ChangeEvent] = []
         for name in currentByName.keys.sorted() {
             guard let check = currentByName[name] else { continue }
@@ -281,6 +287,7 @@ public enum EventDeriver {
             let wasFailing = before?.status.isFailing == true
                 || (knownFailing.contains(name) && before?.status.isPassing != true)
             if check.status.isFailing {
+                if check.key.source == .gitlabPipeline, pipelinesWithFailingJobs.contains(check.key.remoteID) { continue }
                 let sameRun = before.map { $0.key == check.key && checkVersion($0) == checkVersion(check) } ?? false
                 guard !(before?.status.isFailing == true && sameRun) else { continue }
                 events.append(checkEvent(.ciFailed, check: check, builder: builder))

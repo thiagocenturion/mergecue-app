@@ -249,3 +249,21 @@ final class GitLabSession: Sendable {
         state.withLock { $0 = user }
     }
 }
+
+// MARK: - Link cache preloading
+
+extension GitLabProvider {
+    /// Seeds the process-wide link cache from a stored snapshot (e.g. at app launch, before the first sync
+    /// hydrates anything) so `deepLink(to:)` returns exact merge request, note and job URLs right away.
+    public static func rememberLinks(from snapshot: ChangeRequestSnapshot) {
+        let summary = snapshot.summary
+        guard summary.key.kind == .gitlab else { return }
+        GitLabLinkCache.remember(changeRequest: summary.key, webURL: summary.webURL, projectWebURL: summary.repository.webURL)
+        for thread in snapshot.threads {
+            if let root = thread.rootComment { GitLabLinkCache.remember(thread: thread.key, rootNoteID: root.id) }
+        }
+        for check in snapshot.checks {
+            if let url = check.detailsURL { GitLabLinkCache.remember(check: check.key, webURL: url) }
+        }
+    }
+}

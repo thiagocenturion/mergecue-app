@@ -113,8 +113,13 @@ struct VerifierTests {
         let (transport, server) = try await FakeMergeCueServer.start(mode: .slowToolsList, recorder: recorder)
         defer { Task { await server.stop() } }
         let start = Date()
-        await #expect(throws: MCPVerificationError.timedOut(stage: "tools/list")) {
+        // The stage is normally tools/list; on a heavily loaded machine the in-memory initialize itself can exceed
+        // the 0.5 s budget. Either way the verifier must time out instead of hanging.
+        do {
             _ = try await MCPServerVerifier(timeout: 0.5).verify(transport: transport, probe: .listAttention)
+            Issue.record("expected a timeout")
+        } catch {
+            #expect([MCPVerificationError.timedOut(stage: "tools/list"), .timedOut(stage: "initialize")].contains(error))
         }
         #expect(Date().timeIntervalSince(start) < 10)
     }
