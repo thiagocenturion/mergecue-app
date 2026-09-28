@@ -56,9 +56,13 @@ extension MergeCueEngine {
     // MARK: Builders
 
     private func previewPostReply(_ task: MCTask) async throws -> ReviewPreview {
-        guard let reply = task.proposedReply, !reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard let proposed = task.proposedReply, !proposed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw EngineError.unsupported("The agent did not propose a reply for this task.")
         }
+        // S11: invisible characters (zero-width, bidi controls, tags) are removed before the owner sees the reply;
+        // the stripped text is exactly what the preview fingerprints and what is posted.
+        let sanitized = InvisibleText.sanitized(proposed)
+        let reply = sanitized.text
         guard let threadKey = task.origin.thread else {
             throw EngineError.unsupported("This task has no review thread to reply to.")
         }
@@ -76,7 +80,10 @@ extension MergeCueEngine {
             body: reply, rawContent: reply,
             headSHA: snapshot?.summary.headSHA ?? task.trigger.headSHA,
             threadVersion: thread.map(Self.threadVersion),
-            warnings: thread?.isOutdated == true ? ["The comment's diff position is outdated (the code moved since it was written)."] : [],
+            warnings: (thread?.isOutdated == true ? ["The comment's diff position is outdated (the code moved since it was written)."] : [])
+                + (sanitized.removedSummary.map {
+                    ["MergeCue removed \(sanitized.removedCount) invisible or text-direction character(s) from the agent's reply (\($0)). The reply is posted exactly as shown."]
+                } ?? []),
             canApprove: canApprove, blockedReason: reason
         )
     }

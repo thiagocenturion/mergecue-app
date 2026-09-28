@@ -174,6 +174,21 @@ struct LifecycleTests {
         #expect(try await h.task(task.id).artifactIDs.isEmpty)
     }
 
+    /// S11: a reply with zero-width / invisible characters is shown and posted without them, and the fingerprint
+    /// covers exactly the posted bytes.
+    @Test("Invisible characters are stripped from the reply preview and the posted reply")
+    func invisibleCharactersAreStrippedBeforeApproval() async throws {
+        let h = try await Harness.make(.init(writesEnabled: true))
+        let task = try await h.submittedTask(reply: "Fixed\u{200B} the cap.\u{2060}\u{E0041}")
+        let preview = try await h.engine.previewAction(task.id, .postReply)
+        #expect(preview.body == "Fixed the cap.")
+        #expect(preview.contentDigest == ContentDigest.sha256Hex("Fixed the cap."))
+        #expect(preview.warnings.contains { $0.contains("invisible") && $0.contains("U+200B") })
+        let outcome = try await h.engine.perform(previewID: preview.id, approval: PreviewApproval(fingerprint: preview.fingerprint))
+        guard case .performed = outcome else { Issue.record("unexpected \(outcome)"); return }
+        #expect(h.world.writes.first?.body == "Fixed the cap.")
+    }
+
     @Test("Tasks created before handoff codes existed can still be claimed without one")
     func legacyTaskNeedsNoCode() async throws {
         let h = try await Harness.make()
