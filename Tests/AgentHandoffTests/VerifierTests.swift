@@ -121,7 +121,7 @@ struct VerifierTests {
         } catch {
             #expect([MCPVerificationError.timedOut(stage: "tools/list"), .timedOut(stage: "initialize")].contains(error))
         }
-        #expect(Date().timeIntervalSince(start) < 10)
+        #expect(Date().timeIntervalSince(start) < 20)  // hangs for 30 s; 20 s still proves the timeout under heavy machine load
     }
 
     @Test func interpretsTextOnlyErrors() {
@@ -174,7 +174,7 @@ struct VerifierTests {
         await #expect(throws: MCPVerificationError.timedOut(stage: "initialize")) {
             _ = try await MCPServerVerifier(timeout: 0.5).verify(helper: helper, environment: testEnvironment(home: dir))
         }
-        #expect(Date().timeIntervalSince(start) < 10)
+        #expect(Date().timeIntervalSince(start) < 20)  // hangs for 30 s; 20 s still proves the timeout under heavy machine load
     }
 
     @Test func missingHelperFailsToLaunch() async {

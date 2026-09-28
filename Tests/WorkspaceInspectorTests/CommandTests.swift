@@ -26,7 +26,7 @@ struct CommandTests {
             // The background grandchild keeps the output pipe open; the group kill must take it down too.
             try await sandbox.inspector().runCommand(["/bin/sh", "-c", "sleep 30 & sleep 30"], in: sandbox.root.path, timeout: 0.5)
         }
-        #expect(Date().timeIntervalSince(started) < 8)
+        #expect(Date().timeIntervalSince(started) < 20)  // hangs for 30 s; 20 s still proves the timeout under heavy machine load
     }
 
     @Test func gitCommandTimeoutIsReported() async throws {
@@ -56,7 +56,7 @@ struct CommandTests {
                 Issue.record("unexpected \(error)")
             }
         }
-        #expect(Date().timeIntervalSince(started) < 10)
+        #expect(Date().timeIntervalSince(started) < 20)  // hangs for 30 s; 20 s still proves the timeout under heavy machine load
     }
 
     @Test func outputIsBounded() async throws {

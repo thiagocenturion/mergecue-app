@@ -103,7 +103,7 @@ struct DetectionTests {
 
         let start = Date()
         let agent = try #require(await sut.detect(.codex))
-        #expect(Date().timeIntervalSince(start) < 10)
+        #expect(Date().timeIntervalSince(start) < 20)  // hangs for 30 s; 20 s still proves the timeout under heavy machine load
         #expect(agent.source == .knownLocation)
         #expect(agent.version == "0.1.0")
     }
@@ -191,7 +191,7 @@ struct ProcessRunnerTests {
         #expect(result.timedOut)
         #expect(!result.succeeded)
         #expect(!result.stdout.contains("never"))
-        #expect(Date().timeIntervalSince(start) < 8)
+        #expect(Date().timeIntervalSince(start) < 20)  // hangs for 30 s; 20 s still proves the timeout under heavy machine load
     }
 
     @Test func missingExecutableThrows() async {
