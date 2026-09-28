@@ -321,6 +321,8 @@ public struct EngineSnapshot: Sendable, Hashable {
     public var notificationPreferences: NotificationPreferences
     public var lastRefreshAt: Date?
     public var isDemo: Bool
+    /// Settings ▸ Agents ▸ "Agent read access".
+    public var agentReadAccess: AgentReadAccess
 
     public init(
         accounts: [EngineAccountState],
@@ -333,7 +335,8 @@ public struct EngineSnapshot: Sendable, Hashable {
         quietHours: QuietHours?,
         notificationPreferences: NotificationPreferences = .allEnabled,
         lastRefreshAt: Date?,
-        isDemo: Bool
+        isDemo: Bool,
+        agentReadAccess: AgentReadAccess = .default
     ) {
         self.accounts = accounts
         self.attention = attention
@@ -346,5 +349,6 @@ public struct EngineSnapshot: Sendable, Hashable {
         self.notificationPreferences = notificationPreferences
         self.lastRefreshAt = lastRefreshAt
         self.isDemo = isDemo
+        self.agentReadAccess = agentReadAccess
     }
 }

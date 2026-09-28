@@ -296,3 +296,16 @@ struct LinkSafetyTests {
         #expect(Presentation.firstLine("token=supersecretvalue\nmore", limit: 90) == "token=[REDACTED]")
     }
 }
+
+@Suite("Agent read access setting (S3)")
+@MainActor
+struct AgentReadAccessSettingTests {
+    @Test func defaultsToTasksOnlyAndCanBeWidened() async {
+        let model = await makeModel()
+        #expect(model.state.agentReadAccess == .tasksOnly)
+        await model.send(.setAgentReadAccess(.allInbox))
+        #expect(model.state.agentReadAccess == .allInbox)
+        await model.send(.setAgentReadAccess(.tasksOnly))
+        #expect(model.state.agentReadAccess == .tasksOnly)
+    }
+}

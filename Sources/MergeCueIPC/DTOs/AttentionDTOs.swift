@@ -82,14 +82,17 @@ public struct ListAttentionParams: IPCMethodParams, Hashable {
 public struct ListAttentionResult: Codable, Sendable, Hashable {
     public var items: [AttentionItemDTO]
     public var total: Int
+    /// Trusted hint from MergeCue, e.g. that agent read access is limited to open tasks (omitted when nil).
+    public var note: String?
 
-    public init(items: [AttentionItemDTO], total: Int) {
+    public init(items: [AttentionItemDTO], total: Int, note: String? = nil) {
         self.items = items
         self.total = total
+        self.note = note
     }
 
     private enum CodingKeys: String, CodingKey {
-        case items, total
+        case items, total, note
     }
 }
 

@@ -136,6 +136,8 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
     case setQuietHours(QuietHours?)
     /// Settings ▸ Notifications ▸ "Notify me about" (persisted by the engine, honoured by Sync).
     case setNotificationCategory(NotificationCategory, enabled: Bool)
+    /// Settings ▸ Agents ▸ "Agent read access" (engine setting; default: only their tasks).
+    case setAgentReadAccess(AgentReadAccess)
 
     // MARK: Rules
     case saveRule(Rule)
@@ -205,6 +207,7 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
         case .pauseNotifications: "pauseNotifications"
         case .setQuietHours: "setQuietHours"
         case .setNotificationCategory(let category, _): "setNotificationCategory(\(category.rawValue))"
+        case .setAgentReadAccess(let access): "setAgentReadAccess(\(access.rawValue))"
         case .saveRule: "saveRule"
         case .deleteRule: "deleteRule"
         case .activateRule: "activateRule"

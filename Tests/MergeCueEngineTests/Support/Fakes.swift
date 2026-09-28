@@ -107,6 +107,7 @@ final class FakeWorld: @unchecked Sendable {
         var threads: [String: ReviewThread] = [:]           // keyed by ThreadKey.id
         var logs: [String: String] = [:]                    // keyed by CheckKey.id
         var logError: ProviderError?
+        var logFetches = 0
         var diffs: [String: DiffPayload] = [:]              // keyed by ChangeRequestKey.id
         var writeError: ProviderError?
         var writes: [Write] = []
@@ -178,6 +179,7 @@ struct FakeProvider: ReviewProvider {
     }
 
     func failureLog(for check: CheckRun, maxBytes: Int) async throws -> LogExcerpt {
+        world.state.update { $0.logFetches += 1 }
         let state = world.state.get()
         if let error = state.logError { throw error }
         guard let log = state.logs[check.key.id] else { throw ProviderError.notFound("log") }

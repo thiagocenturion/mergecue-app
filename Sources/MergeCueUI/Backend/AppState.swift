@@ -159,6 +159,8 @@ public nonisolated struct AppState: Sendable, Hashable {
     public var quietHours: QuietHours?
     public var notificationPreferences: NotificationPreferences
     public var lastRefreshAt: Date?
+    /// Settings ▸ Agents ▸ "Agent read access" (engine setting).
+    public var agentReadAccess: AgentReadAccess
 
     public init(
         accounts: [AccountState] = [],
@@ -173,7 +175,8 @@ public nonisolated struct AppState: Sendable, Hashable {
         notificationsPausedUntil: Date? = nil,
         quietHours: QuietHours? = nil,
         notificationPreferences: NotificationPreferences = .allEnabled,
-        lastRefreshAt: Date? = nil
+        lastRefreshAt: Date? = nil,
+        agentReadAccess: AgentReadAccess = .default
     ) {
         self.accounts = accounts
         self.attention = attention
@@ -188,6 +191,7 @@ public nonisolated struct AppState: Sendable, Hashable {
         self.quietHours = quietHours
         self.notificationPreferences = notificationPreferences
         self.lastRefreshAt = lastRefreshAt
+        self.agentReadAccess = agentReadAccess
     }
 
     public static let empty = AppState()

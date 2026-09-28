@@ -690,14 +690,14 @@ IDs exposed are short IDs (`mc_…`, `thr_…`, `chk_…`, `art_…`, `att_…`)
 | Method | Params DTO | Result DTO |
 | --- | --- | --- |
 | `ping` | `{}` | `{app_version, protocol_version, is_demo}` |
-| `list_attention` | `{provider?, account?, repo?, limit? (≤100, default 20), include_read?}` | `{items:[{id, reason, priority, provider, account, repo, number, change_ref, title, summary, thread_id?, check_id?, task_id?, updated_at}], total}` |
+| `list_attention` | `{provider?, account?, repo?, limit? (≤100, default 20), include_read?}` | `{items:[{id, reason, priority, provider, account, repo, number, change_ref, title, summary, thread_id?, check_id?, task_id?, updated_at, untrusted_fields}], total, note?}` |
 | `list_tasks` | `{states?: [TaskState], limit?}` | `{tasks:[TaskSummaryDTO]}` |
 | `get_task` | `{task_id}` | `TaskContextDTO {task_id, type, state, version, created_at, updated_at, instructions: [String] (trusted, from MergeCue), source {provider, account, repo, number, change_ref, title, web_url, thread_id?, check_id?}, checkout {policy, worktree_path?, mapped_checkout_path?, base_sha?, source_branch, target_branch, gitbutler_managed, blocked_reason?}, trigger {event_type?, captured_at, head_sha?, anchor?, untrusted_content: [UntrustedText]}, lease? {agent_name, expires_at}, artifacts: [{artifact_id, kind, title}], next_steps: [String], is_demo}` |
 | `get_change_context` | `{change_ref, include_files? (default true), max_files? (≤300)}` | `{change_ref, provider, repo, number, title, state, is_draft, author, source_branch, target_branch, head_sha, base_sha, web_url, description: UntrustedText?, reviews:[{author,state,submitted_at}], threads:[{thread_id, path?, line?, resolved?, outdated, comment_count, last_author}], checks:[{check_id, name, status}], changed_files?:[{path,status,additions,deletions}], readiness}` |
 | `get_thread` | `{thread_id}` | `{thread_id, change_ref, kind, resolved?, resolvable, outdated, anchor?, comments:[{comment_id, author, created_at, kind, body: UntrustedText}], web_url}` |
 | `get_ci_failure` | `{check_id, max_bytes? (≤65536, default 16384)}` | `{check_id, name, status, commit_sha?, details_url?, log_url?, excerpt: UntrustedText, truncated}` |
 | `get_diff` | `{task_id? , change_ref?, max_bytes? (≤262144)}` | `{source: "provider"|"worktree", base_sha?, head_sha?, files, unified_diff, truncated}` |
-| `claim_task` | `{task_id, agent_name, run_id?, expected_version}` | `{task_id, state, version, lease_id, lease_expires_at, heartbeat_interval_seconds, checkout}` |
+| `claim_task` | `{task_id, agent_name, run_id?, expected_version, handoff_code?}` | `{task_id, state, version, lease_id, lease_expires_at, heartbeat_interval_seconds, checkout}` |
 | `heartbeat` | `{task_id, lease_id}` | `{version, lease_expires_at}` |
 | `update_task` | `{task_id, lease_id, expected_version, phase: investigating|planning|editing|testing|finalizing, message (≤280)}` | `{version, lease_expires_at}` |
 | `report_changes` | `{task_id, lease_id, expected_version, worktree_path, base_sha, head_sha?, changed_paths:[String], note?}` | `{artifact_id, version, verified_changed_paths, unexpected_paths, missing_paths}` — app recomputes the diff itself via `WorkspaceInspecting`; path must be the task's worktree; base must match the recorded base SHA |
@@ -706,6 +706,16 @@ IDs exposed are short IDs (`mc_…`, `thr_…`, `chk_…`, `art_…`, `att_…`)
 | `fail_task` | `{task_id, lease_id, expected_version, reason, retryable, blocked?}` | `{version, state}` |
 | `propose_rule` | `{name, providers?, event_types, repo_include?, repo_exclude?, action: notify|create_task|request_execution, task_type?, quiet_hours?, max_fires_per_hour?}` | `{rule_id, status: "pending_activation", preview}` — never active until the user activates it in the app |
 | `list_rules` | `{}` | `{rules:[{rule_id, name, active, origin, action, event_types}]}` |
+
+Agent read scope (S3, S12): engine setting "Agent read access" (`AgentReadAccess`, `engine.agent_read_access`,
+Settings ▸ Agents) = `tasks_only` (**default**) | `all_inbox`. In `tasks_only`, `list_attention` returns only items
+of change requests with a non-terminal task (plus a trusted `note`), and `get_change_context` / `get_thread` /
+`get_ci_failure` / `get_diff` answer `cross_scope_reference` (message names the setting) for anything outside those
+change requests (`get_diff` by `task_id` also refuses terminal tasks). Reads are audited per client
+(`name#pid`) in 5-minute windows (`mcp_reads`, first denial `mcp_read_denied`); provider-hitting reads
+(`get_ci_failure`, provider `get_diff`) are limited to 20/min per client (`rate_limited`) and cached 60 s.
+`claim_task` requires the task's handoff code (S7, `handoff_code`, only in the handoff prompt) when it has one.
+DTOs carrying third-party plain strings list them in `untrusted_fields` (S6).
 
 Engine-side guarantees (implemented in MergeCueEngine): lease validation, expected-version CAS, allowed transitions
 only, per-task rate limit (≤ 30 writes/min → `rate_limited`), terminal-state resurrection rejected

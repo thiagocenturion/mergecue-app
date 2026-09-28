@@ -85,6 +85,9 @@ extension EngineBackend {
             let current = await engine.notificationPreferences()
             try await engine.setNotificationPreferences(current.setting(category, enabled: enabled))
             return .none
+        case .setAgentReadAccess(let access):
+            try await engine.setAgentReadAccess(access)
+            return AppCommandResult(message: "Agent read access: \(access.displayName.lowercased())")
 
         // MARK: Rules
         case .saveRule(let rule):

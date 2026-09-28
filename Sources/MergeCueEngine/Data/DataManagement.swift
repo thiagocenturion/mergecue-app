@@ -157,7 +157,8 @@ extension MergeCueEngine {
             quietHours: await quietHours(),
             notificationPreferences: await notificationPreferences(),
             lastRefreshAt: lastRefresh ?? nil,
-            isDemo: env.isDemo
+            isDemo: env.isDemo,
+            agentReadAccess: await agentReadAccess()
         )
     }
 }

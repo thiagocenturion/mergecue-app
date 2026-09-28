@@ -72,6 +72,9 @@ extension PreviewBackend {
         case .setNotificationCategory(let category, let enabled):
             state.notificationPreferences.set(category, enabled: enabled)
             return .none
+        case .setAgentReadAccess(let access):
+            state.agentReadAccess = access
+            return AppCommandResult(message: "Agent read access: \(access.displayName.lowercased())")
 
         case .saveRule(let rule):
             var rule = rule

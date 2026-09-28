@@ -211,6 +211,11 @@ struct EngineBackendTests {
         _ = try await backend.perform(.setNotificationCategory(.ciFailures, enabled: true))
         #expect(await harness.state().notificationPreferences == NotificationPreferences(disabled: [.agentResults]))
         #expect(await backend.runtime.sync.notificationPreferences() == NotificationPreferences(disabled: [.agentResults]))
+        // "Agent read access" is an engine setting (default: only their tasks).
+        #expect(await harness.state().agentReadAccess == .tasksOnly)
+        _ = try await backend.perform(.setAgentReadAccess(.allInbox))
+        #expect(await harness.state().agentReadAccess == .allInbox)
+        #expect(await backend.runtime.engine.agentReadAccess() == .allInbox)
 
         // Fixture links are not opened in demo mode; other links are.
         let fixture = try await backend.perform(.openURL(URL(string: "https://github.com/acme/payments-api/pull/42")!))

@@ -17,6 +17,30 @@ struct AgentsSettings: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             AgentSetupList(model: model)
+            AgentReadAccessCard(model: model)
+        }
+    }
+}
+
+/// Settings › Agents › "Agent read access" (S3): what MCP read tools may return.
+struct AgentReadAccessCard: View {
+    let model: AppModel
+
+    var body: some View {
+        Card("Agent read access", systemImage: "lock.shield") {
+            VStack(alignment: .leading, spacing: 8) {
+                Picker("Agents can read", selection: Binding(
+                    get: { model.state.agentReadAccess },
+                    set: { access in Task { await model.send(.setAgentReadAccess(access)) } }
+                )) {
+                    ForEach(AgentReadAccess.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                }
+                .pickerStyle(.radioGroup)
+                Text(model.state.agentReadAccess.explanation)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }

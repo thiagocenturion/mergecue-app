@@ -17,9 +17,12 @@ extension MergeCueEngine {
             } else if method == .proposeRule {
                 try checkProposalRateLimit()
             }
-            return .success(try await dispatch(method, params: params, client: client))
+            let value = try await dispatch(method, params: params, client: client)
+            if method.isAgentRead { await noteAgentRead(method, client: client, denied: false) }
+            return .success(value)
         } catch {
             let ipcError = EngineErrorMapping.ipcError(from: error)
+            if method.isAgentRead { await noteAgentRead(method, client: client, denied: ipcError.code == .crossScopeReference) }
             await recordRejectedCall(method: method, error: ipcError, taskID: taskID, params: params, client: client)
             return .failure(ipcError)
         }
@@ -41,9 +44,9 @@ extension MergeCueEngine {
         case .getThread:
             return try IPCCoding.encodeValue(try await getThread(try IPCCoding.decodeValidatedParams(GetThreadParams.self, from: params)))
         case .getCIFailure:
-            return try IPCCoding.encodeValue(try await getCIFailure(try IPCCoding.decodeValidatedParams(GetCIFailureParams.self, from: params)))
+            return try await getCIFailure(try IPCCoding.decodeValidatedParams(GetCIFailureParams.self, from: params), client: client)
         case .getDiff:
-            return try IPCCoding.encodeValue(try await getDiff(try IPCCoding.decodeValidatedParams(GetDiffParams.self, from: params)))
+            return try await getDiff(try IPCCoding.decodeValidatedParams(GetDiffParams.self, from: params), client: client)
         case .claimTask:
             return try IPCCoding.encodeValue(try await claimTask(try IPCCoding.decodeValidatedParams(ClaimTaskParams.self, from: params)))
         case .heartbeat:
@@ -147,5 +150,15 @@ extension MergeCueEngine {
             message: "Task \(task.id.rawValue) is \(task.state.rawValue); finished tasks cannot be changed by an agent (only the owner can reopen it).",
             data: ["state": .string(task.state.rawValue)]
         )
+    }
+}
+
+extension IPCMethod {
+    /// Read methods whose use is aggregated in the audit log (S12).
+    var isAgentRead: Bool {
+        switch self {
+        case .listAttention, .listTasks, .getTask, .getChangeContext, .getThread, .getCIFailure, .getDiff, .listRules: true
+        default: false
+        }
     }
 }
