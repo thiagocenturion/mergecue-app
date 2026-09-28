@@ -1,6 +1,8 @@
 // mergecue-diagnose — read-only check of MergeCue's own provider code against the accounts connected in the app.
 //
-//   swift run mergecue-diagnose [bitbucket|github|gitlab]
+//   swift run mergecue-diagnose [bitbucket|github|gitlab] [--trace]
+//
+// --trace prints every HTTP request the adapter sends (method, URL, status — never headers or bodies).
 //
 // Uses the app's database (accounts, repositories, stored snapshots) and the credentials MergeCue saved in the
 // Keychain (macOS may ask for access). Runs the real adapter: authored listing, then hydrating each change request,
@@ -15,7 +17,9 @@ import MergeCueStore
 @main
 struct Diagnose {
     static func main() async {
-        let filter = CommandLine.arguments.dropFirst().first.map { $0.lowercased() }
+        let arguments = CommandLine.arguments.dropFirst()
+        let trace = arguments.contains("--trace")
+        let filter = arguments.first { !$0.hasPrefix("--") }.map { $0.lowercased() }
         let paths = MergeCuePaths()
         let database: MergeCueDatabase
         do {
@@ -25,7 +29,9 @@ struct Diagnose {
             exit(1)
         }
         let credentials = KeychainCredentialStore()
-        let factory = LiveProviderFactory(clock: SystemClock(), appVersion: "diagnose")
+        let shared = URLSessionTransport(userAgent: URLSessionTransport.userAgent(forVersion: "diagnose"))
+        let transport: any HTTPTransport = trace ? TracingTransport(base: shared) : shared
+        let factory = LiveProviderFactory(clock: SystemClock(), appVersion: "diagnose", transport: { _ in transport })
         let accounts = ((try? await database.accounts()) ?? []).filter { account in
             guard let filter else { return true }
             return account.id.kind.rawValue.contains(filter) || account.id.kind.displayName.lowercased().contains(filter)
@@ -74,5 +80,23 @@ struct Diagnose {
     static func describe(_ error: any Error) -> String {
         let providerError = ProviderError.classify(error).map { "[\($0.code)] " } ?? ""
         return SecretRedactor.redact(providerError + String(describing: error))
+    }
+}
+
+/// Prints each request line and status (no headers, no bodies) so a failing URL is visible.
+final class TracingTransport: HTTPTransport {
+    let base: any HTTPTransport
+    init(base: any HTTPTransport) { self.base = base }
+
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        let line = "    -> \(request.method) \(SecretRedactor.redact(request.url.absoluteString))"
+        do {
+            let response = try await base.send(request)
+            print("\(line)  [\(response.status)]")
+            return response
+        } catch {
+            print("\(line)  [transport error: \(error.localizedDescription)]")
+            throw error
+        }
     }
 }
