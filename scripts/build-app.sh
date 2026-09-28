@@ -6,6 +6,8 @@
 # Environment:
 #   SIGNING=development  (default) sign with the "Apple Development" identity of team TTSKDZ455K (login keychain)
 #   SIGNING=adhoc        ad-hoc signature (CODE_SIGN_IDENTITY=-, no team): CI or machines without the certificate
+#   SIGNING=developerid  "Developer ID Application" of team TTSKDZ455K with a secure timestamp, for notarized
+#                        distribution (use scripts/release.sh, which also notarizes and staples)
 #   VERBOSE=1            full xcodebuild output instead of errors/warnings only
 #
 # Steps: scripts/generate-project.sh (xcodegen) -> xcodebuild (derived data in build/DerivedData) -> copy to
@@ -25,7 +27,13 @@ signing_args=()
 case "$signing" in
     development) ;;
     adhoc) signing_args=(CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER=) ;;
-    *) echo "SIGNING must be 'development' or 'adhoc' (got '$signing')" >&2; exit 64 ;;
+    developerid)
+        signing_args=(
+            "CODE_SIGN_IDENTITY=Developer ID Application" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=TTSKDZ455K
+            PROVISIONING_PROFILE_SPECIFIER= "OTHER_CODE_SIGN_FLAGS=--timestamp" CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO
+        )
+        ;;
+    *) echo "SIGNING must be 'development', 'adhoc' or 'developerid' (got '$signing')" >&2; exit 64 ;;
 esac
 
 # Debug: the Mac's own architecture. Release: universal (arm64 + x86_64).

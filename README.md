@@ -26,8 +26,16 @@ scripts/test.sh                           # swift build + swift test
 swift run mergecue-snapshots              # render every screen (light + dark) to docs/evidence/snapshots/
 ```
 
-Signing uses the **Apple Development** identity of team `TTSKDZ455K` (manual signing, Hardened Runtime, no App
-Sandbox; there is no Developer ID certificate yet, so builds are not notarized). On another Mac change the team for
+Development builds use the **Apple Development** identity of team `TTSKDZ455K` (manual signing, Hardened Runtime,
+no App Sandbox). Releases are signed with **Developer ID Application**, notarized and stapled:
+
+```bash
+scripts/release.sh    # -> dist/MergeCue-<version>.zip and .dmg (notarized; opens on any Mac without warnings)
+```
+
+It needs the Developer ID certificate in the login keychain and notarization credentials stored once with
+`xcrun notarytool store-credentials mergecue` (override with `NOTARY_PROFILE=<name>`). The repo-root `MergeCue.app`
+is the latest notarized release build. On another Mac change the team for
 both targets (`MergeCue`, `mergecue-mcp`) or build ad-hoc with `SIGNING=adhoc scripts/build-app.sh`. Copy
 `dist/MergeCue.app` to `/Applications` to install it; agents are then registered with
 `/Applications/MergeCue.app/Contents/MacOS/mergecue-mcp`.
@@ -144,7 +152,6 @@ Test coverage and the per-provider verification status: `docs/TESTING.md`.
   Bitbucket Data Center are not tested.
 - No "Sign in with browser" (OAuth device flow) yet; tokens or the GitHub CLI.
 - Unattended agent execution is not available: rules can create tasks, which wait for you to hand them over.
-- Not notarized (no Developer ID certificate): on other Macs, Gatekeeper asks you to confirm the first launch.
 - Tracking PRs/MRs you only reviewed or commented on is bounded: updated within 30 days; GitHub at most 100 search
   results; GitLab from your latest 100 comment events in up to 20 projects; Bitbucket per repository (selected, or 30
   recently updated ones, open PRs filtered client-side because Bitbucket cannot filter on participants).
@@ -153,7 +160,6 @@ Test coverage and the per-provider verification status: `docs/TESTING.md`.
 
 | Item | Blocked by | State |
 | --- | --- | --- |
-| Notarized direct-download build | No Developer ID Application certificate | Builds are signed with Apple Development (Hardened Runtime) and run locally; Gatekeeper warns elsewhere. |
 | GitLab.com live acceptance | No GitLab account/token provided | Adapter complete; fixtures only. |
 | Bitbucket Cloud live acceptance | No Bitbucket account/token provided | Adapter complete; fixtures only. |
 | GitHub live threads/checks and remote writes (reply/resolve) | The owner's account has no open PRs; live writes to a test PR not yet authorized | Auth + sync verified live; the rest fixture-verified. |
