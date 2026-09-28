@@ -95,6 +95,13 @@ public actor MergeCueEngine: IPCRequestHandling {
         return stream
     }
 
+    /// Forwards a change signal that originated outside the engine (Sync's `onChange`: sync status, attention,
+    /// change requests) to every `changes()` subscriber, so the UI observes a single stream. Wired by
+    /// `MergeCueRuntime`.
+    public func forwardExternalChange(_ change: EngineChange) {
+        emit(change)
+    }
+
     private func removeSubscriber(_ id: UUID) {
         subscribers[id] = nil
     }

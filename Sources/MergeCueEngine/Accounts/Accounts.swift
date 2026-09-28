@@ -16,7 +16,7 @@ extension MergeCueEngine {
                 EngineAccountState(
                     account: account,
                     status: statuses.first { $0.account == account.id } ?? AccountSyncStatus(account: account.id),
-                    capabilities: env.providers.capabilities(for: account.kind)
+                    capabilities: env.providers.capabilities(for: account)
                 )
             }
         }

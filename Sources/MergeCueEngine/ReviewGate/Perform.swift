@@ -94,7 +94,7 @@ extension MergeCueEngine {
                 await appendAudit(actor: "user", action: preview.action.rawValue, target: preview.target, outcome: .rejected, detail: "Writes are disabled for the account.", taskID: task.id)
                 throw EngineError.writesDisabled(account: account.displayLabel)
             }
-            let support = env.providers.capabilities(for: account.kind).support(for: capability)
+            let support = env.providers.capabilities(for: account).support(for: capability)
             guard support.isUsable else {
                 await appendAudit(actor: "user", action: preview.action.rawValue, target: preview.target, outcome: .rejected, detail: support.userFacingDescription, taskID: task.id)
                 throw EngineError.unsupported("\(capability.displayName): \(support.userFacingDescription)")

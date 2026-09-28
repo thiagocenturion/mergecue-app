@@ -1,0 +1,81 @@
+{
+  "agent_name" : "mergecue-agent-sim",
+  "duration_ms" : 452,
+  "mcp_path" : "~/Documents/mergecue-app/.claude/worktrees/c-runtime/.build/debug/mergecue-mcp",
+  "passed" : true,
+  "scenario" : "happy",
+  "server" : {
+    "name" : "mergecue",
+    "protocol_version" : "2025-11-25",
+    "version" : "0.1.0-dev"
+  },
+  "skipped" : [
+
+  ],
+  "started_at" : "2026-09-28T03:15:29.279Z",
+  "steps" : [
+    {
+      "detail" : "server mergecue 0.1.0-dev, MCP protocol 2025-11-25",
+      "name" : "initialize(agent)",
+      "ok" : true
+    },
+    {
+      "detail" : "claim_task, fail_task, get_change_context, get_ci_failure, get_diff, get_task, get_thread, heartbeat, list_attention, list_rules, list_tasks, propose_rule, report_changes, report_tests, submit_result, update_task",
+      "name" : "tools/list",
+      "ok" : true
+    },
+    {
+      "detail" : "{\"artifacts\":[],\"checkout\":{\"base_sha\":\"2323146402b502e63cd9574834e23fb8bced3ca0\",\"gitbutler_managed\":false,\"mapped_checkout_path\":\"$MERGECUE_HOME/demo/scenario/checkouts/payments-api\",\"policy\":\"isolated_worktree\",\"source_branch\":\"feature/charge-retries\",\"target_branch\":\"main\",\"worktree_path\":\"/t…",
+      "expected" : "success",
+      "name" : "get_task",
+      "ok" : true
+    },
+    {
+      "detail" : "{\"checkout\":{\"base_sha\":\"2323146402b502e63cd9574834e23fb8bced3ca0\",\"gitbutler_managed\":false,\"mapped_checkout_path\":\"$MERGECUE_HOME/demo/scenario/checkouts/payments-api\",\"policy\":\"isolated_worktree\",\"source_branch\":\"feature/charge-retries\",\"target_branch\":\"main\",\"worktree_path\":\"$MERGECUE_HOME…",
+      "expected" : "success",
+      "name" : "claim_task",
+      "ok" : true
+    },
+    {
+      "detail" : "{\"lease_expires_at\":\"2026-09-28T03:30:29.372Z\",\"version\":4}",
+      "expected" : "success",
+      "name" : "update_task(editing)",
+      "ok" : true
+    },
+    {
+      "detail" : "$MERGECUE_HOME/demo/worktrees/mc_zaoln6/mergecue-agent-sim.txt",
+      "name" : "edit file",
+      "ok" : true
+    },
+    {
+      "detail" : "{\"artifact_id\":\"art_0287277299\",\"missing_paths\":[],\"unexpected_paths\":[],\"verified_changed_paths\":[\"mergecue-agent-sim.txt\"],\"version\":5}",
+      "expected" : "success",
+      "name" : "report_changes",
+      "ok" : true
+    },
+    {
+      "detail" : "test -s mergecue-agent-sim.txt && echo ok → exit 0",
+      "name" : "run tests",
+      "ok" : true
+    },
+    {
+      "detail" : "{\"artifact_id\":\"art_864c37823a\",\"version\":6}",
+      "expected" : "success",
+      "name" : "report_tests",
+      "ok" : true
+    },
+    {
+      "detail" : "{\"state\":\"ready_for_review\",\"version\":7}",
+      "expected" : "success",
+      "name" : "submit_result",
+      "ok" : true
+    },
+    {
+      "detail" : "state: ready_for_review",
+      "expected" : "ready_for_review",
+      "name" : "state is ready_for_review",
+      "ok" : true
+    }
+  ],
+  "task_id" : "mc_zaoln6"
+}

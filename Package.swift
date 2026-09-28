@@ -25,6 +25,7 @@ let package = Package(
         .executable(name: "mergecue-mcp", targets: ["mergecue-mcp"]),
         .executable(name: "mergecue-agent-sim", targets: ["mergecue-agent-sim"]),
         .executable(name: "mergecue-snapshots", targets: ["mergecue-snapshots"]),
+        .executable(name: "mergecue-demo-host", targets: ["mergecue-demo-host"]),
     ],
     dependencies: [
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", exact: "0.12.1"),
@@ -86,6 +87,10 @@ let package = Package(
             dependencies: ["MergeCueCore", "MergeCueIPC", "MergeCueFixtures", mcp]
         ),
         .executableTarget(
+            name: "mergecue-demo-host",
+            dependencies: ["MergeCueRuntime", "MergeCueEngine", "MergeCueFixtures", "MergeCueCore", "MergeCueIPC"]
+        ),
+        .executableTarget(
             name: "mergecue-snapshots",
             dependencies: ["MergeCueUI", "MergeCueRuntime", "MergeCueFixtures"],
             swiftSettings: [.defaultIsolation(MainActor.self)]
@@ -105,13 +110,20 @@ let package = Package(
         .testTarget(name: "MergeCueSyncTests", dependencies: ["MergeCueSync", "MergeCueFixtures"]),
         .testTarget(name: "MergeCueEngineTests", dependencies: ["MergeCueEngine", "MergeCueFixtures"]),
         .testTarget(name: "MergeCueMCPServerTests", dependencies: ["MergeCueMCPServer", mcp]),
-        .testTarget(name: "MergeCueRuntimeTests", dependencies: ["MergeCueRuntime"]),
+        .testTarget(
+            name: "MergeCueRuntimeTests",
+            dependencies: [
+                "MergeCueRuntime", "MergeCueCore", "MergeCueNetworking", "MergeCueFixtures", "MergeCueEngine",
+                "MergeCueIPC", "GitHubAdapter", "GitLabAdapter", "BitbucketCloudAdapter", "AgentHandoff",
+            ]
+        ),
         .testTarget(name: "MergeCueUITests", dependencies: ["MergeCueUI"]),
         .testTarget(
             name: "IntegrationTests",
             dependencies: [
                 "MergeCueRuntime", "MergeCueMCPServer", "MergeCueFixtures", "MergeCueEngine",
-                "MergeCueSync", "WorkspaceInspector", "AgentHandoff", mcp,
+                "MergeCueSync", "WorkspaceInspector", "AgentHandoff", "MergeCueCore", "MergeCueIPC",
+                "MergeCueNetworking", "MergeCueStore", mcp,
             ]
         ),
     ]

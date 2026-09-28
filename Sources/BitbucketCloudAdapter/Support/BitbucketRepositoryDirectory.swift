@@ -81,3 +81,15 @@ final class BitbucketSessionState: Sendable {
     func cachedUser() -> ProviderUser? { user.withLock { $0 } }
     func store(_ value: ProviderUser) { user.withLock { $0 = value } }
 }
+
+extension BitbucketRepositoryDirectory {
+    /// Records the repositories and check links of a stored snapshot (e.g. at app launch, before the first sync)
+    /// so key-only calls and `deepLink(to:)` work right away. Safe to call repeatedly.
+    public func remember(_ snapshot: ChangeRequestSnapshot) {
+        guard snapshot.key.kind == .bitbucketCloud else { return }
+        remember(snapshot.summary.repository)
+        for check in snapshot.checks {
+            recordCheckURL(check.detailsURL, for: check.key)
+        }
+    }
+}
