@@ -2,10 +2,11 @@ import AppKit
 import MergeCueCore
 import MergeCueRuntime
 import SwiftUI
+import Synchronization
 import UserNotifications
 
 /// Keys of the app's own preferences (UserDefaults).
-public enum LaunchPreferences {
+public nonisolated enum LaunchPreferences {
     /// "live" or "demo": the mode chosen with Settings › General › Demo mode (launch arguments and
     /// `MERGECUE_BACKEND` take precedence).
     public static let backendModeKey = "MergeCueBackendMode"
@@ -32,6 +33,10 @@ public final class MergeCueAppDelegate: NSObject, NSApplicationDelegate, UNUserN
     private var wakeObserver: NSObjectProtocol?
     private var pendingNotification: (changeRequestID: String?, attentionIDs: [String])?
     private var isTerminating = false
+    private var backendStopped = false
+    /// SIGTERM/SIGINT (`kill`, `pkill`, logout scripts) quit through `applicationShouldTerminate`, so the runtime
+    /// stops and removes its IPC socket instead of leaving it behind.
+    private var signalSources: [DispatchSourceSignal] = []
     /// Opens the main window right after launch (otherwise the app starts in the menu bar only).
     public var showsWindowOnLaunch = false
     /// Offer the setup assistant on the first live launch without accounts.
@@ -58,7 +63,21 @@ public final class MergeCueAppDelegate: NSObject, NSApplicationDelegate, UNUserN
             // Set before launch finishes so a click that launched the app is delivered too.
             UNUserNotificationCenter.current().delegate = self
         }
+        installTerminationSignalHandlers()
         Task { await launch() }
+    }
+
+    private func installTerminationSignalHandlers() {
+        for signalNumber in [SIGTERM, SIGINT] {
+            signal(signalNumber, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: signalNumber, queue: .main)
+            source.setEventHandler {
+                MCLog(category: "ui").notice("signal \(signalNumber) received; quitting")
+                NSApp.terminate(nil)
+            }
+            source.resume()
+            signalSources.append(source)
+        }
     }
 
     private func launch() async {
@@ -119,16 +138,22 @@ public final class MergeCueAppDelegate: NSObject, NSApplicationDelegate, UNUserN
         false
     }
 
-    /// Stops the backend (IPC socket removed) before quitting, bounded so quitting never hangs.
+    /// Stops the backend (IPC socket removed) before quitting, bounded so quitting never hangs. The first request
+    /// is cancelled, the backend stops outside AppKit's termination loop, then the app terminates for real.
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let backend, !isTerminating else { return .terminateNow }
+        guard let backend, !backendStopped else { return .terminateNow }
+        guard !isTerminating else { return .terminateCancel }
         isTerminating = true
         model?.stop()
+        let log = MCLog(category: "ui")
+        log.notice("quitting: stopping the backend")
         Task {
             await Self.shutdown(backend, timeout: .seconds(5))
-            NSApp.reply(toApplicationShouldTerminate: true)
+            log.notice("backend stopped; terminating")
+            self.backendStopped = true
+            NSApp.terminate(nil)
         }
-        return .terminateLater
+        return .terminateCancel
     }
 
     public func applicationWillTerminate(_ notification: Notification) {
@@ -141,12 +166,25 @@ public final class MergeCueAppDelegate: NSObject, NSApplicationDelegate, UNUserN
         model?.showScreen(model?.screen ?? .inbox)
     }
 
+    /// Waits for `backend.shutdown()` at most `timeout` (a hung stop must not keep the app from quitting).
     private static func shutdown(_ backend: any AppBackend, timeout: Duration) async {
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask { await backend.shutdown() }
-            group.addTask { try? await Task.sleep(for: timeout) }
-            await group.next()
-            group.cancelAll()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let resumed = Mutex(false)
+            let finish: @Sendable () -> Void = {
+                let first = resumed.withLock { done in
+                    defer { done = true }
+                    return !done
+                }
+                if first { continuation.resume() }
+            }
+            Task.detached {
+                await backend.shutdown()
+                finish()
+            }
+            Task.detached {
+                try? await Task.sleep(for: timeout)
+                finish()
+            }
         }
     }
 
@@ -165,6 +203,7 @@ public final class MergeCueAppDelegate: NSObject, NSApplicationDelegate, UNUserN
         model?.stop()
         Task {
             if let backend { await Self.shutdown(backend, timeout: .seconds(5)) }
+            self.backendStopped = true
             let configuration = NSWorkspace.OpenConfiguration()
             configuration.createsNewApplicationInstance = true
             configuration.arguments = arguments

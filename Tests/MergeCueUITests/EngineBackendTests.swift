@@ -15,7 +15,7 @@ struct DemoBackendHarness {
     static let fakeAgent = DetectedAgent(kind: .claudeCode, executableURL: URL(filePath: "/usr/bin/true"), version: "9.9.9",
                                          source: .knownLocation)
 
-    static func start(registration: AgentRegistrationStatus = .notRegistered) async throws -> DemoBackendHarness {
+    static func start(registration: AgentRegistrationStatus = .notRegistered, ipc: Bool = false) async throws -> DemoBackendHarness {
         var template = Array("/tmp/mcui-XXXXXX".utf8CString)
         guard let created = mkdtemp(&template) else { throw CocoaError(.fileWriteUnknown) }
         let path = String(cString: created)
@@ -26,7 +26,8 @@ struct DemoBackendHarness {
         let root = URL(filePath: resolved, directoryHint: .isDirectory)
         let paths = MergeCuePaths(root: root, fallbackSocketParent: root)
         let runtimeOptions = RuntimeOptions(
-            notifier: SilentNotifier(), startsIPCServer: false, mcpHelperOverride: fakeHelper, mappingSearchRoots: []
+            notifier: SilentNotifier(), startsIPCServer: ipc, peerValidation: .disabled, mcpHelperOverride: fakeHelper,
+            mappingSearchRoots: []
         )
         let options = EngineBackend.Options(
             detectAgents: { _ in [fakeAgent] },
@@ -241,6 +242,21 @@ struct EngineBackendTests {
         let state = await harness.state()
         #expect(state.lastRefreshAt != nil)
         #expect(state.accounts.allSatisfy { $0.status.lastSuccessAt != nil })
+    }
+
+    @Test func shutdownStopsTheRuntimeAndRemovesTheSocket() async throws {
+        let harness = try await DemoBackendHarness.start(ipc: true)
+        let socket = await harness.backend.runtime.ipcStatus().socketPath
+        #expect(FileManager.default.fileExists(atPath: socket))
+        let stream = harness.backend.changes()
+        let consumer = Task { for await _ in stream {} }
+        let started = Date()
+        await harness.backend.shutdown()
+        #expect(Date().timeIntervalSince(started) < 5)
+        #expect(!FileManager.default.fileExists(atPath: socket))
+        #expect(await harness.backend.runtime.isRunning == false)
+        consumer.cancel()
+        try? FileManager.default.removeItem(at: harness.root)
     }
 
     @Test func agentRegistrationStates() async throws {
