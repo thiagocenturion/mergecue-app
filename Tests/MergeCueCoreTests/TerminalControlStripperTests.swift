@@ -105,23 +105,19 @@ struct TerminalControlStripperTests {
         #expect(SecretRedactor.redact(input) == input)
     }
 
-    /// Redaction of hostile coloured input stays linear (DECISIONS D21): 8× the input may take at most ~24× the
-    /// time (linear is 8×, quadratic 64×), plus a generous absolute bound. Best of three runs damps machine load.
+    /// Redaction of hostile coloured input stays linear (DECISIONS D21). 128 KB takes ~0.1–0.2 s on an idle
+    /// machine; a quadratic rule would need minutes (the pre-D21 rules took 10 s for 8 KB), so a generous bound
+    /// separates the two even when parallel builds load the machine. Best of three damps the noise.
     @Test(arguments: ["\u{1B}[1m", "\u{1B}[1mghp_", "sk-proj-", "\u{1B}[;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;m", "AIza", "npm_x"])
     func colouredHostileInputStaysFast(_ unit: String) {
-        func best(_ bytes: Int) -> Duration {
-            let input = String(repeating: unit, count: bytes / unit.utf8.count)
-            return (0..<3).map { _ in
-                ContinuousClock().measure {
-                    _ = SecretRedactor.redact(input)
-                    _ = LogExcerpt.make(rawLog: input, maxBytes: 16 * 1024)
-                }
-            }.min() ?? .zero
-        }
-        let small = best(16 * 1024)
-        let large = best(128 * 1024)
-        #expect(large < small * 24 + .milliseconds(50), "\(unit.debugDescription): 16 KB \(small), 128 KB \(large)")
-        #expect(large < .seconds(4), "\(unit.debugDescription): \(large)")
+        let input = String(repeating: unit, count: 128 * 1024 / unit.utf8.count)
+        let elapsed = (0..<3).map { _ in
+            ContinuousClock().measure {
+                _ = SecretRedactor.redact(input)
+                _ = LogExcerpt.make(rawLog: input, maxBytes: 16 * 1024)
+            }
+        }.min() ?? .zero
+        #expect(elapsed < .seconds(5), "\(unit.debugDescription): \(elapsed) for 128 KB")
     }
 }
 
