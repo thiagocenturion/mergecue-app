@@ -1,0 +1,9 @@
+[
+  {
+    "login": "acme",
+    "id": 9919,
+    "node_id": "O_kgDOAAAmrw",
+    "description": "ACME Corp (demo fixture)",
+    "url": "https://api.github.com/orgs/acme"
+  }
+]

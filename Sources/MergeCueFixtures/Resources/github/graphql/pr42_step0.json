@@ -1,0 +1,550 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "id": "PR_kwDOATpX1c50000042",
+        "fullDatabaseId": "3100000042",
+        "number": 42,
+        "title": "Retry card charges on gateway timeouts",
+        "body": "Adds retries to `ChargeService.charge` and raises the gateway timeout.\n\n- [x] retries with backoff\n- [ ] idempotency key\n\n_Demo fixture: synthetic data._",
+        "url": "https://github.com/acme/payments-api/pull/42",
+        "state": "OPEN",
+        "isDraft": false,
+        "createdAt": "2026-09-17T14:00:00Z",
+        "updatedAt": "2026-09-20T10:00:00Z",
+        "headRefName": "feature/charge-retries",
+        "baseRefName": "main",
+        "headRefOid": "4d2c1a9e8b7f6a5d4c3b2a1908f7e6d5c4b3a291",
+        "baseRefOid": "0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+        "isCrossRepository": false,
+        "mergeStateStatus": "BLOCKED",
+        "mergeable": "MERGEABLE",
+        "reviewDecision": "CHANGES_REQUESTED",
+        "author": {
+          "__typename": "User",
+          "login": "mona-dev",
+          "avatarUrl": "https://avatars.githubusercontent.com/u/583231?v=4",
+          "databaseId": 583231,
+          "name": "Mona Dev"
+        },
+        "repository": {
+          "databaseId": 1296269,
+          "name": "payments-api",
+          "nameWithOwner": "acme/payments-api",
+          "url": "https://github.com/acme/payments-api",
+          "sshUrl": "git@github.com:acme/payments-api.git",
+          "isPrivate": true,
+          "owner": {
+            "login": "acme"
+          },
+          "defaultBranchRef": {
+            "name": "main"
+          }
+        },
+        "headRepository": {
+          "databaseId": 1296269,
+          "name": "payments-api",
+          "nameWithOwner": "acme/payments-api",
+          "url": "https://github.com/acme/payments-api",
+          "sshUrl": "git@github.com:acme/payments-api.git",
+          "isPrivate": true,
+          "owner": {
+            "login": "acme"
+          },
+          "defaultBranchRef": {
+            "name": "main"
+          }
+        },
+        "reviewRequests": {
+          "nodes": [
+            {
+              "asCodeOwner": true,
+              "requestedReviewer": {
+                "__typename": "Team",
+                "name": "Payments Reviewers",
+                "slug": "payments-reviewers",
+                "databaseId": 4401,
+                "avatarUrl": "https://avatars.githubusercontent.com/t/4401?v=4"
+              }
+            }
+          ]
+        },
+        "latestReviews": {
+          "nodes": [
+            {
+              "state": "CHANGES_REQUESTED",
+              "author": {
+                "__typename": "User",
+                "login": "carol-reviews",
+                "avatarUrl": "https://avatars.githubusercontent.com/u/700101?v=4",
+                "databaseId": 700101,
+                "name": "Carol Reviewer"
+              }
+            },
+            {
+              "state": "COMMENTED",
+              "author": {
+                "__typename": "User",
+                "login": "dave-sec",
+                "avatarUrl": "https://avatars.githubusercontent.com/u/700102?v=4",
+                "databaseId": 700102,
+                "name": "Dave Security"
+              }
+            }
+          ]
+        },
+        "reviews": {
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": null
+          },
+          "nodes": [
+            {
+              "id": "PRR_kwDOATpX1c6AAAC1",
+              "fullDatabaseId": "2600000301",
+              "body": "A few blocking issues around idempotency and logging. Can you add a regression test for the retry path?",
+              "state": "CHANGES_REQUESTED",
+              "submittedAt": "2026-09-18T10:05:00Z",
+              "url": "https://github.com/acme/payments-api/pull/42#pullrequestreview-2600000301",
+              "author": {
+                "__typename": "User",
+                "login": "carol-reviews",
+                "avatarUrl": "https://avatars.githubusercontent.com/u/700101?v=4",
+                "databaseId": 700101,
+                "name": "Carol Reviewer"
+              },
+              "commit": {
+                "oid": "4d2c1a9e8b7f6a5d4c3b2a1908f7e6d5c4b3a291"
+              }
+            },
+            {
+              "id": "PRR_kwDOATpX1c6AAAC2",
+              "fullDatabaseId": "2600000302",
+              "body": "",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-18T11:00:00Z",
+              "url": "https://github.com/acme/payments-api/pull/42#pullrequestreview-2600000302",
+              "author": {
+                "__typename": "User",
+                "login": "dave-sec",
+                "avatarUrl": "https://avatars.githubusercontent.com/u/700102?v=4",
+                "databaseId": 700102,
+                "name": "Dave Security"
+              },
+              "commit": {
+                "oid": "4d2c1a9e8b7f6a5d4c3b2a1908f7e6d5c4b3a291"
+              }
+            }
+          ]
+        },
+        "comments": {
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": null
+          },
+          "nodes": [
+            {
+              "id": "IC_kwDOATpX1c6AAAB1",
+              "fullDatabaseId": "2500000201",
+              "body": "Heads-up: the staging deploy for this branch failed. The unit-tests job looks related.",
+              "url": "https://github.com/acme/payments-api/pull/42#issuecomment-2500000201",
+              "createdAt": "2026-09-18T12:00:00Z",
+              "updatedAt": "2026-09-18T12:00:00Z",
+              "author": {
+                "__typename": "User",
+                "login": "dave-sec",
+                "avatarUrl": "https://avatars.githubusercontent.com/u/700102?v=4",
+                "databaseId": 700102,
+                "name": "Dave Security"
+              }
+            },
+            {
+              "id": "IC_kwDOATpX1c6AAAB2",
+              "fullDatabaseId": "2500000202",
+              "body": "Coverage report: 81.2% (-0.4%) compared to main.",
+              "url": "https://github.com/acme/payments-api/pull/42#issuecomment-2500000202",
+              "createdAt": "2026-09-18T12:05:00Z",
+              "updatedAt": "2026-09-18T12:05:00Z",
+              "author": {
+                "__typename": "Bot",
+                "login": "github-actions",
+                "avatarUrl": "https://avatars.githubusercontent.com/in/15368?v=4",
+                "databaseId": 41898282
+              }
+            }
+          ]
+        },
+        "reviewThreads": {
+          "pageInfo": {
+            "hasNextPage": true,
+            "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0wOS0xOFQxMDowMDowMFo="
+          },
+          "nodes": [
+            {
+              "id": "PRRT_kwDOATpX1c5AAAA1",
+              "isResolved": false,
+              "isOutdated": false,
+              "path": "Sources/Payments/ChargeService.swift",
+              "line": 84,
+              "startLine": null,
+              "originalLine": 84,
+              "originalStartLine": null,
+              "diffSide": "RIGHT",
+              "startDiffSide": null,
+              "subjectType": "LINE",
+              "viewerCanResolve": true,
+              "viewerCanUnresolve": false,
+              "viewerCanReply": true,
+              "pullRequest": {
+                "number": 42
+              },
+              "repository": {
+                "databaseId": 1296269,
+                "nameWithOwner": "acme/payments-api"
+              },
+              "comments": {
+                "pageInfo": {
+                  "hasNextPage": true,
+                  "endCursor": "Y3Vyc29yOnYyOpHOkAAAAg=="
+                },
+                "nodes": [
+                  {
+                    "id": "PRRC_kwDOATpX1c6AAAE1",
+                    "fullDatabaseId": "2400000101",
+                    "body": "Retrying here without an idempotency key can double-charge a customer when the gateway times out after accepting the request.",
+                    "url": "https://github.com/acme/payments-api/pull/42#discussion_r2400000101",
+                    "createdAt": "2026-09-18T09:00:00Z",
+                    "updatedAt": "2026-09-18T09:00:00Z",
+                    "diffHunk": "@@ -80,7 +80,9 @@ final class ChargeService {\n     func charge(_ request: ChargeRequest) async throws -> Receipt {\n-        let response = try await gateway.post(request)\n+        let response = try await gateway.post(request, retries: 3)\n+        log.info(\"charged \\(request.cardNumber)\")\n         return Receipt(response)",
+                    "outdated": false,
+                    "author": {
+                      "__typename": "User",
+                      "login": "carol-reviews",
+                      "avatarUrl": "https://avatars.githubusercontent.com/u/700101?v=4",
+                      "databaseId": 700101,
+                      "name": "Carol Reviewer"
+                    },
+                    "replyTo": null,
+                    "commit": {
+                      "oid": "4d2c1a9e8b7f6a5d4c3b2a1908f7e6d5c4b3a291"
+                    },
+                    "originalCommit": {
+                      "oid": "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432"
+                    }
+                  },
+                  {
+                    "id": "PRRC_kwDOATpX1c6AAAE2",
+                    "fullDatabaseId": "2400000102",
+                    "body": "Good catch. I'll pass the request id as the idempotency key.",
+                    "url": "https://github.com/acme/payments-api/pull/42#discussion_r2400000102",
+                    "createdAt": "2026-09-18T09:30:00Z",
+                    "updatedAt": "2026-09-18T09:30:00Z",
+                    "diffHunk": "@@ -80,7 +80,9 @@ final class ChargeService {\n     func charge(_ request: ChargeRequest) async throws -> Receipt {\n-        let response = try await gateway.post(request)\n+        let response = try await gateway.post(request, retries: 3)\n+        log.info(\"charged \\(request.cardNumber)\")\n         return Receipt(response)",
+                    "outdated": false,
+                    "author": {
+                      "__typename": "User",
+                      "login": "mona-dev",
+                      "avatarUrl": "https://avatars.githubusercontent.com/u/583231?v=4",
+                      "databaseId": 583231,
+                      "name": "Mona Dev"
+                    },
+                    "replyTo": {
+                      "fullDatabaseId": "2400000101"
+                    },
+                    "commit": {
+                      "oid": "4d2c1a9e8b7f6a5d4c3b2a1908f7e6d5c4b3a291"
+                    },
+                    "originalCommit": {
+                      "oid": "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "PRRT_kwDOATpX1c5AAAA2",
+              "isResolved": false,
+              "isOutdated": false,
+              "path": "Sources/Payments/RetryPolicy.swift",
+              "line": 12,
+              "startLine": 11,
+              "originalLine": 12,
+              "originalStartLine": 11,
+              "diffSide": "RIGHT",
+              "startDiffSide": "RIGHT",
+              "subjectType": "LINE",
+              "viewerCanResolve": true,
+              "viewerCanUnresolve": false,
+              "viewerCanReply": true,
+              "pullRequest": {
+                "number": 42
+              },
+              "repository": {
+                "databaseId": 1296269,
+                "nameWithOwner": "acme/payments-api"
+              },
+              "comments": {
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                },
+                "nodes": [
+                  {
+                    "id": "PRRC_kwDOATpX1c6AAAF1",
+                    "fullDatabaseId": "2400000201",
+                    "body": "Read this from configuration instead of hard-coding it:\n\n```suggestion\n    let maxRetries = Config.payments.maxRetries\n```",
+                    "url": "https://github.com/acme/payments-api/pull/42#discussion_r2400000201",
+                    "createdAt": "2026-09-18T09:10:00Z",
+                    "updatedAt": "2026-09-18T09:10:00Z",
+                    "diffHunk": "@@ -8,6 +8,8 @@ struct RetryPolicy {\n     var baseDelay: TimeInterval = 0.5\n+    // TODO: read from config\n+    let maxRetries = 3",
+                    "outdated": false,
+                    "author": {
+                      "__typename": "User",
+                      "login": "carol-reviews",
+                      "avatarUrl": "https://avatars.githubusercontent.com/u/700101?v=4",
+                      "databaseId": 700101,
+                      "name": "Carol Reviewer"
+                    },
+                    "replyTo": null,
+                    "commit": {
+                      "oid": "4d2c1a9e8b7f6a5d4c3b2a1908f7e6d5c4b3a291"
+                    },
+                    "originalCommit": {
+                      "oid": "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "PRRT_kwDOATpX1c5AAAA3",
+              "isResolved": false,
+              "isOutdated": false,
+              "path": "Sources/Payments/Gateway.swift",
+              "line": 30,
+              "startLine": null,
+              "originalLine": 30,
+              "originalStartLine": null,
+              "diffSide": "RIGHT",
+              "startDiffSide": null,
+              "subjectType": "LINE",
+              "viewerCanResolve": true,
+              "viewerCanUnresolve": false,
+              "viewerCanReply": true,
+              "pullRequest": {
+                "number": 42
+              },
+              "repository": {
+                "databaseId": 1296269,
+                "nameWithOwner": "acme/payments-api"
+              },
+              "comments": {
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                },
+                "nodes": [
+                  {
+                    "id": "PRRC_kwDOATpX1c6AAAG1",
+                    "fullDatabaseId": "2400000301",
+                    "body": "Why did the timeout go from 10 to 30 seconds? Shouldn't it match the gateway SLA?",
+                    "url": "https://github.com/acme/payments-api/pull/42#discussion_r2400000301",
+                    "createdAt": "2026-09-18T09:20:00Z",
+                    "updatedAt": "2026-09-18T09:20:00Z",
+                    "diffHunk": "@@ -27,4 +27,4 @@ final class Gateway {\n-    let timeout: TimeInterval = 10\n+    let timeout: TimeInterval = 30",
+                    "outdated": false,
+                    "author": {
+                      "__typename": "User",
+                      "login": "dave-sec",
+                      "avatarUrl": "https://avatars.githubusercontent.com/u/700102?v=4",
+                      "databaseId": 700102,
+                      "name": "Dave Security"
+                    },
+                    "replyTo": null,
+                    "commit": {
+                      "oid": "4d2c1a9e8b7f6a5d4c3b2a1908f7e6d5c4b3a291"
+                    },
+                    "originalCommit": {
+                      "oid": "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "PRRT_kwDOATpX1c5AAAA9",
+              "isResolved": true,
+              "isOutdated": false,
+              "path": "docs/PAYMENTS.md",
+              "line": 4,
+              "startLine": null,
+              "originalLine": 4,
+              "originalStartLine": null,
+              "diffSide": "RIGHT",
+              "startDiffSide": null,
+              "subjectType": "LINE",
+              "viewerCanResolve": true,
+              "viewerCanUnresolve": false,
+              "viewerCanReply": true,
+              "pullRequest": {
+                "number": 42
+              },
+              "repository": {
+                "databaseId": 1296269,
+                "nameWithOwner": "acme/payments-api"
+              },
+              "comments": {
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                },
+                "nodes": [
+                  {
+                    "id": "PRRC_kwDOATpX1c6AAAJ1",
+                    "fullDatabaseId": "2400000901",
+                    "body": "nit: typo, `recieve` → `receive`.",
+                    "url": "https://github.com/acme/payments-api/pull/42#discussion_r2400000901",
+                    "createdAt": "2026-09-18T09:25:00Z",
+                    "updatedAt": "2026-09-18T09:25:00Z",
+                    "diffHunk": "@@ -3,3 +3,3 @@\n-We recieve webhooks from the gateway.\n+We recieve signed webhooks from the gateway.",
+                    "outdated": false,
+                    "author": {
+                      "__typename": "User",
+                      "login": "dave-sec",
+                      "avatarUrl": "https://avatars.githubusercontent.com/u/700102?v=4",
+                      "databaseId": 700102,
+                      "name": "Dave Security"
+                    },
+                    "replyTo": null,
+                    "commit": {
+                      "oid": "4d2c1a9e8b7f6a5d4c3b2a1908f7e6d5c4b3a291"
+                    },
+                    "originalCommit": {
+                      "oid": "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "commits": {
+          "nodes": [
+            {
+              "commit": {
+                "oid": "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432",
+                "messageHeadline": "Add retries to ChargeService",
+                "authoredDate": "2026-09-17T13:50:00Z",
+                "author": {
+                  "name": "Mona Dev",
+                  "user": {
+                    "login": "mona-dev"
+                  }
+                }
+              }
+            },
+            {
+              "commit": {
+                "oid": "4d2c1a9e8b7f6a5d4c3b2a1908f7e6d5c4b3a291",
+                "messageHeadline": "Raise gateway timeout to 30s",
+                "authoredDate": "2026-09-18T08:40:00Z",
+                "author": {
+                  "name": "Mona Dev",
+                  "user": {
+                    "login": "mona-dev"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "files": {
+          "totalCount": 4,
+          "nodes": [
+            {
+              "path": "Sources/Payments/ChargeService.swift",
+              "additions": 12,
+              "deletions": 3,
+              "changeType": "MODIFIED"
+            },
+            {
+              "path": "Sources/Payments/RetryPolicy.swift",
+              "additions": 24,
+              "deletions": 0,
+              "changeType": "RENAMED"
+            },
+            {
+              "path": "Sources/Payments/Gateway.swift",
+              "additions": 1,
+              "deletions": 1,
+              "changeType": "MODIFIED"
+            },
+            {
+              "path": "README.md",
+              "additions": 1,
+              "deletions": 0,
+              "changeType": "MODIFIED"
+            }
+          ]
+        },
+        "headCommit": {
+          "nodes": [
+            {
+              "commit": {
+                "oid": "4d2c1a9e8b7f6a5d4c3b2a1908f7e6d5c4b3a291",
+                "statusCheckRollup": {
+                  "state": "FAILURE",
+                  "contexts": {
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": null
+                    },
+                    "nodes": [
+                      {
+                        "__typename": "CheckRun",
+                        "databaseId": 9001,
+                        "name": "unit-tests",
+                        "status": "COMPLETED",
+                        "conclusion": "FAILURE",
+                        "detailsUrl": "https://github.com/acme/payments-api/actions/runs/7001/job/9001",
+                        "url": "https://github.com/acme/payments-api/runs/9001",
+                        "title": "Process completed with exit code 1.",
+                        "summary": "2 tests failed in ChargeServiceTests",
+                        "startedAt": "2026-09-19T08:00:00Z",
+                        "completedAt": "2026-09-19T08:06:00Z",
+                        "isRequired": true,
+                        "checkSuite": {
+                          "app": {
+                            "slug": "github-actions",
+                            "name": "GitHub Actions"
+                          },
+                          "workflowRun": {
+                            "databaseId": 7001,
+                            "runNumber": 88,
+                            "workflow": {
+                              "name": "CI"
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "__typename": "StatusContext",
+                        "id": "SC_kwDOATpX1c8AAAAB",
+                        "context": "ci/lint",
+                        "state": "SUCCESS",
+                        "targetUrl": "https://ci.acme.dev/builds/555",
+                        "description": "Lint passed",
+                        "createdAt": "2026-09-19T08:01:00Z",
+                        "isRequired": false
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "id": 1296269,
+  "node_id": "R_kgDO1296269",
+  "name": "payments-api",
+  "full_name": "acme/payments-api",
+  "private": true,
+  "owner": {
+    "login": "acme",
+    "id": 9919,
+    "type": "Organization"
+  },
+  "html_url": "https://github.com/acme/payments-api",
+  "fork": false,
+  "archived": false,
+  "clone_url": "https://github.com/acme/payments-api.git",
+  "ssh_url": "git@github.com:acme/payments-api.git",
+  "default_branch": "main",
+  "updated_at": "2026-09-20T10:00:00Z"
+}
