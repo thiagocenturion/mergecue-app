@@ -57,6 +57,15 @@ final class DemoSyncControl: SyncControlling {
     func setTrackingPreferences(_ preferences: TrackingPreferences) async {
         await coordinator.setTrackingPreferences(preferences)
     }
+
+    /// Automatic (debounced) refresh: never advances the scenario.
+    func userDidReturn() async {
+        await coordinator.userDidReturn()
+    }
+
+    func setActiveChangeRequests(_ keys: Set<ChangeRequestKey>) async {
+        await coordinator.setActiveChangeRequests(keys)
+    }
 }
 
 /// Forwards Sync's `onChange` signals into the engine's change stream (the engine is created after Sync).

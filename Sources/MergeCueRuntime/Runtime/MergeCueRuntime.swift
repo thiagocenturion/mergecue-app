@@ -141,6 +141,7 @@ public final class MergeCueRuntime: Sendable {
         let sync = SyncCoordinator(
             database: database, credentials: credentials, providers: providers, notifier: notifier, clock: options.clock,
             configuration: options.syncConfiguration ?? .default,
+            requestLedger: providers.requestLedger,
             onChange: { change in relay.forward(change) }
         )
         let workspace = GitWorkspaceInspector(
@@ -208,6 +209,12 @@ public final class MergeCueRuntime: Sendable {
     public func handleSystemWake() async {
         await sync.handleSystemWake()
         _ = await engine.sweepExpiredLeases()
+    }
+
+    /// The user came back to MergeCue (popover opened, main window became key): debounced list refresh of every
+    /// account and a retry of change requests that failed terminally a while ago. Never advances the demo scenario.
+    public func userDidReturn() async {
+        await sync.userDidReturn()
     }
 
     /// The manual refresh (same as `engine.refresh(account:)`; in demo mode it advances the scenario).

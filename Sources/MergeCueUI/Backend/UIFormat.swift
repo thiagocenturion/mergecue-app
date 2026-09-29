@@ -72,7 +72,7 @@ public nonisolated enum UIFormat {
         date.formatted(date: .abbreviated, time: .shortened)
     }
 
-    /// "synced 2 min ago", "Rate limited until 14:05", "Credentials expired", "Offline".
+    /// "synced 2 min ago", "Rate limited — retrying at 14:05", "Credentials expired", "Offline".
     public static func syncText(_ status: AccountSyncStatus, now: Date) -> String {
         switch status.state {
         case .ok, .idle:
@@ -86,11 +86,41 @@ public nonisolated enum UIFormat {
         case .authExpired: return "Credentials expired"
         case .rateLimited(let until):
             guard let until else { return "Rate limited" }
-            return "Rate limited until \(time(until))"
+            return "Rate limited — retrying at \(time(until))"
         case .permissionDenied: return "Unsupported permission"
         case .error: return "Sync error"
         case .paused: return "Paused"
         }
+    }
+
+    /// "1 PR couldn't be loaded: not found", "3 MRs couldn't be loaded: access denied, not found"; nil when every
+    /// change request of the account loaded.
+    public static func changeRequestFailureText(_ status: AccountSyncStatus, kind: ProviderKind) -> String? {
+        let errors = status.changeRequestErrors
+        guard !errors.isEmpty else { return nil }
+        let noun = kind.changeRequestAbbreviation + (errors.count == 1 ? "" : "s")
+        let reasons = Set(errors.map(\.reasonText)).sorted().joined(separator: ", ")
+        return "\(errors.count) \(noun) couldn't be loaded: \(reasons)"
+    }
+
+    /// What happens next for failed change requests: "Retrying automatically at 14:05" / "Not retried until it
+    /// changes — Retry to try again now".
+    public static func changeRequestRetryText(_ status: AccountSyncStatus) -> String? {
+        let errors = status.changeRequestErrors
+        guard !errors.isEmpty else { return nil }
+        if let next = errors.compactMap(\.nextRetryAt).min() {
+            return "Retrying automatically at \(time(next))."
+        }
+        return "Not retried automatically until it changes. Retry to try again now."
+    }
+
+    /// "142 requests in the last hour" (+ " · budget 500/h reached, refreshing less often"); nil when unknown.
+    public static func requestUsageText(_ status: AccountSyncStatus) -> String? {
+        guard let used = status.requestsLastHour else { return nil }
+        let count = "\(used) request\(used == 1 ? "" : "s") in the last hour"
+        guard let budget = status.requestBudget else { return count }
+        if status.isOverRequestBudget { return "\(count) · over the \(budget)/h budget, refreshing less often" }
+        return "\(count) · budget \(budget)/h"
     }
 
     /// Tone of an account sync state.

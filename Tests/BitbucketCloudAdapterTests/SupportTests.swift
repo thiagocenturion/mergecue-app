@@ -189,3 +189,29 @@ struct SupportTests {
         #expect(BitbucketChecksMapper.status("STOPPED") == .cancelled)
     }
 }
+
+/// Conditional GETs (DECISIONS D35): Bitbucket GETs send `If-None-Match` once a response carried an ETag.
+@Suite("Bitbucket conditional requests")
+struct BitbucketConditionalRequestTests {
+    @Test func unchangedCollectionsAreRevalidatedWithIfNoneMatch() async throws {
+        let etag = #""ws-v1""#
+        let body = #"{"values":[{"workspace":{"slug":"acme","uuid":"{11111111-2222-3333-4444-555555555555}","name":"Acme"}}]}"#
+        let stub = StubTransport(routes: [
+            StubTransport.Route(method: "GET", pathPattern: "/user/workspaces") { request, _ in
+                if request.header("If-None-Match") == etag { return StubTransport.empty(status: 304, headers: ["ETag": etag]) }
+                return StubTransport.json(body, headers: ["ETag": etag])
+            },
+        ], baseURL: BitbucketFixtures.instance.apiURL)
+        let provider = BitbucketCloudProvider(
+            instance: BitbucketFixtures.instance, credential: .bearer("fixture-bitbucket-token"), transport: stub,
+            clock: TestClock(), directory: BitbucketRepositoryDirectory()
+        )
+        let first = try await provider.listNamespaces()
+        let second = try await provider.listNamespaces()
+        #expect(first.map(\.path) == ["acme"])
+        #expect(second == first, "a 304 serves the cached page")
+        #expect(stub.requests.count == 2)
+        #expect(stub.requests.first?.header("If-None-Match") == nil)
+        #expect(stub.requests.last?.header("If-None-Match") == etag)
+    }
+}

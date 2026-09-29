@@ -27,13 +27,13 @@ struct TrackingScopeTests {
 
         // Opting in lists review requests on the next cycle; opting out again drops them.
         await coordinator.setTrackingPreferences(TrackingPreferences(includeReviewRequests: true))
-        await h.advance(90)
+        await h.advance(900) // next list
         #expect(remote.listedScopes.contains(.reviewRequested))
         #expect(!remote.listedScopes.contains(.involved))
         #expect(try await h.database.snapshot(theirs) != nil)
 
         await coordinator.setTrackingPreferences(.authoredOnly)
-        await h.advance(90)
+        await h.advance(900) // next list
         await coordinator.stop()
         #expect(try await h.database.snapshot(theirs) == nil, "no longer tracked once switched off")
         #expect(try await h.database.snapshot(mine) != nil)

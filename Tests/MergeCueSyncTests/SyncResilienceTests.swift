@@ -36,7 +36,7 @@ struct SyncResilienceTests {
         let ok = try await status(coordinator, F.github)
         #expect(ok.state == .ok)
         #expect(ok.lastSuccessAt == F.start)
-        #expect(ok.nextRunAt == F.at(90))
+        #expect(ok.nextRunAt == F.at(30), "the fresh CR's details refresh at the fast tier; the next list is at 15 min")
         let expired = try await status(coordinator, F.gitlab)
         #expect(expired.state == .authExpired)
         #expect(expired.nextRunAt == nil)
@@ -126,7 +126,7 @@ struct SyncResilienceTests {
         #expect(current.state == .ok)
         #expect(current.consecutiveFailures == 0)
         #expect(current.lastSuccessAt == F.at(90))
-        #expect(current.nextRunAt == F.at(180))
+        #expect(current.nextRunAt == F.at(120), "fast detail tier (the list itself is due at 90 + 900 s)")
         await coordinator.stop()
     }
 
@@ -160,17 +160,29 @@ struct SyncResilienceTests {
         #expect(try await status(coordinator, F.github).state == .ok)
         #expect(try await h.database.snapshot(good) != nil)
         #expect(try await h.database.snapshot(hidden) == nil)
-        // Retried next cycle (its list version was not recorded).
+        let failure = try #require(try await status(coordinator, F.github).changeRequestErrors.first)
+        #expect(failure.changeRequest == hidden)
+        #expect(failure.code == "forbidden")
+        #expect(failure.isTerminal)
+        #expect(failure.nextRetryAt == nil)
+        // Terminal: not retried by detail cycles or unchanged lists…
         h.remote().setHydrateError(nil, for: hidden)
         await h.advance(90)
+        await h.advance(900)
+        #expect(h.remote().hydrateCalls(hidden) == 1)
+        #expect(try await h.database.snapshot(hidden) == nil)
+        // …until a manual refresh.
+        await coordinator.refresh(account: F.github)
         #expect(try await h.database.snapshot(hidden) != nil)
+        #expect(try await status(coordinator, F.github).changeRequestErrors.isEmpty)
         await coordinator.stop()
     }
 
     @Test func hydrationIsBoundedAndOnlyForChangedChangeRequests() async throws {
         let h = try await SyncHarness()
         let keys = (1...10).map { F.crKey(number: $0) }
-        for key in keys { h.remote().put(F.snapshot(key)) }
+        // Quiet for a day: the slow detail tier (30 min).
+        for key in keys { h.remote().put(F.snapshot(key, updatedAt: F.at(-86_400))) }
         var configuration = SyncConfiguration.deterministic
         configuration.hydrateConcurrency = 2
         let coordinator = await h.makeCoordinator(configuration: configuration)
@@ -180,13 +192,15 @@ struct SyncResilienceTests {
         #expect(try await h.database.snapshots(account: F.github).count == 10)
 
         await h.advance(90)
-        #expect(h.remote().totalHydrateCalls == 10, "unchanged listings are not re-hydrated")
+        #expect(h.remote().totalHydrateCalls == 10, "nothing is due before the next list")
         h.remote().update(keys[3]) { $0 = $0.touched(100) }
-        await h.advance(90)
-        #expect(h.remote().totalHydrateCalls == 11)
+        await h.advance(900)
+        #expect(h.remote().listCalls == 4)
+        #expect(h.remote().totalHydrateCalls == 11, "only the CR whose list version changed")
         #expect(h.remote().hydrateCalls(keys[3]) == 2)
-        await h.advance(600)
-        #expect(h.remote().totalHydrateCalls == 21, "stale snapshots are refreshed after fullRefreshInterval")
+        await h.advance(900)
+        #expect(h.remote().totalHydrateCalls == 21, "quiet CRs refresh on the slow tier (30 min)")
+        #expect(h.remote().maxInFlightHydrations <= 2)
         await coordinator.stop()
     }
 
@@ -238,17 +252,5 @@ struct SyncResilienceTests {
         await h.advance(90, sleepers: 1)
         #expect(h.remote(F.gitlab).listCalls == calls)
         await coordinator.stop()
-    }
-
-    @Test func hotAccountsPollFaster() async throws {
-        let h = try await SyncHarness()
-        let coordinator = await h.makeCoordinator()
-        await h.start(coordinator)
-        #expect(try await status(coordinator, F.github).nextRunAt == F.at(90))
-        await coordinator.setHot(until: F.at(10_000))
-        await h.advance(90)
-        #expect(try await status(coordinator, F.github).nextRunAt == F.at(135))
-        await coordinator.stop()
-        #expect(try await status(coordinator, F.github).nextRunAt == nil)
     }
 }

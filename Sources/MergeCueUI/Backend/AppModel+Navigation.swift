@@ -157,9 +157,17 @@ extension AppModel {
         state.rules.filter { $0.origin == .agentProposal && !$0.isActive }
     }
 
-    /// Accounts with a sync problem (offline, auth expired, rate limited, …).
+    /// Accounts with a sync problem (offline, auth expired, rate limited, …) or change requests that could not be
+    /// loaded.
     public var accountsWithProblems: [AccountState] {
-        state.accounts.filter { $0.status.state.isProblem }
+        state.accounts.filter { $0.status.state.isProblem || !$0.status.changeRequestErrors.isEmpty }
+    }
+
+    /// The user came back to MergeCue (popover opened, main window became key): the backend refreshes lists
+    /// (debounced per account; manual Refresh stays undebounced).
+    public func userDidReturn() {
+        let backend = backend
+        Task { await backend.userDidReturn() }
     }
 
     /// Short, user-facing account name: "GitHub · mona-dev".

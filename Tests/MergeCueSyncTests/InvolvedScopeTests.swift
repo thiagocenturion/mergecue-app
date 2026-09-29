@@ -37,7 +37,7 @@ struct InvolvedScopeTests {
         #expect(try await h.items().map(\.reason) == [.reviewRequested], "my own comment awaits nobody")
 
         remote.update(cr) { Self.reviewSubmitted(&$0) }
-        await h.advance(90)
+        await h.advance(900) // next list
         let stored = try #require(try await h.database.snapshot(cr), "still tracked through the involved listing")
         #expect(stored.summary.involvement.contains(.participated))
         #expect(!stored.summary.involvement.contains(.reviewRequested))
@@ -49,7 +49,7 @@ struct InvolvedScopeTests {
             $0.threads[0].comments.append(F.comment("a1", by: F.alice, "It doesn't cover refunds.", at: 200, replyTo: "m1"))
             $0.threads.append(F.thread(otherKey, comments: [F.comment("b1", by: F.bob, "Nit: typo", at: 200)]))
         }
-        await h.advance(90)
+        await h.advance(900) // next list
         await coordinator.stop()
 
         let all = try await h.items()
@@ -76,7 +76,7 @@ struct InvolvedScopeTests {
         let coordinator = await h.makeCoordinator()
         await h.start(coordinator)
         remote.update(cr) { Self.reviewSubmitted(&$0) }
-        await h.advance(90)
+        await h.advance(900) // next list
         await coordinator.stop()
         #expect(try await h.database.snapshot(cr) == nil, "not asked for the involved scope → departed")
         #expect(remote.involvedQueries.isEmpty)
@@ -90,24 +90,24 @@ struct InvolvedScopeTests {
         let coordinator = await h.makeCoordinator()
         await h.start(coordinator)
         remote.update(cr) { Self.reviewSubmitted(&$0) }
-        await h.advance(90)
+        await h.advance(900) // next list
         #expect(try await h.database.snapshot(cr) != nil)
 
         // An endpoint-specific failure of this additive listing keeps what is stored and the account healthy.
         remote.involvedError = .notFound("events")
-        await h.advance(90)
+        await h.advance(900) // next list
         #expect(try await h.database.snapshot(cr) != nil)
         #expect(await coordinator.statuses().first?.state == .ok)
 
         // A provider rejecting the query itself (Bitbucket: 400 "does not support filtering") is also contained.
         remote.involvedError = .invalidRequest(#"Field ".participants.user.uuid" does not support filtering"#)
-        await h.advance(90)
+        await h.advance(900) // next list
         #expect(try await h.database.snapshot(cr) != nil)
         #expect(await coordinator.statuses().first?.state == .ok)
 
         // Account-level failures propagate like every other listing.
         remote.involvedError = .unauthorized("expired")
-        await h.advance(90, sleepers: 0) // an auth-expired account does not schedule another run
+        await h.advance(900, sleepers: 0) // an auth-expired account does not schedule another run
         for _ in 0..<400 where await coordinator.statuses().first?.state != .authExpired { try? await Task.sleep(for: .milliseconds(5)) }
         await coordinator.stop()
         #expect(await coordinator.statuses().first?.state == .authExpired)

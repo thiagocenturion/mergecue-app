@@ -61,6 +61,23 @@ struct ProviderFactoryAndPolicyTests {
         #expect(factory.makeProvider(account: Self.account(.bitbucketCloud, scopes: []), credential: .bearer("x")) is BitbucketCloudProvider)
         #expect(factory.capabilities(for: Self.account(.github, scopes: ["repo"])).isUsable(.createReply))
     }
+
+    /// Request accounting (DECISIONS D35): account providers record every HTTP response except 304s; probes do not.
+    @Test func accountProvidersCountTheirRequests() async throws {
+        let stub = StubTransport(routes: [
+            StubTransport.Route(method: "GET", pathPattern: "/user") { _, _ in
+                StubTransport.json(#"{"id": 1, "login": "mona-dev"}"#, headers: ["X-OAuth-Scopes": "repo"])
+            },
+        ], baseURL: ProviderInstance.githubCom.apiURL)
+        let clock = TestClock()
+        let factory = LiveProviderFactory(clock: clock, transport: { _ in stub })
+        let account = Self.account(.github, scopes: ["repo"])
+        _ = try await factory.makeProvider(account: account, credential: .bearer("x")).currentUser()
+        _ = try await factory.makeProvider(account: account, credential: .bearer("x")).currentUser()
+        _ = try await factory.makeProbe(instance: .githubCom, credential: .bearer("x")).currentUser()
+        #expect(factory.requestLedger.count(account.id, now: clock.now) == 2)
+        #expect(stub.requests.count == 3)
+    }
 }
 
 @Suite("IPC peer validation policy and helper lookup")

@@ -24,6 +24,7 @@ extension AppModel {
     public func popoverWillShow(fromKeyboard: Bool) {
         popoverPresentationCount += 1
         popoverSelection = nil
+        userDidReturn()
         if fromKeyboard { movePopoverSelection(by: 1) }
     }
 

@@ -2,11 +2,19 @@ import Foundation
 import MergeCueCore
 import MergeCueStore
 
-/// One sync cycle of one account:
-/// lists → change detection → bounded hydration → departed CRs → `EventDeriver` → `AttentionDeriver` →
-/// `applySyncBatch` (atomic; cursor + events persisted **before** anything is notified) → `NotificationGrouper` →
-/// notifier → event handler.
+/// One sync cycle of one account, in one of two modes:
+/// - **full** (every `listInterval`, manual refresh, return/focus, wake, network recovery): lists → change detection
+///   (new / changed list version / due per `ChangeRequestSchedule`) → bounded hydration → departed CRs;
+/// - **details** (between lists): hydrates only the CRs whose progressive detail refresh is due.
+///
+/// Both then run `EventDeriver` → `AttentionDeriver` → `applySyncBatch` (atomic; cursor + events persisted **before**
+/// anything is notified) → `NotificationGrouper` → notifier → event handler.
 struct SyncCycle {
+    enum Mode: Sendable, Hashable {
+        case full
+        case details
+    }
+
     struct Outcome: Sendable {
         var isBaseline: Bool
         /// Events inserted by this cycle (deduped by the store), baseline included.
@@ -14,8 +22,10 @@ struct SyncCycle {
         var notifications: [GroupedNotification]
         var hydratedCount: Int
         var removedCount: Int
-        /// New, still-open attention activity (keeps the account "hot").
-        var hadAttentionActivity: Bool
+        /// Hydrations that failed per change request (the account itself is fine).
+        var failedCount: Int
+        /// The per-CR schedule updated with this cycle's results.
+        var schedule: ChangeRequestSchedule
     }
 
     /// Cursor key prefix for per-CR list versions.
@@ -26,81 +36,111 @@ struct SyncCycle {
     let provider: any ReviewProvider
     let environment: SyncEnvironment
 
-    func run() async throws -> Outcome {
+    func run(mode: Mode, schedule initial: ChangeRequestSchedule, hints: ScheduleHints) async throws -> Outcome {
         let database = environment.database
-        let now = environment.clock.now
+        let now = hints.now
         let settings = environment.current
         let configuration = settings.configuration
-        let me = account.id.remoteUserID
         let isBaseline = try await !database.hasCompletedInitialSync(account: account.id)
+        var schedule = initial
 
-        // 1. Lightweight lists.
-        let repositories = try await database.repositories(account: account.id)
-        let tracking = settings.tracking
-        async let authoredPage = provider.listChangeRequests(query(.authored, repositories: repositories))
-        async let requestedPage: ChangeRequestPage? = tracking.includeReviewRequests
-            ? try await provider.listChangeRequests(query(.reviewRequested, repositories: repositories))
-            : nil
-        async let involvedPage = tracking.includeInvolved
-            ? try await involvedListing(repositories: repositories, now: now, window: configuration.involvedWindow)
-            : nil
-        var pages: [(ChangeRequestScope, ChangeRequestPage)] = [(.authored, try await authoredPage)]
-        if let requested = try await requestedPage { pages.append((.reviewRequested, requested)) }
-        if let involved = try await involvedPage { pages.append((.involved, involved)) }
-
-        // 2. Merge the lists and compare with stored state.
+        // 1. Lists (full) or the due CRs (details).
         let storedSnapshots = try await database.snapshots(account: account.id)
         let stored = Dictionary(storedSnapshots.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
         let storedCursor = try await database.cursor(account: account.id)
-        let listed = Self.mergeLists(pages, stored: storedSnapshots)
-        let listedKeys = Set(listed.map(\.key))
+        schedule.seed(from: storedSnapshots)
 
         var toHydrate: [ChangeRequestSummary] = []
-        for summary in listed {
-            let version = storedCursor[Self.listVersionPrefix + summary.key.id]
-            if Self.needsHydration(
-                listed: summary, listVersion: version, stored: stored[summary.key], now: now, configuration: configuration
-            ) {
+        var departed: [ChangeRequestSnapshot] = []
+        var departedToHydrate: [ChangeRequestSummary] = []
+        var listVersions: [ChangeRequestKey: String] = [:]
+        var cursor: [String: String]
+        switch mode {
+        case .full:
+            let listed = Self.mergeLists(try await fetchLists(now: now, configuration: configuration), stored: storedSnapshots)
+            let listedKeys = Set(listed.map(\.key))
+            cursor = [:]
+            for summary in listed {
+                let version = Self.listVersion(summary)
+                listVersions[summary.key] = version
+                let storedVersion = storedCursor[Self.listVersionPrefix + summary.key.id]
+                // Keep the previous list version when hydration is skipped or fails, so a change is still detected.
+                if let storedVersion { cursor[Self.listVersionPrefix + summary.key.id] = storedVersion }
+                if schedule.shouldHydrate(
+                    listed: summary, listVersion: version, storedListVersion: storedVersion,
+                    hasSnapshot: stored[summary.key] != nil, hints: hints, configuration: configuration
+                ) {
+                    toHydrate.append(summary)
+                }
+            }
+            departed = storedSnapshots.filter { !listedKeys.contains($0.key) }.sorted { $0.key.id < $1.key.id }
+            // Departed CRs are hydrated once to detect merged/closed — unless that is already known (stored as
+            // merged/closed) or the CR is gone (its last hydration said not found).
+            departedToHydrate = departed.filter { snapshot in
+                guard snapshot.summary.state == .open else { return false }
+                if case .notFound? = schedule.tracker(snapshot.key)?.lastError { return false }
+                return true
+            }.map(\.summary)
+            schedule.retain(listedKeys)
+        case .details:
+            cursor = storedCursor
+            for key in schedule.dueKeys(hints: hints, configuration: configuration) {
+                guard let summary = schedule.summary(key) ?? stored[key]?.summary else { continue }
                 toHydrate.append(summary)
             }
         }
-        let departed = storedSnapshots.filter { !listedKeys.contains($0.key) }.sorted { $0.key.id < $1.key.id }
+        if mode == .details, toHydrate.isEmpty {
+            return Outcome(
+                isBaseline: isBaseline, insertedEvents: [], notifications: [], hydratedCount: 0, removedCount: 0,
+                failedCount: 0, schedule: schedule
+            )
+        }
+        cursor[Self.lastCycleKey] = String(now.timeIntervalSinceReferenceDate)
 
-        // 3. Hydrate changed + departed CRs with bounded concurrency.
+        // 2. Hydrate with bounded concurrency.
+        let account = account.id
+        let environment = environment
         let results = try await Self.hydrate(
-            toHydrate + departed.map(\.summary), provider: provider, limit: configuration.hydrateConcurrency
+            toHydrate + departedToHydrate, provider: provider, limit: configuration.hydrateConcurrency,
+            onCall: { environment.recordProviderCall(account) }
         )
 
-        // 4. Derive events and attention per CR.
+        // 3. Derive events and attention per CR.
+        let me = self.account.id.remoteUserID
         var snapshots: [ChangeRequestSnapshot] = []
         var snapshotMap: [ChangeRequestKey: ChangeRequestSnapshot] = [:]
         var removed: [ChangeRequestKey] = []
         var events: [ChangeEvent] = []
         var upserts: [AttentionItem] = []
         var existingByKey: [String: AttentionItem] = [:]
-        var cursor: [String: String] = [Self.lastCycleKey: String(now.timeIntervalSinceReferenceDate)]
-        for summary in listed {
-            // Keep the previous list version when hydration was skipped or failed, so the CR is retried.
-            if let version = storedCursor[Self.listVersionPrefix + summary.key.id] {
-                cursor[Self.listVersionPrefix + summary.key.id] = version
-            }
-        }
+        var failed = 0
 
         for summary in toHydrate {
-            guard case .success(var snapshot)? = results[summary.key] else { continue }
-            snapshot.summary.involvement.formUnion(summary.involvement)
-            if let token = summary.versionToken { snapshot.summary.versionToken = token }
-            let existing = try await database.attentionItems(changeRequest: summary.key)
-            for item in existing { existingByKey[item.dedupeKey] = item }
-            let derived = EventDeriver.derive(
-                previous: stored[summary.key], current: snapshot, currentUserID: me, isBaseline: isBaseline, now: now,
-                knownFailingCheckNames: Self.unresolvedFailingCheckNames(snapshot: snapshot, existing: existing)
-            )
-            upserts += AttentionDeriver.apply(events: derived, snapshot: snapshot, existing: existing, account: account, now: now)
-            events += derived
-            snapshots.append(snapshot)
-            snapshotMap[snapshot.key] = snapshot
-            cursor[Self.listVersionPrefix + summary.key.id] = Self.listVersion(summary)
+            switch results[summary.key] {
+            case .success(var snapshot)?:
+                snapshot.summary.involvement.formUnion(summary.involvement)
+                if let token = summary.versionToken { snapshot.summary.versionToken = token }
+                let existing = try await database.attentionItems(changeRequest: summary.key)
+                for item in existing { existingByKey[item.dedupeKey] = item }
+                let derived = EventDeriver.derive(
+                    previous: stored[summary.key], current: snapshot, currentUserID: me, isBaseline: isBaseline, now: now,
+                    knownFailingCheckNames: Self.unresolvedFailingCheckNames(snapshot: snapshot, existing: existing)
+                )
+                upserts += AttentionDeriver.apply(events: derived, snapshot: snapshot, existing: existing, account: self.account, now: now)
+                events += derived
+                snapshots.append(snapshot)
+                snapshotMap[snapshot.key] = snapshot
+                schedule.recordSuccess(snapshot, previous: stored[summary.key], now: now)
+                if let version = listVersions[summary.key] ?? schedule.tracker(summary.key)?.listVersion {
+                    cursor[Self.listVersionPrefix + summary.key.id] = version
+                }
+            case .failure(let error)?:
+                failed += 1
+                schedule.recordFailure(summary, error: error, listVersion: listVersions[summary.key], now: now)
+                MCLog.sync.notice("Hydration of a \(account.kind.rawValue) change request failed: \(error.code)")
+            case nil:
+                continue
+            }
         }
 
         for previous in departed {
@@ -118,12 +158,13 @@ struct SyncCycle {
             // Left the user's lists (merged, closed, reviewed, unassigned, deleted): resolve and forget it.
             upserts += AttentionDeriver.resolveAll(existing: existing, events: lifecycle)
             removed.append(previous.key)
+            cursor[Self.listVersionPrefix + previous.key.id] = nil
         }
 
-        // 5. Persist atomically before anything is announced.
+        // 4. Persist atomically before anything is announced.
         try Task.checkCancellation()
         let batch = SyncBatch(
-            account: account.id,
+            account: account,
             snapshots: snapshots,
             removedChangeRequests: removed,
             events: events,
@@ -135,7 +176,7 @@ struct SyncCycle {
         if !snapshots.isEmpty || !removed.isEmpty { environment.onChange(.changeRequests) }
         if !upserts.isEmpty { environment.onChange(.attention) }
 
-        // 6. Notifications (one per CR), then the rule/event handler.
+        // 5. Notifications (one per CR), then the rule/event handler.
         var notifications: [GroupedNotification] = []
         let policy = environment.notificationPolicy
         if !isBaseline, policy.allowsDelivery(at: now) {
@@ -144,7 +185,7 @@ struct SyncCycle {
                 attentionUpserts: upserts,
                 existing: existingByKey,
                 snapshots: snapshotMap,
-                account: account,
+                account: self.account,
                 informationalTypes: configuration.informationalNotificationTypes,
                 preferences: policy.preferences,
                 now: now
@@ -158,18 +199,37 @@ struct SyncCycle {
             await handler(forHandler)
         }
 
-        let insertedIDs = Set(inserted.map(\.id))
-        let hadActivity = !isBaseline && upserts.contains { item in
-            item.disposition != .resolved && item.eventIDs.contains(where: insertedIDs.contains)
-        }
         return Outcome(
             isBaseline: isBaseline,
             insertedEvents: inserted,
             notifications: notifications,
             hydratedCount: snapshots.count,
             removedCount: removed.count,
-            hadAttentionActivity: hadActivity
+            failedCount: failed,
+            schedule: schedule
         )
+    }
+
+    /// The listings of a full cycle: authored, review-requested (per tracking preferences) and involved.
+    private func fetchLists(now: Date, configuration: SyncConfiguration) async throws -> [(ChangeRequestScope, ChangeRequestPage)] {
+        let repositories = try await environment.database.repositories(account: account.id)
+        let tracking = environment.current.tracking
+        async let authoredPage = list(query(.authored, repositories: repositories))
+        async let requestedPage: ChangeRequestPage? = tracking.includeReviewRequests
+            ? try await list(query(.reviewRequested, repositories: repositories))
+            : nil
+        async let involvedPage = tracking.includeInvolved
+            ? try await involvedListing(repositories: repositories, now: now, window: configuration.involvedWindow)
+            : nil
+        var pages: [(ChangeRequestScope, ChangeRequestPage)] = [(.authored, try await authoredPage)]
+        if let requested = try await requestedPage { pages.append((.reviewRequested, requested)) }
+        if let involved = try await involvedPage { pages.append((.involved, involved)) }
+        return pages
+    }
+
+    private func list(_ query: ChangeRequestQuery) async throws -> ChangeRequestPage {
+        environment.recordProviderCall(account.id)
+        return try await provider.listChangeRequests(query)
     }
 
     private func query(_ scope: ChangeRequestScope, repositories: [Repository]) -> ChangeRequestQuery {
@@ -186,7 +246,7 @@ struct SyncCycle {
         var request = query(.involved, repositories: repositories)
         request.updatedSince = now.addingTimeInterval(-window)
         do {
-            return try await provider.listChangeRequests(request)
+            return try await list(request)
         } catch {
             switch ProviderError.classify(error) {
             case .notFound?, .forbidden?, .unsupported?, .decoding?, .invalidRequest?, .conflict?: return .unchanged
@@ -245,21 +305,6 @@ struct SyncCycle {
         ].joined(separator: "|")
     }
 
-    /// Whether a listed CR must be hydrated: new, changed since the last list (version token / updated_at / head /
-    /// state / involvement), checks still pending, or the stored snapshot is older than `fullRefreshInterval`.
-    static func needsHydration(
-        listed: ChangeRequestSummary,
-        listVersion stored: String?,
-        stored snapshot: ChangeRequestSnapshot?,
-        now: Date,
-        configuration: SyncConfiguration
-    ) -> Bool {
-        guard let snapshot else { return true }
-        guard let stored, stored == listVersion(listed) else { return true }
-        if snapshot.aggregateCheckState == .pending { return true }
-        return now.timeIntervalSince(snapshot.fetchedAt) >= configuration.fullRefreshInterval
-    }
-
     /// Check names that have an unresolved CI attention item (their last terminal status was a failure).
     static func unresolvedFailingCheckNames(snapshot: ChangeRequestSnapshot, existing: [AttentionItem]) -> Set<String> {
         let unresolved = Set(existing.filter { $0.reason == .ciFailed && $0.disposition != .resolved }.map(\.dedupeKey))
@@ -269,10 +314,11 @@ struct SyncCycle {
         })
     }
 
-    /// Hydrates with at most `limit` concurrent calls. Per-CR `notFound` / `forbidden` are returned as failures
-    /// (the CR is skipped or treated as gone); any other failure cancels the rest and is thrown.
+    /// Hydrates with at most `limit` concurrent calls. Per-change-request failures (`isPerChangeRequestFailure`) are
+    /// returned as failures; account-level failures (auth, rate limit, offline, timeout) cancel the rest and are thrown.
     static func hydrate(
-        _ summaries: [ChangeRequestSummary], provider: any ReviewProvider, limit: Int
+        _ summaries: [ChangeRequestSummary], provider: any ReviewProvider, limit: Int,
+        onCall: @escaping @Sendable () -> Void = {}
     ) async throws -> [ChangeRequestKey: Result<ChangeRequestSnapshot, ProviderError>] {
         guard !summaries.isEmpty else { return [:] }
         return try await withThrowingTaskGroup(
@@ -283,7 +329,7 @@ struct SyncCycle {
             let width = max(1, limit)
             for _ in 0..<width {
                 guard let next = pending.popFirst() else { break }
-                group.addTask { try await hydrateOne(next, provider: provider) }
+                group.addTask { try await hydrateOne(next, provider: provider, onCall: onCall) }
             }
             while let (key, result) = try await group.next() {
                 if case .failure(let error) = result, !isPerChangeRequestFailure(error) {
@@ -292,7 +338,7 @@ struct SyncCycle {
                 }
                 results[key] = result
                 if let next = pending.popFirst() {
-                    group.addTask { try await hydrateOne(next, provider: provider) }
+                    group.addTask { try await hydrateOne(next, provider: provider, onCall: onCall) }
                 }
             }
             return results
@@ -300,8 +346,9 @@ struct SyncCycle {
     }
 
     private static func hydrateOne(
-        _ summary: ChangeRequestSummary, provider: any ReviewProvider
+        _ summary: ChangeRequestSummary, provider: any ReviewProvider, onCall: @Sendable () -> Void
     ) async throws -> (ChangeRequestKey, Result<ChangeRequestSnapshot, ProviderError>) {
+        onCall()
         do {
             return (summary.key, .success(try await provider.hydrate(summary)))
         } catch {
@@ -310,10 +357,13 @@ struct SyncCycle {
         }
     }
 
+    /// Failures that concern one change request only: `not found` / `forbidden` (terminal for that CR) and
+    /// provider/server, decoding, invalid-request, conflict and unsupported errors (backed off per CR). Auth, rate
+    /// limits, offline and timeouts are account-level.
     static func isPerChangeRequestFailure(_ error: ProviderError) -> Bool {
         switch error {
-        case .notFound, .forbidden: true
-        default: false
+        case .notFound, .forbidden, .server, .decoding, .invalidRequest, .conflict, .unsupported: true
+        case .unauthorized, .rateLimited, .offline, .timeout: false
         }
     }
 }

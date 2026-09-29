@@ -38,6 +38,8 @@ public actor MergeCueEngine: IPCRequestHandling {
     var providerReadAttempts: [String: [Date]] = [:]
     /// Short-lived cache of provider-hitting read results.
     var providerReadCache: [String: CachedProviderRead] = [:]
+    /// A hot-change-request update for Sync is scheduled (coalesces bursts of task changes).
+    private var activeChangeRequestsUpdatePending = false
 
     public init(environment: EngineEnvironment) {
         self.env = environment
@@ -64,6 +66,7 @@ public actor MergeCueEngine: IPCRequestHandling {
         await env.sync.setNotificationPreferences(await notificationPreferences())
         await env.sync.setTrackingPreferences(await trackingPreferences())
         await env.sync.setQuietHours(await quietHours())
+        await updateSyncActiveChangeRequests()
         // Leases that expired while the app was not running.
         await sweepExpiredLeases()
         let interval = env.staleCheckInterval
@@ -120,6 +123,18 @@ public actor MergeCueEngine: IPCRequestHandling {
         for continuation in subscribers.values {
             continuation.yield(change)
         }
+        if case .tasks = change, isRunning, !activeChangeRequestsUpdatePending {
+            activeChangeRequestsUpdatePending = true
+            Task { await self.updateSyncActiveChangeRequests() }
+        }
+    }
+
+    /// Tells Sync which change requests have a task waiting for or claimed by an agent, so their details refresh at
+    /// the fastest tier (DECISIONS D35).
+    func updateSyncActiveChangeRequests() async {
+        activeChangeRequestsUpdatePending = false
+        guard let tasks = try? await database.tasks(states: [.waitingForAgent, .working]) else { return }
+        await env.sync.setActiveChangeRequests(Set(tasks.map(\.origin.changeRequest)))
     }
 
     // MARK: Shared helpers

@@ -18,12 +18,20 @@ public protocol SyncControlling: Sendable {
     func setQuietHours(_ quietHours: QuietHours?) async
     /// Which scopes beyond "authored" are listed (additive; the default implementation ignores it).
     func setTrackingPreferences(_ preferences: TrackingPreferences) async
+    /// The user came back to MergeCue (popover opened, main window became key): accounts refresh their lists
+    /// (debounced per account) and retry change requests that failed terminally (additive; default no-op).
+    func userDidReturn() async
+    /// Change requests with an active agent task (waiting for / claimed by an agent): Sync refreshes their details
+    /// at the fastest tier (additive; default no-op).
+    func setActiveChangeRequests(_ keys: Set<ChangeRequestKey>) async
 }
 
 extension SyncControlling {
     public func setNotificationPreferences(_ preferences: NotificationPreferences) async {}
     public func setQuietHours(_ quietHours: QuietHours?) async {}
     public func setTrackingPreferences(_ preferences: TrackingPreferences) async {}
+    public func userDidReturn() async {}
+    public func setActiveChangeRequests(_ keys: Set<ChangeRequestKey>) async {}
 }
 
 /// One semantic notification per change request per sync cycle.

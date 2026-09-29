@@ -71,6 +71,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         NSApp.activate()
     }
 
+    func windowDidBecomeKey(_ notification: Notification) {
+        model.userDidReturn()
+    }
+
     func windowWillClose(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
     }
