@@ -7,6 +7,29 @@ import Testing
 
 @Suite("Task lifecycle")
 struct LifecycleTests {
+    @Test("tasks waiting for / claimed by an agent make their change request hot in Sync (fast detail tier)")
+    func activeTasksAreForwardedToSync() async throws {
+        let h = try await Harness.make()
+        await h.engine.start()
+        #expect(await h.sync.activeChangeRequests == [])
+        let created = try await h.engine.createTask(fromAttention: h.threadItemID)
+        var forwarded: Set<ChangeRequestKey>?
+        for _ in 0..<2_000 {
+            forwarded = await h.sync.activeChangeRequests
+            if forwarded == [Fixture.cr()] { break }
+            await Task.yield()
+        }
+        #expect(forwarded == [Fixture.cr()])
+        _ = try await h.engine.cancelTask(created.id)
+        for _ in 0..<2_000 {
+            forwarded = await h.sync.activeChangeRequests
+            if forwarded == [] { break }
+            await Task.yield()
+        }
+        #expect(forwarded == [], "cancelled tasks are no longer hot")
+        await h.engine.stop()
+    }
+
     @Test("create → claim → update → report_changes → report_tests → submit → preview → approve → perform → done")
     func fullLifecycle() async throws {
         let h = try await Harness.make(.init(writesEnabled: true))

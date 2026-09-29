@@ -59,7 +59,10 @@ public struct BitbucketCloudProvider: ReviewProvider {
             credential: credential,
             transport: transport,
             rateLimitParser: GenericRateLimitParser(),
-            etagCache: nil,
+            // Conditional GETs (DECISIONS D35): Bitbucket Cloud's REST 2.0 CORS policy exposes `ETag` and allows
+            // `If-None-Match`. The client only sends `If-None-Match` after a response carried an ETag, so resources
+            // without one are unaffected; a 304 returns the cached body and is not counted as a request.
+            etagCache: ETagCache(),
             clock: clock
         )
     }
@@ -144,7 +147,7 @@ public struct BitbucketCloudProvider: ReviewProvider {
     /// Follows Bitbucket `next` links until `limit` values are collected (or the collection ends).
     func collect<Value: Decodable>(_ path: String, query: [URLQueryItem] = [], limit: Int) async throws -> [Value] {
         var values: [Value] = []
-        var page: BBPage<Value> = try await client.getJSON(BBPage<Value>.self, path, query: query)
+        var page: BBPage<Value> = try await client.getJSON(BBPage<Value>.self, path, query: query, useETag: true)
         var seen: Set<String> = []
         var pages = 1
         while true {
@@ -154,7 +157,7 @@ public struct BitbucketCloudProvider: ReviewProvider {
             else { break }
             seen.insert(next)
             pages += 1
-            let response = try await client.getAbsolute(url)
+            let response = try await client.getAbsolute(url, useETag: true)
             page = try APIClient.decode(BBPage<Value>.self, from: response)
         }
         return Array(values.prefix(limit))
@@ -196,7 +199,7 @@ public struct BitbucketCloudProvider: ReviewProvider {
 
     func fetchPullRequest(_ key: ChangeRequestKey) async throws -> (BitbucketRepoPath, BBPullRequest) {
         let path = try await repoPath(for: key.repo)
-        let pr = try await client.getJSON(BBPullRequest.self, path.pullRequestPath(try pullRequestID(key)))
+        let pr = try await client.getJSON(BBPullRequest.self, path.pullRequestPath(try pullRequestID(key)), useETag: true)
         recordRepositories(of: pr)
         return (path, pr)
     }

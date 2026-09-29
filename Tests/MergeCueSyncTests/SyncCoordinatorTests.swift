@@ -157,7 +157,7 @@ struct SyncCoordinatorTests {
 
         // Re-run in progress (providers do not bump updated_at for CI): nothing yet, but pending checks re-hydrate.
         remote.update(cr) { [cr] in $0.checks = [F.check(cr, id: "3", status: .inProgress, at: 150)] }
-        await h.advance(700) // beyond fullRefreshInterval, so the unchanged listing is re-hydrated
+        await h.advance(700) // the unchanged listing is re-hydrated by the detail schedule (pending checks: fast tier)
         #expect(try await h.items().first?.disposition == .open)
         remote.update(cr) { [cr] in $0.checks = [F.check(cr, id: "3", status: .success, at: 800)] }
         await h.advance(90)
@@ -217,10 +217,13 @@ struct SyncCoordinatorTests {
         remote.update(merged) { $0 = $0.touched(60); $0.summary.state = .merged }
         remote.update(closed) { $0 = $0.touched(60); $0.summary.state = .closed }
         remote.delete(deleted)
+        // Fresh CRs refresh their details every 30 s: the detail cycle sees merged / closed / gone.
         await h.advance(90)
         #expect(remote.hydrateCalls(merged) == 2)
         #expect(remote.hydrateCalls(deleted) == 2)
-        await h.advance(90)
+        // The next list (15 min) no longer contains them: known merged/closed/gone CRs are removed without another
+        // hydration.
+        await h.advance(900)
         await coordinator.stop()
 
         #expect(try await h.events(merged).last?.type == .merged)
@@ -229,6 +232,7 @@ struct SyncCoordinatorTests {
         #expect(try await h.items().allSatisfy { $0.disposition == .resolved })
         #expect(try await h.database.snapshots(account: F.github).isEmpty)
         #expect(remote.hydrateCalls(merged) == 2, "departed CRs are hydrated exactly once")
+        #expect(remote.hydrateCalls(deleted) == 2, "a CR that answered not found is not asked again")
         #expect(h.notifier.delivered.isEmpty)
     }
 

@@ -131,14 +131,15 @@ extension GitHubProvider {
 
     // MARK: REST pagination
 
-    /// Follows `Link: rel="next"` (same origin only) up to `maxPages` pages of `per_page=100`.
+    /// Follows `Link: rel="next"` (same origin only) up to `maxPages` pages of `per_page=100`. Conditional
+    /// (`If-None-Match`): an unchanged page costs a 304, which GitHub does not count against the rate limit.
     func getAllPages<T: Decodable & Sendable>(_ type: T.Type, _ path: String, query: [URLQueryItem] = []) async throws -> [T] {
         var results: [T] = []
-        var response = try await client.get(path, query: query + [URLQueryItem(name: "per_page", value: "100")])
+        var response = try await client.get(path, query: query + [URLQueryItem(name: "per_page", value: "100")], useETag: true)
         results += try APIClient.decode([T].self, from: response)
         var pages = 1
         while pages < Self.maxPages, let next = Pagination.nextLink(from: response) {
-            response = try await client.getAbsolute(next)
+            response = try await client.getAbsolute(next, useETag: true)
             results += try APIClient.decode([T].self, from: response)
             pages += 1
         }

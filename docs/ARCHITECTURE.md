@@ -20,7 +20,7 @@ Product requirements live in `docs/PLAN.md` (sections referenced as §N).
 | `MergeCueFixtures` | library + resources | Core, Networking, the 3 adapters | Provider-native JSON fixtures, stub routes, demo scenario, agent-simulator helpers. |
 | `WorkspaceInspector` | library | Core | `git`-backed implementation of `WorkspaceInspecting` (checkout inspection, GitButler detection, isolated worktrees, diffs, patch import). |
 | `AgentHandoff` | library | Core, IPC, MCP | Agent detection (Claude Code, Codex), MCP registration plans (consent + backup), verification client, handoff command/launch. |
-| `MergeCueSync` | library | Core, Store | `SyncCoordinator` (implements `SyncControlling`): per-account adaptive polling, event derivation, attention derivation, notification grouping. |
+| `MergeCueSync` | library | Core, Store | `SyncCoordinator` (implements `SyncControlling`): per-account list polling + per-change-request progressive detail refresh (D35), event derivation, attention derivation, notification grouping. |
 | `MergeCueEngine` | library | Core, Store, IPC | `MergeCueEngine` facade: tasks + leases + state machine persistence, MCP/IPC method handlers, rules, approvals/write gate, repo mappings, audit. Uses Sync/Workspace/providers only via Core protocols. |
 | `MergeCueMCPServer` | library | Core, IPC, MCP | MCP tool/resource definitions + bridge to IPC. |
 | `mergecue-mcp` | executable | MergeCueMCPServer | Bundled stdio MCP server (thin IPC client). |
@@ -456,7 +456,11 @@ worktree.
 ```swift
 public enum AccountSyncState: Codable, Sendable, Hashable { case idle, syncing, ok, offline, authExpired, rateLimited(until: Date?), permissionDenied(String), error(String), paused
     init(providerError: ProviderError, now: Date) }  // unauthorized→authExpired, forbidden→permissionDenied, rateLimited→rateLimited(until: retryDate(now:)), offline/timeout→offline, else→error
-public struct AccountSyncStatus: Codable, Sendable, Hashable { var account: AccountKey; var state: AccountSyncState; var lastAttemptAt: Date?; var lastSuccessAt: Date?; var nextRunAt: Date?; var consecutiveFailures: Int; var message: String? }
+public struct AccountSyncStatus: Codable, Sendable, Hashable { var account: AccountKey; var state: AccountSyncState; var lastAttemptAt: Date?; var lastSuccessAt: Date?; var nextRunAt: Date?; var consecutiveFailures: Int; var message: String?
+    var changeRequestErrors: [ChangeRequestSyncError]; var requestsLastHour: Int?; var requestBudget: Int?; var isOverRequestBudget: Bool }  // additive (D35); decoding tolerates their absence
+public struct ChangeRequestSyncError: Codable, Sendable, Hashable, Identifiable { var changeRequest: ChangeRequestKey; var title: String /* untrusted */; var repoFullPath: String; var webURL: URL?
+    var code: String /* ProviderError.code */; var message: String /* redacted */; var isTerminal: Bool; var consecutiveFailures: Int; var failedAt: Date; var nextRetryAt: Date?; var reasonText: String }
+public final class ProviderRequestLedger: Sendable { init(window: 3600); func record(_ account:, at:); func count(_ account:, now:) -> Int; func reset(_:) }  // rolling per-account request counts
 public protocol SyncControlling: Sendable {
     func start() async; func stop() async
     func refreshAll() async; func refresh(account: AccountKey) async
@@ -466,6 +470,9 @@ public protocol SyncControlling: Sendable {
     func setNotificationsPaused(until: Date?) async
     func setNotificationPreferences(_: NotificationPreferences) async   // additive, default no-op
     func setQuietHours(_: QuietHours?) async                            // additive, default no-op (engine's global setting)
+    func setTrackingPreferences(_: TrackingPreferences) async           // additive, default no-op
+    func userDidReturn() async                                          // additive, default no-op: popover opened / main window key
+    func setActiveChangeRequests(_: Set<ChangeRequestKey>) async        // additive, default no-op: CRs with a waiting/working task (fast tier)
 }
 public enum NotificationCategory: String { case reviewComments, ciFailures, reviewerQuestions, reviewRequests, approvals, agentResults
     init(reason: AttentionReason); init?(informationalEvent: ChangeEventType) }
@@ -595,6 +602,7 @@ public struct HTTPRequest: Sendable, Hashable { var method: String; var url: URL
 public struct HTTPResponse: Sendable { var status: Int; var headers: [String: String] /* lowercased keys */; var body: Data; var url: URL }
 public protocol HTTPTransport: Sendable { func send(_ request: HTTPRequest) async throws -> HTTPResponse }   // throws URLError
 public final class URLSessionTransport: HTTPTransport  // ephemeral config, no cookies/cache, 30s timeout, UA "MergeCue/<version>"
+public struct CountingTransport: HTTPTransport { init(_ base:, onResponse:); init(_ base:, ledger:, account:, clock:) }  // reports every response except 304 (D35)
 public struct RateLimitInfo: Sendable { var limit: Int?; var remaining: Int?; var resetAt: Date?; var retryAfter: TimeInterval? }
 public protocol RateLimitParsing: Sendable { func parse(_ response: HTTPResponse) -> RateLimitInfo? }
 public struct GitHubRateLimitParser, GitLabRateLimitParser, GenericRateLimitParser (Retry-After only)
@@ -805,7 +813,8 @@ Provider specifics (see §5.2–5.4 and each provider's current REST docs):
   threads (`ThreadKind.diffThread`), issue comments (`.conversation`, key `ic:<id>`) and review bodies
   (`.reviewSummary`, key `rv:<id>`). Checks = check-runs + commit statuses (+ Actions job id for logs via
   `/actions/jobs/{id}/logs`). `fetchHeadSpec` → `refs/pull/<n>/head` on the base repo. Rate limit headers
-  `x-ratelimit-*`; secondary limits via 403 + `retry-after`.
+  `x-ratelimit-*`; secondary limits via 403 + `retry-after`. Listing and hydration are GraphQL (no ETags); REST
+  directory/repository reads are conditional (`If-None-Match`).
 - **GitLab.com** — REST v4. Use project `id` + MR `iid` everywhere; `/merge_requests?scope=created_by_me&state=opened`
   and `?reviewer_id=<me>&state=opened` (reviewers stay on an MR after reviewing, so reviewed MRs remain listed);
   involved = the user's own `/events?action=commented&target_type=note&after=<day>` (1 page) → per project (≤ 20)
@@ -820,6 +829,7 @@ Provider specifics (see §5.2–5.4 and each provider's current REST docs):
   Comments with `parent` / `inline` (from/to/path) / `resolution`; tasks; `participants` (approved, state
   `changes_requested`); `/statuses` (commit statuses) and pipelines + steps + step `/log`. Paginate via `next`.
   `fetchHeadSpec` → source repository clone URL + `refs/heads/<source branch>` (forks use the fork's clone URL).
+  Every GET (collections, PR detail) is conditional once a response carried an `ETag` (per-client `ETagCache`).
   Auth: Atlassian API token with email (Basic) or workspace/repository access token (Bearer). App passwords are
   deprecated — do not offer them.
 
@@ -827,19 +837,43 @@ Provider specifics (see §5.2–5.4 and each provider's current REST docs):
 
 ## 7. MergeCueSync
 `public actor SyncCoordinator: SyncControlling` —
-`init(database:, credentials: any CredentialStoring, providers: any ProviderFactory, notifier: any NotificationDelivering, clock: any MCClock, configuration: SyncConfiguration, onChange: @Sendable (EngineChange) -> Void)`.
-- One independent `AccountSyncer` per account: immediate first run, adaptive interval (default 90 s, 45 s while any
-  task/item is hot, 5 min when idle overnight), exponential backoff with jitter on failures (cap 15 min), honours
-  `rateLimited` reset, stops on `authExpired` until `accountsDidChange()`. Offline → `offline` state, auto-retry.
-  An outage for one account never blocks another.
-- Cycle: `listChangeRequests(.authored)` + `(.reviewRequested)` (+ `(.involved)` with `updatedSince = now −
+`init(database:, credentials: any CredentialStoring, providers: any ProviderFactory, notifier: any NotificationDelivering, clock: any MCClock, configuration: SyncConfiguration, requestLedger: ProviderRequestLedger? = nil, onChange: @Sendable (EngineChange) -> Void)`.
+Polling model (DECISIONS D35, modelled on GitButler); every tunable lives in `SyncConfiguration`:
+- One independent `AccountSyncer` per account; an outage or rate limit of one account never blocks another.
+- **Lists** (`listChangeRequests`): immediately at start, every `listInterval` (15 min, ±jitter), on manual refresh
+  (`refresh(account:)` / `refreshAll()`, never debounced, also retries every failed CR) and on events —
+  `userDidReturn()` (popover opened, main window key; also retries CRs that failed terminally ≥ 15 min ago),
+  `handleSystemWake()`, network recovery — skipped within `eventRefreshDebounce` (60 s) of the previous event refresh
+  or successful list.
+- **Details** (`hydrate`), per change request (`ChangeRequestSchedule`, in memory, seeded from stored snapshots at
+  launch): by time since the CR last changed (activity fingerprint: updated time, head, state/draft, check states,
+  comments, reviews) — 30 s for the first 10 min, 5 min up to 1 h, 30 min after. Hot CRs
+  (`setActiveChangeRequests`, `setHot(until:)`) and CRs with pending checks stay at 30 s. A changed list version
+  always hydrates in the list cycle. Between lists the loop wakes at the earliest due CR and runs a detail-only
+  cycle. Bounded concurrency (`hydrateConcurrency` 4).
+- **Per-CR failures**: `not found` / `forbidden` are terminal for that CR (not retried until its list version changes,
+  a manual refresh, or a return ≥ 15 min later); server/decoding/invalid-request/conflict/unsupported back off
+  30 s → 5 min → 30 min. They never fail the account and are published in `AccountSyncStatus.changeRequestErrors`.
+  Departed CRs already known merged/closed/gone are removed without another hydration.
+- **Account failures**: `authExpired` stops until `accountsDidChange()`; rate limits wait for the provider's reset
+  (`ProviderError.retryDate`: `Retry-After`, GitHub `x-ratelimit-reset`, GitLab `RateLimit-Reset`), else 5 → 15 →
+  60 min (`rateLimitFallback`); the status always carries `rateLimited(until:)` and a message naming the provider
+  and account; offline / server / permission errors back off exponentially with jitter (30 s doubling, cap 15 min).
+  Manual and event refreshes are ignored while rate limited before the reset.
+- **Request accounting**: `ProviderRequestLedger` counts requests per account over a rolling hour. The runtime
+  injects the ledger its `CountingTransport`s record into (every HTTP response except 304s, Sync's and the
+  engine's); without one, Sync counts one request per provider call. `requestsLastHour` / `requestBudget` are in the
+  status; at ≥ 75 % of the provider's soft budget (GitHub 1500/h, GitLab 1000/h, Bitbucket 500/h) detail intervals
+  ×2, at ≥ 100 % ×4.
+- Cycle: full = `listChangeRequests(.authored)` + `(.reviewRequested)` (+ `(.involved)` with `updatedSince = now −
   SyncConfiguration.involvedWindow` (30 days) when the provider's manifest marks `listInvolved` usable; not found /
   forbidden / unsupported / decoding failures of this additive listing keep the stored involved CRs, account-level
-  failures propagate) → compare `versionToken`/`updatedAt`/`headSHA` with
-  stored snapshot → `hydrate` only changed ones (bounded concurrency 4) → CRs that disappeared from the lists are
-  hydrated once to detect merged/closed → `EventDeriver` → `AttentionDeriver` → `database.applySyncBatch` (atomic;
-  cursors and events persisted **before** notification) → `NotificationGrouper` (one notification per CR per cycle,
-  suppressed for baseline, own actions, paused/quiet hours) → event handler (rules).
+  failures propagate) → compare `versionToken`/`updatedAt`/`headSHA` (list version in the cursor) and the per-CR
+  schedule → `hydrate` new / changed / due ones → CRs that disappeared from the lists are hydrated once to detect
+  merged/closed; details = `hydrate` the due CRs only. Both → `EventDeriver` → `AttentionDeriver` →
+  `database.applySyncBatch` (atomic; cursors and events persisted **before** notification) → `NotificationGrouper`
+  (one notification per CR per cycle, suppressed for baseline, own actions, paused/quiet hours) → event handler
+  (rules).
 - `EventDeriver.derive(previous:current:currentUserID:isBaseline:now:) -> [ChangeEvent]` is pure and exhaustively
   unit tested. Own comments/reviews produce events flagged `isFromCurrentUser` (no attention, no notification).
   `objectID`s are always built with `ChangeEvent.commentObjectID(thread:commentID:)` / `checkObjectID` /
@@ -862,7 +896,9 @@ Provider specifics (see §5.2–5.4 and each provider's current REST docs):
 any ProviderFactory`, `sync: any SyncControlling`, `workspace: any WorkspaceInspecting`, `clock`, `paths`,
 `isDemo`, `appVersion`, `leaseDuration` (default 600 s), `staleCheckInterval` (30 s).
 Public API groups (UI contract, exact names chosen by the implementer and documented in `Sources/MergeCueEngine/README.md`):
-- lifecycle: `start()`, `stop()`, `changes() -> AsyncStream<EngineChange>`;
+- lifecycle: `start()`, `stop()`, `changes() -> AsyncStream<EngineChange>`; on start and after every task change the
+  engine forwards the change requests of `waiting_for_agent` / `working` tasks to `sync.setActiveChangeRequests`
+  (fast detail tier, D35);
 - accounts: validate+connect (`currentUser()` probe, store credential in Keychain first, then account), disconnect
   (delete credential, data), set label/namespaces/writes-enabled, statuses;
 - inbox: attention items (filters: mine/reviewing/all, provider, account, repo, status), mark read, acknowledge,
@@ -935,10 +971,12 @@ Implemented runtime surface (stage C; doc comments in `Sources/MergeCueRuntime`)
   `importGitHubCLIToken(hostname:)`, `connectGitHubFromCLI(label:)`, `detectAgents()`,
   `registrationPlan(for:action:)`, `registrationStatus(for:)`, `applyRegistration(_:consent:)`,
   `verifyMCPHelper(probe:)`, `handoffCommand(for:agent:)`, `openInAgent(taskID:agent:)`, `loginItemStatus()`,
-  `setLaunchAtLogin(_:)`. `RuntimeOptions` injects clock, sync configuration, lease/monitor periods, notifier,
+  `setLaunchAtLogin(_:)`, `userDidReturn()` (UI: popover open / main window key → Sync, never advances the demo).
+  `RuntimeOptions` injects clock, sync configuration, lease/monitor periods, notifier,
   credential store, IPC on/off, `PeerValidationPolicy`, helper override, git environment, mapping search roots.
 - `LiveProviderFactory: ProviderFactory` (real adapters; one shared `URLSessionTransport` live, injected transports in
-  demo). `WriteCapabilityPolicy` = the account-specific manifest the engine gates writes with
+  demo). Account providers wrap the transport in `CountingTransport` recording into `requestLedger` (shared with
+  Sync); probes are not counted. `WriteCapabilityPolicy` = the account-specific manifest the engine gates writes with
   (`ProviderFactory.capabilities(for: Account)`): GitHub by classic scopes (`repo` → supported; none reported →
   partial; other scopes only → `requiresWriteAccess(repo)`), GitLab known scopes without `api` →
   `requiresWriteAccess(api)`, Bitbucket known scopes without a pull-request write scope → `requiresWriteAccess`.

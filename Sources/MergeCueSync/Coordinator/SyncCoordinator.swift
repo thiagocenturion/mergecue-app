@@ -4,10 +4,13 @@ import MergeCueStore
 
 /// The sync service (`SyncControlling`): one independent `AccountSyncer` per connected account.
 ///
-/// Each account polls on its own schedule (immediate first run; 90 s by default, 45 s while hot, 5 min in the
-/// overnight idle window), backs off exponentially with jitter on failures (cap 15 min), waits for rate-limit
-/// resets, stops on expired credentials until `accountsDidChange()`, and never blocks another account.
-/// Every cycle persists its batch atomically before notifications and the event handler run.
+/// Each account polls on its own schedule (DECISIONS D35, GitButler-style): lists immediately at start, every 15 min,
+/// on manual refresh and on debounced events (return/focus, wake, network recovery); between lists each change
+/// request's details refresh progressively by how recently it changed (30 s → 5 min → 30 min; hot/pending-checks CRs
+/// stay fast); failed CRs back off (terminal for not found/forbidden); account failures back off exponentially with
+/// jitter (cap 15 min), rate limits wait for the provider's reset (else 5 → 15 → 60 min), expired credentials stop
+/// the account until `accountsDidChange()`. One account never blocks another. Every cycle persists its batch
+/// atomically before notifications and the event handler run.
 public actor SyncCoordinator: SyncControlling {
     private let database: MergeCueDatabase
     private let credentials: any CredentialStoring
@@ -24,15 +27,21 @@ public actor SyncCoordinator: SyncControlling {
         notifier: any NotificationDelivering,
         clock: any MCClock,
         configuration: SyncConfiguration = .default,
+        requestLedger: ProviderRequestLedger? = nil,
         onChange: @escaping @Sendable (EngineChange) -> Void = { _ in }
     ) {
         self.database = database
         self.credentials = credentials
         self.providers = providers
         self.environment = SyncEnvironment(
-            database: database, notifier: notifier, clock: clock, configuration: configuration, onChange: onChange
+            database: database, notifier: notifier, clock: clock, configuration: configuration, onChange: onChange,
+            requestLedger: requestLedger
         )
     }
+
+    /// Per-account rolling request counts. When no ledger was injected, Sync counts one request per provider call;
+    /// the runtime injects the ledger its HTTP transports record into (304s excluded).
+    public nonisolated var requestLedger: ProviderRequestLedger { environment.requestLedger }
 
     // MARK: SyncControlling
 
@@ -53,8 +62,9 @@ public actor SyncCoordinator: SyncControlling {
         }
     }
 
-    /// Refreshes every account concurrently and returns when their cycles finished. Accounts that cannot sync now
-    /// (auth expired, paused, rate limited until a future reset) are skipped.
+    /// Manual refresh of every account (lists now, failed change requests retried), concurrently; returns when their
+    /// cycles finished. Accounts that cannot sync now (auth expired, paused, rate limited until a future reset) are
+    /// skipped.
     public func refreshAll() async {
         let all = Array(syncers.values)
         await withTaskGroup(of: Void.self) { group in
@@ -77,7 +87,7 @@ public actor SyncCoordinator: SyncControlling {
     public func statuses() async -> [AccountSyncStatus] {
         var result: [AccountSyncStatus] = []
         for syncer in syncers.values {
-            result.append(await syncer.status)
+            result.append(await syncer.currentStatus())
         }
         return result.sorted { $0.account < $1.account }
     }
@@ -144,18 +154,51 @@ public actor SyncCoordinator: SyncControlling {
         await reloadAccounts()
     }
 
-    /// Marks sync as hot (e.g. an agent task is active) until `until`: accounts poll at `hotInterval`.
+    /// Marks every change request hot until `until`: details refresh at the fast tier.
     public func setHot(until: Date?) async {
         environment.update { $0.hotUntil = until }
+        await rescheduleAll()
     }
 
-    /// Call after the Mac wakes from sleep: refreshes every account.
+    /// Change requests with an active agent task refresh their details at the fast tier.
+    public func setActiveChangeRequests(_ keys: Set<ChangeRequestKey>) async {
+        let changed = environment.current.hotChangeRequests != keys
+        environment.update { $0.hotChangeRequests = keys }
+        if changed { await rescheduleAll() }
+    }
+
+    public func activeChangeRequests() -> Set<ChangeRequestKey> {
+        environment.current.hotChangeRequests
+    }
+
+    /// The user came back (popover opened, main window became key): every account lists again unless it did so for
+    /// an event less than `eventRefreshDebounce` ago, and CRs that failed terminally a while ago are retried.
+    public func userDidReturn() async {
+        await eventRefreshAll(retryTerminalFailures: true)
+    }
+
+    /// Call after the Mac wakes from sleep: every account lists again (debounced like other events).
     public func handleSystemWake() async {
-        await refreshAll()
+        await eventRefreshAll(retryTerminalFailures: false)
     }
 
-    /// Consumes connectivity updates (`true` = network reachable); every offline → online transition triggers
-    /// `refreshAll()`. Replaces a previous observation.
+    private func eventRefreshAll(retryTerminalFailures: Bool) async {
+        let all = Array(syncers.values)
+        await withTaskGroup(of: Void.self) { group in
+            for syncer in all {
+                group.addTask { await syncer.eventRefresh(retryTerminalFailures: retryTerminalFailures) }
+            }
+        }
+    }
+
+    private func rescheduleAll() async {
+        for syncer in syncers.values {
+            await syncer.reschedule()
+        }
+    }
+
+    /// Consumes connectivity updates (`true` = network reachable); every offline → online transition triggers a
+    /// (debounced) event refresh of every account. Replaces a previous observation.
     public func observeNetwork(_ updates: AsyncStream<Bool>) {
         networkTask?.cancel()
         networkTask = Task { [weak self] in
@@ -164,7 +207,7 @@ public actor SyncCoordinator: SyncControlling {
                 if Task.isCancelled { return }
                 defer { wasReachable = isReachable }
                 guard isReachable, wasReachable == false else { continue }
-                await self?.refreshAll()
+                await self?.eventRefreshAll(retryTerminalFailures: false)
             }
         }
     }
@@ -188,6 +231,7 @@ public actor SyncCoordinator: SyncControlling {
         for (key, syncer) in syncers where !keys.contains(key) {
             await syncer.stop()
             syncers[key] = nil
+            environment.requestLedger.reset(key)
         }
         let disabled = environment.current.configuration.disabledAccounts
         for account in accounts {

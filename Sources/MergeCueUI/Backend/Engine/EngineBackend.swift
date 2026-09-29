@@ -143,6 +143,10 @@ public actor EngineBackend: AppBackend {
         await runtime.handleSystemWake()
     }
 
+    public func userDidReturn() async {
+        await runtime.userDidReturn()
+    }
+
     public func shutdown() async {
         agentsTask?.cancel()
         scanTask?.cancel()

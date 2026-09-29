@@ -16,12 +16,21 @@ public struct LiveProviderFactory: ProviderFactory {
     public typealias TransportProvider = @Sendable (ProviderInstance) -> any HTTPTransport
 
     public let clock: any MCClock
+    /// Every HTTP request an account's providers send (Sync's and the engine's) is recorded here per account
+    /// (`CountingTransport`; 304s excluded). Probes (connecting an account) are not counted.
+    public let requestLedger: ProviderRequestLedger
     private let transport: TransportProvider
 
     /// - Parameters:
     ///   - transport: nil = one shared `URLSessionTransport` (with a MergeCue user agent) for every provider.
-    public init(clock: any MCClock = SystemClock(), appVersion: String? = nil, transport: TransportProvider? = nil) {
+    public init(
+        clock: any MCClock = SystemClock(),
+        appVersion: String? = nil,
+        requestLedger: ProviderRequestLedger = ProviderRequestLedger(),
+        transport: TransportProvider? = nil
+    ) {
         self.clock = clock
+        self.requestLedger = requestLedger
         if let transport {
             self.transport = transport
         } else {
@@ -31,11 +40,12 @@ public struct LiveProviderFactory: ProviderFactory {
     }
 
     public func makeProvider(account: Account, credential: Credential) -> any ReviewProvider {
-        make(instance: account.instance, credential: credential, grantedScopes: account.grantedScopes)
+        let counted = CountingTransport(transport(account.instance), ledger: requestLedger, account: account.id, clock: clock)
+        return make(instance: account.instance, credential: credential, grantedScopes: account.grantedScopes, transport: counted)
     }
 
     public func makeProbe(instance: ProviderInstance, credential: Credential) -> any ReviewProvider {
-        make(instance: instance, credential: credential, grantedScopes: nil)
+        make(instance: instance, credential: credential, grantedScopes: nil, transport: transport(instance))
     }
 
     public func capabilities(for kind: ProviderKind) -> CapabilityManifest {
@@ -46,8 +56,9 @@ public struct LiveProviderFactory: ProviderFactory {
         WriteCapabilityPolicy.manifest(for: account)
     }
 
-    private func make(instance: ProviderInstance, credential: Credential, grantedScopes: [String]?) -> any ReviewProvider {
-        let transport = transport(instance)
+    private func make(
+        instance: ProviderInstance, credential: Credential, grantedScopes: [String]?, transport: any HTTPTransport
+    ) -> any ReviewProvider {
         switch instance.kind {
         case .github:
             return GitHubProvider(

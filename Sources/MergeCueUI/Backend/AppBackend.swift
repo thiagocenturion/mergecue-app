@@ -48,12 +48,15 @@ public nonisolated protocol AppBackend: AnyObject, Sendable {
     func perform(_ command: AppCommand) async throws -> AppCommandResult
     /// The Mac woke from sleep: refresh every account and expire stale agent leases.
     func handleSystemWake() async
+    /// The user came back (popover opened, main window became key): a debounced list refresh of every account.
+    func userDidReturn() async
     /// Stops background work before the app quits (the engine backend removes its IPC socket).
     func shutdown() async
 }
 
 public nonisolated extension AppBackend {
     func handleSystemWake() async {}
+    func userDidReturn() async {}
     func shutdown() async {}
 }
 

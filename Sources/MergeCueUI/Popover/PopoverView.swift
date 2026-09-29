@@ -219,7 +219,9 @@ struct AccountStatusLine: View {
     let account: AccountState
 
     var body: some View {
-        let tone = UIFormat.tone(of: account.status.state)
+        let failures = account.status.state.isProblem ? nil : UIFormat.changeRequestFailureText(account.status, kind: account.kind)
+        let tone = failures == nil ? UIFormat.tone(of: account.status.state) : .attention
+        let text = failures ?? UIFormat.syncText(account.status, now: model.now)
         HStack(spacing: 8) {
             ProviderGlyph(kind: account.kind, size: 14)
                 .frame(width: 18)
@@ -232,10 +234,17 @@ struct AccountStatusLine: View {
                 .scaledFont(.system(size: 10.5))
                 .foregroundStyle(Theme.color(tone))
                 .accessibilityHidden(true)
-            Text(UIFormat.syncText(account.status, now: model.now))
+            Text(text)
                 .scaledFont(.system(size: 12))
                 .foregroundStyle(Theme.textColor(tone))
                 .lineLimit(1)
+            if failures != nil {
+                Button("Retry") { Task { await model.send(.refresh(account: account.id)) } }
+                    .buttonStyle(PlainRowButtonStyle())
+                    .scaledFont(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.accentText)
+                    .accessibilityLabel("Retry loading \(account.kind.displayName) account \(account.account.displayLabel)")
+            }
             if account.status.state == .authExpired {
                 Button("Reconnect") {
                     model.connectSheetKind = account.kind
@@ -249,7 +258,7 @@ struct AccountStatusLine: View {
         }
         .help(account.status.message.map { SecretRedactorHelp.safe($0) } ?? account.status.state.displayText)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(account.kind.displayName) account \(account.account.displayLabel): \(UIFormat.syncText(account.status, now: model.now))")
+        .accessibilityLabel("\(account.kind.displayName) account \(account.account.displayLabel): \(text)")
     }
 
     private var symbol: String {

@@ -80,6 +80,8 @@ actor FakeSync: SyncControlling {
     func setNotificationPreferences(_ preferences: NotificationPreferences) async { self.preferences = preferences }
     func setQuietHours(_ quietHours: QuietHours?) async { self.quietHours = .some(quietHours) }
     func setTrackingPreferences(_ preferences: TrackingPreferences) async { tracking = preferences }
+    private(set) var activeChangeRequests: Set<ChangeRequestKey>?
+    func setActiveChangeRequests(_ keys: Set<ChangeRequestKey>) async { activeChangeRequests = keys }
 
     func setStatuses(_ statuses: [AccountSyncStatus]) { statusList = statuses }
 }

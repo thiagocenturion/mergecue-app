@@ -16,6 +16,9 @@ Load, compared with the app's live defaults:
 
 That is roughly 18–60× the live request volume, so the numbers below are an upper bound for the idle app.
 
+> Since 2026-09-29 (DECISIONS D35) the live defaults are lower still: lists every 15 min (+ debounced refresh on
+> return/focus), per-PR/MR details every 30 s → 5 min → 30 min by time since the last change.
+
 Sampling: `ps -o rss=,%cpu=` every 5 s; `footprint` at start and end; `leaks` at the end.
 
 ## Finding and fix
