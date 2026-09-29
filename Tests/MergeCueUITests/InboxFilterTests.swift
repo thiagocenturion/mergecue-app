@@ -102,4 +102,40 @@ struct InboxFilterTests {
         #expect(AccountListState(status: AccountSyncStatus(account: key, state: .rateLimited(until: testNow)), hasItems: true)
             == .rateLimited(until: testNow))
     }
+
+    /// An account whose change requests all failed to load is never shown as a healthy empty list (DECISIONS D35).
+    @Test func failedChangeRequestsAreSurfaced() throws {
+        let key = AccountKey(kind: .bitbucketCloud, host: "bitbucket.org", remoteUserID: "1")
+        let errors = (1...4).map { number in
+            ChangeRequestSyncError(
+                changeRequest: ChangeRequestKey(repo: RepoKey(account: key, remoteRepoID: "r"), remoteID: "\(number)", number: number),
+                title: "PR \(number)", repoFullPath: "acme/api", code: "not_found", message: "Not found.",
+                isTerminal: true, failedAt: testNow
+            )
+        }
+        var status = AccountSyncStatus(account: key, state: .ok, lastSuccessAt: testNow, changeRequestErrors: errors)
+        #expect(AccountListState(status: status, hasItems: false) == .changeRequestsFailed(count: 4))
+        #expect(AccountListState(status: status, hasItems: false).isProblem)
+        #expect(AccountListState(status: status, hasItems: true) == .ok)
+        #expect(UIFormat.changeRequestFailureText(status, kind: .bitbucketCloud) == "4 PRs couldn't be loaded: not found")
+        #expect(UIFormat.changeRequestRetryText(status)?.contains("Not retried automatically") == true)
+        status.changeRequestErrors = [errors[0]]
+        #expect(UIFormat.changeRequestFailureText(status, kind: .gitlab) == "1 MR couldn't be loaded: not found")
+        status.changeRequestErrors = []
+        #expect(UIFormat.changeRequestFailureText(status, kind: .github) == nil)
+    }
+
+    @Test func rateLimitAndRequestUsageTexts() {
+        let key = AccountKey(kind: .github, host: "github.com", remoteUserID: "1")
+        let limited = AccountSyncStatus(account: key, state: .rateLimited(until: testNow))
+        #expect(UIFormat.syncText(limited, now: testNow) == "Rate limited — retrying at \(UIFormat.time(testNow))")
+        #expect(!UIFormat.syncText(limited, now: testNow).contains("hour"))
+        var usage = AccountSyncStatus(account: key, state: .ok, requestsLastHour: 142, requestBudget: 1_500)
+        #expect(UIFormat.requestUsageText(usage) == "142 requests in the last hour · budget 1500/h")
+        usage.requestsLastHour = 1_600
+        #expect(usage.isOverRequestBudget)
+        #expect(UIFormat.requestUsageText(usage)?.contains("refreshing less often") == true)
+        usage.requestsLastHour = nil
+        #expect(UIFormat.requestUsageText(usage) == nil)
+    }
 }

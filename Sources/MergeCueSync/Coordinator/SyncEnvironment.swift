@@ -17,6 +17,8 @@ final class SyncEnvironment: Sendable {
         /// Scopes listed besides "authored". `.all` until the engine forwards the owner's choice.
         var tracking: TrackingPreferences = .all
         var hotUntil: Date?
+        /// Change requests with an active agent task (fast detail tier).
+        var hotChangeRequests: Set<ChangeRequestKey> = []
         var eventHandler: EventHandler?
     }
 
@@ -25,6 +27,11 @@ final class SyncEnvironment: Sendable {
     let clock: any MCClock
     let onChange: @Sendable (EngineChange) -> Void
     let jitter: @Sendable () -> Double
+    /// Rolling per-account request counts (shown in the UI, drives the budget slowdown).
+    let requestLedger: ProviderRequestLedger
+    /// True when nobody records HTTP requests into `requestLedger` (tests, custom factories): Sync then records
+    /// one request per provider call itself.
+    let countsProviderCalls: Bool
     private let settings: OSAllocatedUnfairLock<Settings>
 
     init(
@@ -33,8 +40,11 @@ final class SyncEnvironment: Sendable {
         clock: any MCClock,
         configuration: SyncConfiguration,
         onChange: @escaping @Sendable (EngineChange) -> Void,
-        jitter: @escaping @Sendable () -> Double = { Double.random(in: 0..<1) }
+        jitter: @escaping @Sendable () -> Double = { Double.random(in: 0..<1) },
+        requestLedger: ProviderRequestLedger? = nil
     ) {
+        self.requestLedger = requestLedger ?? ProviderRequestLedger()
+        self.countsProviderCalls = requestLedger == nil
         self.database = database
         self.notifier = notifier
         self.clock = clock
@@ -47,6 +57,12 @@ final class SyncEnvironment: Sendable {
 
     func update(_ change: @Sendable (inout Settings) -> Void) {
         settings.withLock { change(&$0) }
+    }
+
+    /// Records one provider call of `account` when Sync does the accounting itself.
+    func recordProviderCall(_ account: AccountKey) {
+        guard countsProviderCalls else { return }
+        requestLedger.record(account, at: clock.now)
     }
 
     var notificationPolicy: NotificationPolicy {

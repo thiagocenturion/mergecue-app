@@ -30,7 +30,7 @@ public struct RepositoryListing: Sendable, Hashable {
 
 /// Outcome of `detectCheckouts(for:)`.
 public struct CheckoutDetectionReport: Sendable, Hashable {
-    /// Repositories whose folders were searched.
+    /// Repositories matched against the scanned checkouts.
     public var scanned: Int
     /// Mappings created automatically (exactly one exact remote match, auto-confirmed).
     public var mapped: [RepoMapping]
@@ -38,6 +38,14 @@ public struct CheckoutDetectionReport: Sendable, Hashable {
     public var suggestions: [RepoKey: [MappingSuggestion]]
     /// Repositories left out because of `maxRepositories`.
     public var skipped: Int
+    /// Directories walked by the single scan pass.
+    public var directoriesScanned: Int = 0
+    /// Git checkouts found by the walk.
+    public var checkoutsFound: Int = 0
+    /// A bound stopped the walk early.
+    public var isTruncated: Bool = false
+    /// The scan was cancelled; nothing was mapped.
+    public var wasCancelled: Bool = false
 
     public init(scanned: Int = 0, mapped: [RepoMapping] = [], suggestions: [RepoKey: [MappingSuggestion]] = [:], skipped: Int = 0) {
         self.scanned = scanned
@@ -53,7 +61,7 @@ extension MergeCueEngine {
     /// Upper bound of repositories kept per account listing.
     public static let maxListedRepositories = 1_000
     /// Default upper bound of repositories searched by one `detectCheckouts` call.
-    public static let maxDetectedRepositories = 40
+    public static let maxDetectedRepositories = 1_000
 
     /// Every repository the account can access (its selected namespaces only, when any are selected). Served from
     /// the store while younger than `repositoryListTTL` unless `forceRefresh`. Provider failures throw
@@ -91,46 +99,97 @@ extension MergeCueEngine {
         }
     }
 
-    /// Searches `searchRoots` (default `EngineEnvironment.mappingSearchRoots`) for checkouts of up to
-    /// `maxRepositories` unmapped repositories, in the given order. A repository with exactly one exact remote match
-    /// is mapped (and confirmed, like `addMapping`); other candidates are returned for the owner to confirm.
-    /// `progress(done, total)` is called after each repository. Stops early when the task is cancelled.
+    /// Finds checkouts of the unmapped `repos` (at most `maxRepositories`, in order) with ONE bounded, cancellable
+    /// walk of `searchRoots` (default: `checkoutSearchFolders()`): every git checkout found is indexed by its
+    /// canonical remotes and all repositories are matched in a single pass (`WorkspaceInspecting.scanCheckouts`).
+    /// A repository with exactly one exact remote match is mapped (and confirmed, like `addMapping`); other
+    /// candidates are returned for the owner to confirm. `progress` reports directories walked and checkouts found.
     public func detectCheckouts(
         for repos: [RepoKey],
         searchRoots: [String]? = nil,
         maxRepositories: Int = MergeCueEngine.maxDetectedRepositories,
-        progress: @Sendable (Int, Int) -> Void = { _, _ in }
+        progress: @escaping @Sendable (CheckoutScanProgress) -> Void = { _ in }
     ) async throws(EngineError) -> CheckoutDetectionReport {
         try await uiCall {
-            let roots = searchRoots ?? env.mappingSearchRoots
+            var roots: [String] = []
+            if let searchRoots {
+                roots = searchRoots
+            } else {
+                roots = await checkoutSearchFolders()
+            }
             let mapped = Set(try await database.mappings(repo: nil).map(\.repo))
             var seen = Set<RepoKey>()
             let candidates = repos.filter { !mapped.contains($0) && seen.insert($0).inserted }
             let batch = Array(candidates.prefix(max(0, maxRepositories)))
             var report = CheckoutDetectionReport(skipped: candidates.count - batch.count)
-            progress(0, batch.count)
-            guard !roots.isEmpty else {
-                progress(batch.count, batch.count)
-                return report
+            var repositories: [Repository] = []
+            for key in batch {
+                if let repository = try await findRepository(key) { repositories.append(repository) }
             }
-            for (index, key) in batch.enumerated() {
-                if Task.isCancelled { break }
-                defer { progress(index + 1, batch.count) }
-                guard let repository = try await findRepository(key) else { continue }
-                let found = await env.workspace.suggestMappings(for: repository, searchRoots: roots)
-                report.scanned += 1
+            report.scanned = repositories.count
+            guard !roots.isEmpty, !repositories.isEmpty else { return report }
+            let workspace = env.workspace
+            let scan = await Task.detached(priority: .utility) {
+                await workspace.scanCheckouts(for: repositories, searchRoots: roots, progress: progress)
+            }.valueCancellingOnCancel()
+            report.directoriesScanned = scan.directoriesScanned
+            report.checkoutsFound = scan.checkoutsFound
+            report.isTruncated = scan.isTruncated
+            report.wasCancelled = scan.wasCancelled || Task.isCancelled
+            for repository in repositories where !report.wasCancelled {
+                let found = scan.suggestions[repository.key] ?? []
                 let exact = found.filter { $0.confidence == .exact }
                 if exact.count == 1, let only = exact.first {
-                    let mapping = try await addMapping(repo: key, repoFullPath: repository.fullPath, checkoutPath: only.checkoutPath)
+                    let mapping = try await addMapping(repo: repository.key, repoFullPath: repository.fullPath, checkoutPath: only.checkoutPath)
                     if mapping.isConfirmed {
                         report.mapped.append(mapping)
                         continue
                     }
                 }
                 let others = found.filter { $0.confidence != .mismatch }
-                if !others.isEmpty { report.suggestions[key] = others }
+                if !others.isEmpty { report.suggestions[repository.key] = others }
             }
             return report
         }
+    }
+
+    // MARK: Search folders
+
+    /// The folders `detectCheckouts` searches: the owner's list (Settings ▸ Repositories ▸ Search folders), else
+    /// `EngineEnvironment.mappingSearchRoots`. Folders that do not exist are skipped by the scan.
+    public func checkoutSearchFolders() async -> [String] {
+        (try? await database.setting(SettingsKey.checkoutSearchFolders, as: [String].self)) ?? env.mappingSearchRoots
+    }
+
+    /// Replaces the search folders (absolute or `~/` paths; duplicates dropped). nil restores the defaults.
+    @discardableResult
+    public func setCheckoutSearchFolders(_ folders: [String]?) async throws(EngineError) -> [String] {
+        try await uiCall {
+            guard let folders else {
+                try await database.removeSetting(SettingsKey.checkoutSearchFolders)
+                emit(.mappings)
+                return env.mappingSearchRoots
+            }
+            var seen = Set<String>()
+            var cleaned: [String] = []
+            for folder in folders {
+                let path = ((folder.trimmingCharacters(in: .whitespacesAndNewlines) as NSString).expandingTildeInPath as NSString).standardizingPath
+                guard !path.isEmpty else { continue }
+                guard path.hasPrefix("/") else {
+                    throw EngineError.invalidInput("Search folders must be absolute paths (\(folder)).")
+                }
+                if seen.insert(path).inserted { cleaned.append(path) }
+            }
+            try await database.setSetting(SettingsKey.checkoutSearchFolders, cleaned)
+            emit(.mappings)
+            return cleaned
+        }
+    }
+}
+
+extension Task where Failure == Never {
+    /// Awaits the value, cancelling the task when the awaiting task is cancelled.
+    func valueCancellingOnCancel() async -> Success {
+        await withTaskCancellationHandler { await value } onCancel: { cancel() }
     }
 }

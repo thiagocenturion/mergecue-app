@@ -44,7 +44,7 @@ public enum AccountSyncState: Codable, Sendable, Hashable {
         case .offline: "Offline"
         case .authExpired: "Sign-in expired"
         case .rateLimited(let until):
-            if let until { "Rate limited until \(until.formatted(date: .omitted, time: .shortened))" } else { "Rate limited" }
+            if let until { "Rate limited — retrying at \(until.formatted(date: .omitted, time: .shortened))" } else { "Rate limited" }
         case .permissionDenied(let message): "Permission denied: \(message)"
         case .error(let message): "Error: \(message)"
         case .paused: "Paused"
@@ -113,6 +113,13 @@ public struct AccountSyncStatus: Codable, Sendable, Hashable {
     public var nextRunAt: Date?
     public var consecutiveFailures: Int
     public var message: String?
+    /// Change requests whose detail refresh failed (per CR; the account itself may still be `ok`). Terminal ones
+    /// (`not found`, `forbidden`) are not retried until their listing changes, a manual Refresh, or the user returns.
+    public var changeRequestErrors: [ChangeRequestSyncError]
+    /// Provider HTTP requests of this account in the last rolling hour (304 Not Modified not counted); nil = unknown.
+    public var requestsLastHour: Int?
+    /// The soft hourly request budget of the account's provider; above it Sync slows detail refreshes.
+    public var requestBudget: Int?
 
     public init(
         account: AccountKey,
@@ -121,7 +128,10 @@ public struct AccountSyncStatus: Codable, Sendable, Hashable {
         lastSuccessAt: Date? = nil,
         nextRunAt: Date? = nil,
         consecutiveFailures: Int = 0,
-        message: String? = nil
+        message: String? = nil,
+        changeRequestErrors: [ChangeRequestSyncError] = [],
+        requestsLastHour: Int? = nil,
+        requestBudget: Int? = nil
     ) {
         self.account = account
         self.state = state
@@ -130,5 +140,92 @@ public struct AccountSyncStatus: Codable, Sendable, Hashable {
         self.nextRunAt = nextRunAt
         self.consecutiveFailures = consecutiveFailures
         self.message = message
+        self.changeRequestErrors = changeRequestErrors
+        self.requestsLastHour = requestsLastHour
+        self.requestBudget = requestBudget
+    }
+
+    /// Whether the rolling request count reached the soft budget (Sync is slowing detail refreshes down).
+    public var isOverRequestBudget: Bool {
+        guard let used = requestsLastHour, let budget = requestBudget, budget > 0 else { return false }
+        return used >= budget
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case account, state, lastAttemptAt, lastSuccessAt, nextRunAt, consecutiveFailures, message
+        case changeRequestErrors, requestsLastHour, requestBudget
+    }
+
+    /// Tolerates payloads written before the per-CR errors and request accounting existed.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        account = try c.decode(AccountKey.self, forKey: .account)
+        state = try c.decode(AccountSyncState.self, forKey: .state)
+        lastAttemptAt = try c.decodeIfPresent(Date.self, forKey: .lastAttemptAt)
+        lastSuccessAt = try c.decodeIfPresent(Date.self, forKey: .lastSuccessAt)
+        nextRunAt = try c.decodeIfPresent(Date.self, forKey: .nextRunAt)
+        consecutiveFailures = try c.decodeIfPresent(Int.self, forKey: .consecutiveFailures) ?? 0
+        message = try c.decodeIfPresent(String.self, forKey: .message)
+        changeRequestErrors = try c.decodeIfPresent([ChangeRequestSyncError].self, forKey: .changeRequestErrors) ?? []
+        requestsLastHour = try c.decodeIfPresent(Int.self, forKey: .requestsLastHour)
+        requestBudget = try c.decodeIfPresent(Int.self, forKey: .requestBudget)
+    }
+}
+
+/// A change request whose detail refresh (hydration) failed while its account kept syncing.
+public struct ChangeRequestSyncError: Codable, Sendable, Hashable, Identifiable {
+    public var changeRequest: ChangeRequestKey
+    /// Untrusted provider title from the listing (display only).
+    public var title: String
+    public var repoFullPath: String
+    public var webURL: URL?
+    /// `ProviderError.code` (`not_found`, `forbidden`, `server_error`, …).
+    public var code: String
+    /// Redacted, user-facing description.
+    public var message: String
+    /// `not found` / `forbidden`: not retried automatically until the CR's listing changes, a manual Refresh or the
+    /// user returns to MergeCue. Other failures back off (30 s → 5 min → 30 min).
+    public var isTerminal: Bool
+    public var consecutiveFailures: Int
+    public var failedAt: Date
+    /// Next automatic retry (nil for terminal failures).
+    public var nextRetryAt: Date?
+
+    public init(
+        changeRequest: ChangeRequestKey,
+        title: String,
+        repoFullPath: String,
+        webURL: URL? = nil,
+        code: String,
+        message: String,
+        isTerminal: Bool,
+        consecutiveFailures: Int = 1,
+        failedAt: Date,
+        nextRetryAt: Date? = nil
+    ) {
+        self.changeRequest = changeRequest
+        self.title = title
+        self.repoFullPath = repoFullPath
+        self.webURL = webURL
+        self.code = code
+        self.message = message
+        self.isTerminal = isTerminal
+        self.consecutiveFailures = consecutiveFailures
+        self.failedAt = failedAt
+        self.nextRetryAt = nextRetryAt
+    }
+
+    public var id: String { changeRequest.id }
+
+    /// Short reason: "not found", "access denied", "provider error", …
+    public var reasonText: String {
+        switch code {
+        case "not_found": "not found"
+        case "forbidden": "access denied"
+        case "server_error": "provider error"
+        case "decoding_error": "unexpected response"
+        case "timeout": "timed out"
+        default: code.replacingOccurrences(of: "_", with: " ")
+        }
     }
 }

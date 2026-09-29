@@ -212,6 +212,8 @@ public final class AppModel {
 
     // MARK: Presentation
     public var banners: [Banner] = []
+    /// The error message of the most recent failed `send` (also shown as a banner), for inline error states.
+    public private(set) var lastCommandError: String?
     /// Presented as the approval sheet.
     public var pendingPreview: ActionPreview?
     public var handoffOffer: HandoffOffer?
@@ -346,7 +348,9 @@ public final class AppModel {
             await reload()
             return result
         } catch {
-            showBanner(.critical, (error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+            let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            lastCommandError = message
+            showBanner(.critical, message)
             await reload()
             return nil
         }

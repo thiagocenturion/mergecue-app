@@ -32,7 +32,8 @@ struct ChangeRequestList: View {
                                 }
                                 ForEach(section.items) { snapshot in
                                     let isSelected = model.selectedChangeRequestID == snapshot.id
-                                    ChangeRequestRow(model: model, snapshot: snapshot, isSelected: isSelected)
+                                    ChangeRequestRow(model: model, snapshot: snapshot, isSelected: isSelected,
+                                                     syncError: section.failure(for: snapshot.key))
                                         .keyboardSelectionRing(isSelected && listFocused, cornerRadius: 11)
                                         .onTapGesture {
                                             model.openChangeRequest(snapshot.id)
@@ -40,6 +41,9 @@ struct ChangeRequestList: View {
                                         }
                                         .accessibilityAction { model.openChangeRequest(snapshot.id) }
                                         .id(snapshot.id)
+                                }
+                                ForEach(section.failuresWithoutRow) { failure in
+                                    FailedChangeRequestRow(model: model, account: section.account, failure: failure)
                                 }
                             }
                         }
@@ -167,6 +171,8 @@ struct AccountListStateRow: View {
         case .rateLimited(let until): until.map { "Rate limited until \(UIFormat.time($0))" } ?? "Rate limited"
         case .unsupportedPermission: "Unsupported permission"
         case .error: "Sync error"
+        case .changeRequestsFailed(let count):
+            "\(count) \(section.account.kind.changeRequestAbbreviation)\(count == 1 ? "" : "s") couldn't be loaded"
         }
     }
 
@@ -180,6 +186,9 @@ struct AccountListStateRow: View {
         case .rateLimited: return "\(section.account.kind.displayName) asked MergeCue to slow down; syncing resumes on its own. \(stale)"
         case .unsupportedPermission(let detail): return "\(detail). Reconnect with the scopes listed in Settings › Accounts."
         case .error(let detail): return "\(detail) \(stale)"
+        case .changeRequestsFailed:
+            let reasons = Set(section.account.status.changeRequestErrors.map(\.reasonText)).sorted().joined(separator: ", ")
+            return "The list loaded, but the details did not (\(reasons)). \(UIFormat.changeRequestRetryText(section.account.status) ?? "")"
         }
     }
 
@@ -191,16 +200,51 @@ struct AccountListStateRow: View {
         case .credentialsExpired: "key.slash"
         case .rateLimited: "gauge.with.dots.needle.100percent"
         case .unsupportedPermission: "lock.slash"
-        case .error: "exclamationmark.triangle.fill"
+        case .error, .changeRequestsFailed: "exclamationmark.triangle.fill"
         }
     }
 
     private var tone: Tone {
         switch section.listState {
         case .loading, .empty, .ok: .neutral
-        case .offline, .rateLimited: .attention
+        case .offline, .rateLimited, .changeRequestsFailed: .attention
         case .credentialsExpired, .unsupportedPermission, .error: .critical
         }
+    }
+}
+
+/// A change request the account lists but whose details could not be loaded (e.g. 404 / no access), with a retry.
+struct FailedChangeRequestRow: View {
+    let model: AppModel
+    let account: AccountState
+    let failure: ChangeRequestSyncError
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(Theme.color(.attention))
+                .frame(width: 18)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                ChangeRequestRefLabel(kind: account.kind, repoFullPath: failure.repoFullPath, number: failure.changeRequest.number,
+                                      font: .system(size: 12), glyphSize: 13)
+                Text(UIFormat.untrustedDisplay(failure.title))
+                    .scaledFont(.system(size: 13.5, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(2)
+                Text("Couldn't be loaded: \(failure.reasonText). \(failure.isTerminal ? "Not retried until it changes." : failure.nextRetryAt.map { "Retrying at \(UIFormat.time($0))." } ?? "")")
+                    .scaledFont(.system(size: 12))
+                    .foregroundStyle(Theme.textSecondary)
+                    .help(SecretRedactor.redact(failure.message))
+            }
+            Spacer(minLength: 4)
+            Button("Retry") { Task { await model.send(.refresh(account: account.id)) } }
+                .buttonStyle(SecondaryButtonStyle(size: .small))
+                .accessibilityLabel("Retry loading \(account.kind.changeRequestAbbreviation) \(failure.changeRequest.number)")
+        }
+        .padding(12)
+        .cardBackground(Theme.surface, radius: 11)
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -208,6 +252,8 @@ struct ChangeRequestRow: View {
     let model: AppModel
     let snapshot: ChangeRequestSnapshot
     var isSelected = false
+    /// The last detail refresh failed (the row shows the stored data).
+    var syncError: ChangeRequestSyncError?
     @State private var isHovering = false
 
     var body: some View {
@@ -238,6 +284,10 @@ struct ChangeRequestRow: View {
                         .help("You reviewed or commented on this — MergeCue keeps following replies to your comments.")
                 }
                 if summary.isDraft { Chip(text: "Draft") }
+                if let syncError {
+                    Chip(text: "Not refreshed", symbol: "exclamationmark.triangle", tone: .attention)
+                        .help("Couldn't refresh: \(syncError.reasonText). \(SecretRedactor.redact(syncError.message))")
+                }
                 if summary.state != .open { Chip(text: summary.state == .merged ? "Merged" : "Closed", tone: summary.state == .merged ? .success : .neutral) }
                 Spacer(minLength: 4)
                 ChecksBadge(state: snapshot.aggregateCheckState)

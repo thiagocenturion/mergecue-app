@@ -172,6 +172,22 @@ struct AccountCard: View {
                                 .scaledFont(.caption)
                                 .foregroundStyle(Theme.textSecondary)
                         }
+                        if let failures = UIFormat.changeRequestFailureText(status, kind: account.kind) {
+                            Button {
+                                Task { await model.send(.refresh(account: account.id)) }
+                            } label: {
+                                Label("\(failures) (tap to retry)", systemImage: "exclamationmark.circle")
+                                    .scaledFont(.caption)
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Theme.textColor(.attention))
+                            .help(UIFormat.changeRequestRetryText(status) ?? "")
+                        }
+                        if let usage = UIFormat.requestUsageText(status) {
+                            Text(usage)
+                                .scaledFont(.caption)
+                                .foregroundStyle(status.isOverRequestBudget ? Theme.textColor(.attention) : Theme.textSecondary)
+                        }
                     }
                 }
                 if !account.account.grantedScopes.isEmpty {

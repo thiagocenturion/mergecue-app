@@ -173,16 +173,17 @@ nonisolated extension PreviewWorld {
         return [
             AccountState(account: github,
                          status: AccountSyncStatus(account: gh, state: .ok, lastAttemptAt: ago(minutes: 2), lastSuccessAt: ago(minutes: 2),
-                                                   nextRunAt: later(minutes: 1.5)),
+                                                   nextRunAt: later(minutes: 1.5), requestsLastHour: 142, requestBudget: 1_500),
                          capabilities: Self.manifest(.github)),
             AccountState(account: gitlab,
                          status: AccountSyncStatus(account: gl, state: .rateLimited(until: later(minutes: 20)), lastAttemptAt: ago(minutes: 1),
                                                    lastSuccessAt: ago(minutes: 11), nextRunAt: later(minutes: 20), consecutiveFailures: 1,
-                                                   message: "429 Too Many Requests"),
+                                                   message: "GitLab rate limit reached for @mona-dev. MergeCue waits for the reset time GitLab sent.",
+                                                   requestsLastHour: 1_012, requestBudget: 1_000),
                          capabilities: Self.manifest(.gitlab)),
             AccountState(account: bitbucket,
                          status: AccountSyncStatus(account: bb, state: .ok, lastAttemptAt: ago(minutes: 4), lastSuccessAt: ago(minutes: 4),
-                                                   nextRunAt: later(minutes: 1)),
+                                                   nextRunAt: later(minutes: 1), requestsLastHour: 64, requestBudget: 500),
                          capabilities: Self.manifest(.bitbucketCloud)),
         ]
     }

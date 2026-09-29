@@ -130,7 +130,9 @@ public struct GitHubProvider: ReviewProvider {
         if let known = links.repositoryPath(host: instance.host, remoteRepoID: repo.remoteRepoID) {
             return known
         }
-        let fetched = try await client.getJSON(RESTRepository.self, "/repositories/\(Self.segment(repo.remoteRepoID))")
+        let fetched = try await client.getJSON(
+            RESTRepository.self, "/repositories/\(Self.segment(repo.remoteRepoID))", useETag: true
+        )
         links.registerRepository(host: instance.host, remoteRepoID: fetched.id.value, fullPath: fetched.fullName)
         return fetched.fullName
     }

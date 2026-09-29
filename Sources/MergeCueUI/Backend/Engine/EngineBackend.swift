@@ -106,6 +106,7 @@ public actor EngineBackend: AppBackend {
             let accounts = Set(state.accounts.map(\.id))
             state.repositoryLists = repositoryLists.filter { accounts.contains($0.key) }
             state.checkoutScan = checkoutScan
+            state.checkoutSearchFolders = await runtime.engine.checkoutSearchFolders()
             lastState = state
             return state
         } catch {
@@ -140,6 +141,10 @@ public actor EngineBackend: AppBackend {
 
     public func handleSystemWake() async {
         await runtime.handleSystemWake()
+    }
+
+    public func userDidReturn() async {
+        await runtime.userDidReturn()
     }
 
     public func shutdown() async {

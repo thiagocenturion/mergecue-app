@@ -191,13 +191,17 @@ public nonisolated enum AccountListState: Sendable, Hashable {
     case rateLimited(until: Date?)
     case unsupportedPermission(String)
     case error(String)
+    /// The account synced but none of its change requests could be loaded (never shown as a healthy empty list).
+    case changeRequestsFailed(count: Int)
 
     public init(status: AccountSyncStatus, hasItems: Bool) {
+        let failed = status.changeRequestErrors.count
         switch status.state {
         case .idle, .syncing:
-            self = status.lastSuccessAt == nil ? .loading : (hasItems ? .ok : .empty)
+            if status.lastSuccessAt == nil { self = .loading }
+            else { self = hasItems ? .ok : (failed > 0 ? .changeRequestsFailed(count: failed) : .empty) }
         case .ok, .paused:
-            self = hasItems ? .ok : .empty
+            self = hasItems ? .ok : (failed > 0 ? .changeRequestsFailed(count: failed) : .empty)
         case .offline: self = .offline(lastSuccess: status.lastSuccessAt)
         case .authExpired: self = .credentialsExpired
         case .rateLimited(let until): self = .rateLimited(until: until)
@@ -235,7 +239,20 @@ public nonisolated struct AccountChangeRequests: Sendable, Hashable, Identifiabl
     public var account: AccountState
     public var listState: AccountListState
     public var items: [ChangeRequestSnapshot]
+    /// Change requests whose details could not be loaded (per-CR sync errors, filtered like the items).
+    public var failures: [ChangeRequestSyncError] = []
     public var id: String { account.id.id }
+
+    /// Failures of change requests that have no row of their own (never loaded, or filtered out as items).
+    public var failuresWithoutRow: [ChangeRequestSyncError] {
+        let shown = Set(items.map(\.key))
+        return failures.filter { !shown.contains($0.changeRequest) }
+    }
+
+    /// The sync error of a listed change request, if its last refresh failed.
+    public func failure(for key: ChangeRequestKey) -> ChangeRequestSyncError? {
+        failures.first { $0.changeRequest == key }
+    }
 }
 
 public nonisolated enum ChangeRequestQueryUI {
@@ -250,7 +267,16 @@ public nonisolated enum ChangeRequestQueryUI {
                 return matchesSearch(snapshot, text: filter.searchText)
             }
             .sorted { $0.summary.updatedAt > $1.summary.updatedAt }
-            return AccountChangeRequests(account: account, listState: AccountListState(status: account.status, hasItems: !all.isEmpty), items: items)
+            let failures = account.status.changeRequestErrors.filter { error in
+                let needle = filter.searchText.trimmingCharacters(in: .whitespaces).lowercased()
+                guard !needle.isEmpty else { return true }
+                let haystack = "\(error.title)\n\(error.repoFullPath)\n\(account.kind.formattedNumber(error.changeRequest.number))".lowercased()
+                return needle.split(separator: " ").allSatisfy { haystack.contains($0) }
+            }
+            return AccountChangeRequests(
+                account: account, listState: AccountListState(status: account.status, hasItems: !all.isEmpty), items: items,
+                failures: failures
+            )
         }
     }
 

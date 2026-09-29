@@ -122,6 +122,33 @@ only your own PRs/MRs by default), they stay tracked after the provider drops yo
 you submit a review), so replies to your comments still reach the inbox; they show as **Reviewed** in PRs & MRs and
 count as **Reviewing** in filters. Only threads you took part in create inbox items.
 
+### How syncing works
+
+MergeCue polls each account on its own schedule, modelled on GitButler (DECISIONS D35):
+
+- **Lists** of your PRs/MRs are fetched at launch, every 15 minutes, when you press **Refresh**, and when you come
+  back to MergeCue (open the popover, focus the main window), after the Mac wakes and when the network returns —
+  at most once a minute for those automatic triggers. Refresh is never held back.
+- **Details** of each PR/MR (threads, checks, reviews) refresh by how recently it changed: every 30 s during the first
+  10 minutes after a change, every 5 min up to an hour, then every 30 min. PRs/MRs with a task waiting for or claimed
+  by an agent, or with checks still running, stay at 30 s. A change in the list is picked up at once.
+- **A PR/MR that fails to load** is retried after 30 s, 5 min, then every 30 min. "Not found" and "no access" stop
+  retrying until the PR/MR changes, you press Refresh, or you come back a while later; the account shows
+  "1 PR couldn't be loaded: not found (tap to retry)" and the row says why, so an account never looks empty when its
+  PRs failed.
+
+### Rate limits
+
+- Settings ▸ Accounts shows **N requests in the last hour** per account (answers "not modified" to conditional
+  requests are free and not counted). Above 75 % of a soft budget — GitHub 1500/h, GitLab 1000/h, Bitbucket Cloud
+  500/h — details refresh half as often, above the budget four times less often.
+- When a provider rate-limits an account, MergeCue waits exactly until the reset time the provider sends
+  (`Retry-After`, GitHub `x-ratelimit-reset`, GitLab `RateLimit-Reset`); without one it backs off 5, then 15, then
+  60 minutes. The account shows **Rate limited — retrying at HH:MM** with the provider and account; other accounts
+  keep syncing.
+- Conditional requests (`If-None-Match`) are used for GitLab listings, GitHub REST reads and Bitbucket reads.
+  GitHub's PR listing and details use GraphQL, which has no ETags.
+
 ## Data locations and reset
 
 | What | Where |
@@ -171,9 +198,11 @@ Test coverage and the per-provider verification status: `docs/TESTING.md`.
 
 - **"MergeCue is already running"** — another copy (maybe a different build) holds the agent socket. Quit it from its
   menu bar icon (or `pkill -x MergeCue`) and open MergeCue again.
-- **An account shows Credentials expired / Unsupported permission / Rate limited until …** — each account syncs
-  independently; reconnect it in Settings ▸ Accounts with a token that has the scopes above, or wait for the rate
-  limit to reset. Offline accounts retry when the network comes back (and after wake).
+- **An account shows Credentials expired / Unsupported permission / Rate limited — retrying at …** — each account
+  syncs independently; reconnect it in Settings ▸ Accounts with a token that has the scopes above, or wait for the
+  time shown (see "Rate limits"). Offline accounts retry when the network comes back (and after wake).
+- **"N PRs couldn't be loaded"** — the PR/MR is listed but its details answer "not found" or "no access" (deleted,
+  moved, or the token lacks access to that repository). Click the line (or Retry on the row) after fixing access.
 - **The agent says MergeCue isn't running** — run `…/MergeCue.app/Contents/MacOS/mergecue-mcp --self-test`. If you use
   `MERGECUE_HOME`, the agent's helper needs it too. Re-run **Verify** in Settings ▸ Agents.
 - **Agent registered with a different command** — the agent points at another `mergecue-mcp` (e.g. an older build).

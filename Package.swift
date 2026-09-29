@@ -26,6 +26,7 @@ let package = Package(
         .executable(name: "mergecue-agent-sim", targets: ["mergecue-agent-sim"]),
         .executable(name: "mergecue-snapshots", targets: ["mergecue-snapshots"]),
         .executable(name: "mergecue-demo-host", targets: ["mergecue-demo-host"]),
+        .executable(name: "mergecue-diagnose", targets: ["mergecue-diagnose"]),
     ],
     dependencies: [
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", exact: "0.12.1"),
@@ -85,6 +86,10 @@ let package = Package(
         .executableTarget(
             name: "mergecue-agent-sim",
             dependencies: ["MergeCueCore", "MergeCueIPC", "MergeCueFixtures", mcp]
+        ),
+        .executableTarget(
+            name: "mergecue-diagnose",
+            dependencies: ["MergeCueRuntime", "MergeCueCore", "MergeCueNetworking", "MergeCueStore"]
         ),
         .executableTarget(
             name: "mergecue-demo-host",

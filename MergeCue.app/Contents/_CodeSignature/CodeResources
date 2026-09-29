@@ -10,11 +10,11 @@
 		</data>
 		<key>Resources/Assets.car</key>
 		<data>
-		yaA8C/hqeJRgee1N8mSQOW4DFwY=
+		EqloBFEj2D9uhEZB+Hi1ytMKWUA=
 		</data>
 		<key>Resources/MergeCue_MergeCueFixtures.bundle/Contents/Info.plist</key>
 		<data>
-		j07dnAW9NVBMdr8fbaHRC3BeY6E=
+		OUkwMZMJMhtoverGZYWlrfiAtCE=
 		</data>
 		<key>Resources/MergeCue_MergeCueFixtures.bundle/Contents/Resources/Resources/bitbucket/README.txt</key>
 		<data>
@@ -570,11 +570,11 @@
 		</data>
 		<key>Resources/MergeCue_MergeCueFixtures.bundle/Contents/_CodeSignature/CodeDirectory</key>
 		<data>
-		vlYNQEfUGjSbUPO4pKyhZqzGaXI=
+		LCBQnb5WbfT6H5flXyxXzM3SfvI=
 		</data>
 		<key>Resources/MergeCue_MergeCueFixtures.bundle/Contents/_CodeSignature/CodeRequirements</key>
 		<data>
-		Pi+5dCgCjzmknIQoyFvc+BI090I=
+		fUJ3bVAq8CkPnS1ojqnt5+Cgq5g=
 		</data>
 		<key>Resources/MergeCue_MergeCueFixtures.bundle/Contents/_CodeSignature/CodeResources</key>
 		<data>
@@ -582,11 +582,11 @@
 		</data>
 		<key>Resources/MergeCue_MergeCueFixtures.bundle/Contents/_CodeSignature/CodeSignature</key>
 		<data>
-		YBD/9/NMej646Mb5LIUEgfIbvpw=
+		JGutMqMmGjpKotLO5iWCvtXv0iA=
 		</data>
 		<key>Resources/MergeCue_MergeCueUI.bundle/Contents/Info.plist</key>
 		<data>
-		MTi6tpWV+k1mmvjEfPO0S3n9Mxg=
+		8F2vhzg1BTWQGKGC/a5qVzBlTAs=
 		</data>
 		<key>Resources/MergeCue_MergeCueUI.bundle/Contents/Resources/AppMark.png</key>
 		<data>
@@ -634,11 +634,11 @@
 		</data>
 		<key>Resources/MergeCue_MergeCueUI.bundle/Contents/_CodeSignature/CodeDirectory</key>
 		<data>
-		4v2yESVkoSpCAhVC2SIU5lYNQuc=
+		KrsF7vS9qsrYPq0dA+1qw2JPOCI=
 		</data>
 		<key>Resources/MergeCue_MergeCueUI.bundle/Contents/_CodeSignature/CodeRequirements</key>
 		<data>
-		im1b2vcHp4QwEb4NaZD2q6G9y8Y=
+		3q2v9ThvgUmAMElsQ55y+2m6/Lo=
 		</data>
 		<key>Resources/MergeCue_MergeCueUI.bundle/Contents/_CodeSignature/CodeResources</key>
 		<data>
@@ -646,7 +646,7 @@
 		</data>
 		<key>Resources/MergeCue_MergeCueUI.bundle/Contents/_CodeSignature/CodeSignature</key>
 		<data>
-		dMB5u6G0t9Z0tjmCLpuB6jiM5rs=
+		UbU97rZrBXQOA1cl7oZaEDptAlc=
 		</data>
 	</dict>
 	<key>files2</key>
@@ -655,7 +655,7 @@
 		<dict>
 			<key>cdhash</key>
 			<data>
-			L1NHH2adI2cSeW8Dp4PyqsKdKJo=
+			4RUvbHti/Qyp0ZL98NgGydEnkpk=
 			</data>
 			<key>requirement</key>
 			<string>anchor apple generic and identifier "com.thiagocenturion.MergeCue.mcp" and (certificate leaf[field.1.2.840.113635.100.6.1.9] /* exists */ or certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = TTSKDZ455K)</string>
@@ -671,14 +671,14 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			xX5WZGHWhg2WobCkig6cL0+TAV67cIKibB1bfF9ecIE=
+			+ZoMK09/VnLdkcRcfRjySQIdgZWKK8a24TfqHbNn9xA=
 			</data>
 		</dict>
 		<key>Resources/MergeCue_MergeCueFixtures.bundle/Contents/Info.plist</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			5AfS2MzFYQCRT37V/wG62rD4NMUm2tJDEqYm5x3+mYg=
+			oRPVOLXW9mqt+ZrV7JtQZKnst950rwRjIIOvDvjrAyY=
 			</data>
 		</dict>
 		<key>Resources/MergeCue_MergeCueFixtures.bundle/Contents/Resources/Resources/bitbucket/README.txt</key>
@@ -1651,14 +1651,14 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			b/E4KLb9d3QZeZc1Asyrf51LWgtluNuY0cVjrVO55hA=
+			4GuQCWiCv87puVGcPufjFSkcVICFc3/vGCQZcDnNebM=
 			</data>
 		</dict>
 		<key>Resources/MergeCue_MergeCueFixtures.bundle/Contents/_CodeSignature/CodeRequirements</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			rITUOYIQOZieXE3pM52ry0o+YQodMLLyhNfpYBHgccE=
+			axX8WinDPZisbdVELrvIlJ4gbXZnOiubPx+HrcFtg90=
 			</data>
 		</dict>
 		<key>Resources/MergeCue_MergeCueFixtures.bundle/Contents/_CodeSignature/CodeResources</key>
@@ -1672,14 +1672,14 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			+xqUBFIRMIfFAUrNgOMvfSgOCtmbKexMK2uHRhmn6Ss=
+			OEQeFDLazH3sjKEPoJB1kVYiuTjFMe7bVxcs5S4EiyA=
 			</data>
 		</dict>
 		<key>Resources/MergeCue_MergeCueUI.bundle/Contents/Info.plist</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			OEjlq+74qXj/hXhSQC4NDVAe9/7fG/qDquls813KBjE=
+			ZmEZiiwauIFzd51KEiwFCr3HVYRgv8ZPTFobTYM8R8E=
 			</data>
 		</dict>
 		<key>Resources/MergeCue_MergeCueUI.bundle/Contents/Resources/AppMark.png</key>
@@ -1763,14 +1763,14 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			Zu4Uu47RT9y0Q5EZgqlLrAZ6vMQqpaljP068IRvU5SY=
+			SNzMV2Y5nRraHhvuAwlpZvciSALLWpITV2tKntxs3dA=
 			</data>
 		</dict>
 		<key>Resources/MergeCue_MergeCueUI.bundle/Contents/_CodeSignature/CodeRequirements</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			rth7pkezn8yqcD4ihLCFCjp56zSfhJAQVbC3Zxppb5E=
+			VV0cPk0QKD99kz+Jy0wsBh3FU8tcxwi38aEnXyl5IwQ=
 			</data>
 		</dict>
 		<key>Resources/MergeCue_MergeCueUI.bundle/Contents/_CodeSignature/CodeResources</key>
@@ -1784,7 +1784,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			joCxxuLTTFPAmKMHsLRCc6Ms031+mzULPxLkogFjjV0=
+			0mespslSbdY6dVuWsJbM17dRwH9ECVBO+FhuwQIURjI=
 			</data>
 		</dict>
 	</dict>
