@@ -36,7 +36,7 @@ extension EngineBackend {
         // MARK: Tasks
         case .createTask(let attentionID, let type):
             let task = try await engine.createTask(fromAttention: attentionID, type: type)
-            return AppCommandResult(message: "Task \(task.id) created — task ready to start, awaiting agent connection",
+            return AppCommandResult(message: "Task \(task.id) created. Ready to start, awaiting an agent.",
                                     createdTaskID: task.id)
         case .cancelTask(let id):
             _ = try await engine.cancelTask(id)
@@ -70,7 +70,7 @@ extension EngineBackend {
             return AppCommandResult(message: "Task \(id) is in progress")
         case .rejectResult(let id, let note):
             _ = try await engine.rejectResult(id, note: note)
-            return AppCommandResult(message: "Result discarded — task \(id) is ready to start again")
+            return AppCommandResult(message: "Result discarded. Task \(id) is ready to start again.")
 
         // MARK: Review gate
         case .requestActionPreview(let id, let kind):
@@ -81,7 +81,7 @@ extension EngineBackend {
             return Self.result(of: outcome, action: preview.action, simulated: preview.isSimulated)
         case .declinePreview(let preview):
             try await engine.declinePreview(previewID: preview.id, approval: PreviewApproval(fingerprint: preview.fingerprint))
-            return AppCommandResult(message: "Declined — nothing was written")
+            return AppCommandResult(message: "Declined. Nothing was written.")
 
         // MARK: Sync and notifications
         case .refresh(let account):
@@ -122,12 +122,12 @@ extension EngineBackend {
         // MARK: Accounts
         case .connectAccount(let request):
             let account = try await connect(request)
-            let demoNote = mode == .demo ? " (demo — fixture account, nothing left this Mac)" : ""
+            let demoNote = mode == .demo ? " (demo fixture account, nothing left this Mac)" : ""
             return AppCommandResult(message: "Connected \(account.kind.displayName) · \(account.displayLabel). Remote writes stay off until you turn them on.\(demoNote)",
                                     tone: .success)
         case .disconnectAccount(let key):
             try await engine.disconnectAccount(key)
-            return AppCommandResult(message: "Disconnected \(key.kind.displayName). The token was removed from your Keychain — revoke it on \(key.kind.displayName) too if you no longer need it.")
+            return AppCommandResult(message: "Disconnected \(key.kind.displayName). The token was removed from your Keychain. Revoke it on \(key.kind.displayName) too if you no longer need it.")
         case .setWritesEnabled(let key, let enabled):
             try await engine.setWritesEnabled(key, enabled)
             return AppCommandResult(message: enabled
@@ -154,7 +154,7 @@ extension EngineBackend {
         // MARK: Mappings
         case .addMapping(let repo, let path, let checkoutPath):
             let mapping = try await engine.addMapping(repo: repo, repoFullPath: path, checkoutPath: checkoutPath)
-            let confirmation = mapping.isConfirmed ? "confirmed (exact remote match)" : "\(mapping.confidence.rawValue) match — confirm it to use it"
+            let confirmation = mapping.isConfirmed ? "confirmed (exact remote match)" : "\(mapping.confidence.rawValue) match, confirm it to use it"
             return AppCommandResult(message: "Mapped \(path) to \(UIFormat.abbreviatedPath(checkoutPath)): \(confirmation)")
         case .mapCheckoutFolder(let repo, let path, let checkoutPath, let mapAnyway):
             return try await mapCheckoutFolder(repo: repo, repoFullPath: path, checkoutPath: checkoutPath, mapAnyway: mapAnyway)
@@ -186,7 +186,7 @@ extension EngineBackend {
             let handoff = try await engine.handoff(for: id)
             try await engine.recordHandoffCopied(id, agentName: agent?.displayName)
             let target = agent?.displayName ?? "your agent"
-            return AppCommandResult(message: "Command copied — paste it into \(target). The task stays “\(handoff.statusText)” until the agent claims it.",
+            return AppCommandResult(message: "Command copied. Paste it into \(target). The task stays “\(handoff.statusText)” until the agent claims it.",
                                     handoffCommand: handoff.command)
         case .openInAgent(let id, let kind):
             let agent = try detected(kind)
@@ -201,7 +201,7 @@ extension EngineBackend {
             return AppCommandResult(diff: try await engine.loadDiff(key))
         case .openURL(let url):
             if mode == .demo, Self.isFixtureLink(url) {
-                return AppCommandResult(message: "Demo data — \(url.host() ?? "this link") has no such repository, so the link wasn't opened.")
+                return AppCommandResult(message: "Demo data: \(url.host() ?? "this link") has no such repository, so the link wasn't opened.")
             }
             return AppCommandResult(urlToOpen: url)
 
@@ -274,7 +274,7 @@ extension EngineBackend {
             if request.method == .bitbucketAPIToken {
                 let email = (request.email ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 guard email.contains("@") else {
-                    throw AppBackendError.invalidInput("Atlassian API tokens are used with your Atlassian account email — enter it too.")
+                    throw AppBackendError.invalidInput("Atlassian API tokens are used with your Atlassian account email. Enter it too.")
                 }
                 credential = .basic(username: email, password: token.exposeForCredentialStore())
             } else {
@@ -289,7 +289,7 @@ extension EngineBackend {
     // MARK: Review gate
 
     nonisolated static func result(of outcome: ActionOutcome, action: RemoteActionKind, simulated: Bool) -> AppCommandResult {
-        let demo = simulated ? " (demo fixture — nothing reached a real provider)" : ""
+        let demo = simulated ? " (demo fixture, nothing reached a real provider)" : ""
         switch outcome {
         case .performed(let state, let message):
             let next = state == .done ? "" : " Review the next action when you're ready."
@@ -321,8 +321,8 @@ extension EngineBackend {
         let name = plan.agent.displayName
         guard outcome.changed else {
             return AppCommandResult(message: plan.action == .register
-                ? "\(name) already had MergeCue registered — nothing was changed. Verify the connection next."
-                : "\(name) had no MergeCue registration — nothing was changed.")
+                ? "\(name) already had MergeCue registered. Nothing was changed. Verify the connection next."
+                : "\(name) had no MergeCue registration. Nothing was changed.")
         }
         let backup = outcome.backup.map { " Backup: \(UIFormat.abbreviatedPath(MergeCuePaths.fileSystemPath($0.directory)))." } ?? ""
         return AppCommandResult(message: plan.action == .register

@@ -456,8 +456,9 @@ public final class AppModel {
         }
         if case .approvePreview = command { pendingPreview = nil }
         if case .declinePreview = command { pendingPreview = nil }
-        if let message = result.message {
-            showBanner(result.tone ?? (result.handoffCommand != nil || result.createdTaskID != nil ? .success : .neutral), message)
+        let tone = result.tone ?? (result.handoffCommand != nil || result.createdTaskID != nil ? .success : .neutral)
+        if let message = result.message, result.showsBanner(after: command, tone: tone) {
+            showBanner(tone, message)
         }
     }
 

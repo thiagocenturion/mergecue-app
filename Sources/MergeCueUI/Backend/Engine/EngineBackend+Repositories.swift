@@ -127,7 +127,7 @@ extension EngineBackend {
         let moved = mapping.checkoutPath != preview.chosenPath ? " (the checkout containing the folder you chose)" : ""
         let message: String = switch mapping.confidence {
         case .exact: "Mapped \(repoFullPath) to \(place)\(moved): exact remote match, confirmed."
-        case .probable: "Mapped \(repoFullPath) to \(place)\(moved) — probable match. Click Confirm to use it."
+        case .probable: "Mapped \(repoFullPath) to \(place)\(moved): probable match. Click Confirm to use it."
         case .mismatch: "Mapped \(repoFullPath) to \(place)\(moved) anyway (remotes don't match), confirmed by you."
         }
         return AppCommandResult(message: message, savedMapping: mapping, tone: mapping.confidence == .probable ? .attention : .success)
