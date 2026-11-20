@@ -38,6 +38,15 @@ extension PreviewBackend {
                 if task.checkout?.policy == .blocked { task.checkout?.policy = .readOnly }
             }
             return AppCommandResult(message: "Task \(id) unblocked")
+        case .attachToTask(let id, let attentionIDs):
+            return try attach(attentionIDs, to: id)
+        case .detachFromTask(let id, let attentionID):
+            return try detach(attentionID, from: id)
+        case .mergeTask(let source, let target):
+            return try merge(source, into: target)
+        case .startTaskManually(let id):
+            try transition(id, .startManually, .startedManually, "Marked in progress by you") { $0.lastError = nil }
+            return AppCommandResult(message: "Task \(id) is in progress")
         case .markTaskDone(let id):
             try transition(id, .markDone, .completed, "Marked done by you (no remote action)")
             resolveAttention(forTask: id)
@@ -166,6 +175,9 @@ extension PreviewBackend {
         case .loadCheckLog(let check):
             let excerpt = logs[check.id] ?? LogExcerpt(text: "No log excerpt for this check in the preview data.", truncated: false)
             return AppCommandResult(logExcerpt: excerpt)
+        case .loadDiff:
+            // Preview threads carry their own hunks; there is no provider diff to read.
+            return AppCommandResult(diff: DiffPayload(unifiedDiff: "", files: [], truncated: false))
         case .openURL(let url):
             if Self.isSynthetic(url) {
                 return AppCommandResult(message: "Preview data — \(url.host() ?? "this link") has no such repository, so the link wasn't opened.")
@@ -213,6 +225,8 @@ extension PreviewBackend {
             return AppCommandResult(message: "Preview data: the login item was not changed.")
         case .requestNotificationPermission:
             return AppCommandResult(message: "Preview data: macOS was not asked for notification permission.")
+        case .sendTestNotification:
+            return AppCommandResult(message: "Preview data: no notification was sent.")
         case .exportDatabase, .resetAllData:
             throw AppBackendError.unsupported("Preview data: nothing is stored, so there is nothing to export or reset.")
         }

@@ -206,6 +206,12 @@ struct SyncCycle {
                 now: now
             )
         }
+        let fresh = inserted.filter { !$0.isBaseline && !$0.isFromCurrentUser }
+        if !fresh.isEmpty, notifications.isEmpty {
+            let why = isBaseline ? "first sync of the account" : !policy.allowsDelivery(at: now)
+                ? "notifications paused or quiet hours" : "no actionable item or the category is switched off"
+            MCLog.sync.notice("\(fresh.count) new event(s) without a notification: \(why).")
+        }
         for notification in notifications {
             await environment.notifier.deliver(notification)
         }

@@ -6,16 +6,18 @@ struct InboxDetail: View {
     let model: AppModel
 
     var body: some View {
-        Group {
+        ZStack {
             if let item = model.attentionItem(model.selectedAttentionID) {
                 ChangeRequestPanel(model: model, changeRequest: item.changeRequest, focus: item)
                     .id(item.id)
+                    .transition(.asymmetric(insertion: .opacity.combined(with: .offset(x: 18)), removal: .opacity))
             } else {
                 NothingSelected(title: "Select an item", symbol: "tray",
                                 message: "Pick an item to see its conversation, code context, checks and actions.")
                     .cardBackground(Theme.panel, radius: 16)
             }
         }
+        .animation(Motion.smooth, value: model.selectedAttentionID)
         .padding(.top, MainWindowMetrics.contentTopInset - 6)
         .padding(.bottom, 14)
         .padding(.trailing, 14)
@@ -60,7 +62,7 @@ struct LinkedTaskCard: View {
                 .buttonStyle(SecondaryButtonStyle(size: .small))
         }
         .padding(12)
-        .cardBackground(color.opacity(0.07), border: color.opacity(0.3))
+        .glassCard(tint: color)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Task \(record.id.rawValue), \(TaskStateStyle.label(record)): \(headline)")
     }

@@ -15,7 +15,7 @@ struct PopoverRowView: View {
 
     var body: some View {
         let content = PopoverRowContent.make(item, model: model)
-        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        let shape = SmoothRect()
         HStack(spacing: 12) {
             ProviderBadge(kind: item.providerKind, size: 42, style: .tile)
                 .overlay(alignment: .topLeading) {
@@ -52,8 +52,9 @@ struct PopoverRowView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .background(shape.fill(isSelected ? Theme.surfaceSelected : (isHovering ? Theme.surfaceHover : Theme.surface)))
-        .overlay(shape.strokeBorder(isSelected ? Theme.focusRing : Theme.border, lineWidth: isSelected ? 2 : 1))
+        .selectableGlass(isSelected: isSelected, isHovering: isHovering)
+        // Keyboard selection in the popover stays visible as a focus ring (Full Keyboard Access users rely on it).
+        .overlay(shape.strokeBorder(isSelected ? Theme.focusRing : .clear, lineWidth: 2))
         .contentShape(shape)
         .onHover { isHovering = $0 }
         .onTapGesture {

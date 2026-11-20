@@ -340,6 +340,9 @@ Required table (anything not listed is illegal):
 | failed, blocked, stale | retry (user) | waiting_for_agent (lease cleared) |
 | cancelled, dismissed, done | reopen (user) | waiting_for_agent (**user only**; agents can never resurrect terminal states) |
 | waiting_for_agent, working | block (system/user) | blocked; blocked → unblock (user) → waiting_for_agent |
+| waiting_for_agent, stale, failed, blocked | startManually (user) | working (no lease: "In progress" set by hand, never stale; D40) |
+| waiting_for_agent, working, blocked, failed, stale | markDone (user) | done (set by hand; covered items are acknowledged; D40) |
+| working | retry (user) | waiting_for_agent (lease cleared; "Hand to an agent") |
 
 After a successful approved action the engine **must** pass
 `TaskStateMachine.triggerAfterSuccessfulAction(moreActionsRemain:)` (by `.system`): `.markDone` → `done` for the
@@ -376,7 +379,10 @@ public struct MCTask: Codable, Sendable, Hashable, Identifiable {
     var origin: TaskOrigin; var trigger: TaskTriggerSnapshot; var checkout: TaskCheckout?; var lease: AgentLease?
     var agentLabel: String?; var agentSessionID: String?; var artifactIDs: [String]; var approvals: [ApprovalRecord]
     var lastError: TaskErrorInfo?; var resultSummary: String?; var proposedReply: String?; var knownRisks: [String]
+    var attachments: [TaskAttachment]  // D38: more items of the same change request; origin stays the main item; decodes as [] when missing
 }
+public struct TaskAttachment: Codable, Sendable, Hashable, Identifiable { var attentionItemID: String; var reason: AttentionReason?; var thread: ThreadKey?; var check: CheckKey?; var attachedAt: Date; var headSHA: String?; var quoted: [UntrustedText]; var anchor: DiffAnchor?; var mergedFromTaskID: TaskID? }
+public enum TaskMerging { static let maxAttachments = 20; static func acceptsAttachments(_: TaskState) -> Bool /* active, not approved_action */; static func canMergeAway(_: TaskState) -> Bool /* waiting_for_agent, blocked, failed, stale */ }
 public enum ActivityKind: String, Codable, Sendable { case created, claimed, progress, heartbeat, changesReported = "changes_reported", testsReported = "tests_reported", resultSubmitted = "result_submitted", failed, blocked, stale, approved, rejected, actionAttempted = "action_attempted", actionSucceeded = "action_succeeded", actionBlocked = "action_blocked", actionFailed = "action_failed", completed, cancelled, dismissed, retried, reopened, unblocked, note, rejectedCall = "rejected_call" }
 // Transition → activity: claim→claimed, submitResult→result_submitted, fail→failed, agentBlocked/block→blocked, leaseExpired→stale,
 // approveAction→approved, rejectResult→rejected, actionSucceeded→action_succeeded, actionBlocked→action_blocked,

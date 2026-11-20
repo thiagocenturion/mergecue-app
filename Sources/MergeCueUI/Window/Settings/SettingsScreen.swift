@@ -33,8 +33,7 @@ struct SettingsList: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
                     .frame(minHeight: 36)
-                    .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(isSelected ? Theme.surfaceSelected : .clear))
-                    .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(isSelected ? Theme.accent.opacity(0.35) : .clear, lineWidth: 1))
+                    .selectableGlass(isSelected: isSelected, idle: false)
                 }
                 .buttonStyle(PlainRowButtonStyle())
                 .accessibilityAddTraits(isSelected ? [.isSelected] : [])
@@ -43,7 +42,6 @@ struct SettingsList: View {
         }
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Theme.contentBackground)
     }
 
     private var selection: Binding<SettingsTab?> {
@@ -91,7 +89,6 @@ struct SettingsDetail: View {
             .frame(maxWidth: 820, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Theme.windowBackground)
     }
 }
 
@@ -198,7 +195,7 @@ struct AccountCard: View {
                                 .scaledFont(.caption.monospaced())
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1)
-                                .background(RoundedRectangle(cornerRadius: 4).fill(Theme.textSecondary.opacity(0.12)))
+                                .background(SmoothRect().fill(Theme.textSecondary.opacity(0.12)))
                         }
                     }
                 }

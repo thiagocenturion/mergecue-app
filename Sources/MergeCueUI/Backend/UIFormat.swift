@@ -72,7 +72,7 @@ public nonisolated enum UIFormat {
         date.formatted(date: .abbreviated, time: .shortened)
     }
 
-    /// "synced 2 min ago", "Rate limited — retrying at 14:05", "Credentials expired", "Offline".
+    /// "synced 2 min ago", "Rate limited. Retrying at 14:05", "Credentials expired", "Offline".
     public static func syncText(_ status: AccountSyncStatus, now: Date) -> String {
         switch status.state {
         case .ok, .idle:
@@ -86,7 +86,7 @@ public nonisolated enum UIFormat {
         case .authExpired: return "Credentials expired"
         case .rateLimited(let until):
             guard let until else { return "Rate limited" }
-            return "Rate limited — retrying at \(time(until))"
+            return "Rate limited. Retrying at \(time(until))"
         case .permissionDenied: return "Unsupported permission"
         case .error: return "Sync error"
         case .paused: return "Paused"

@@ -174,7 +174,7 @@ struct ConnectAccountForm: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.surfaceSunken))
+        .cardBackground(Theme.surfaceSunken)
     }
 
     /// The method of the token field (GitHub's CLI import is a separate button).

@@ -31,8 +31,16 @@ struct ChangeRequestPanel: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 16)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .task(id: "\(changeRequest.id)|\(snapshot?.summary.headSHA ?? "")") {
+                    // Code context for line comments whose provider sends no hunk (read once per head).
+                    if let snapshot { await model.loadDiffIfNeeded(snapshot) }
+                }
             }
             if let focus {
+                RelatedTaskBanner(model: model, item: focus)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
+                    .padding(.bottom, 10)
                 FocusActionBar(model: model, item: focus)
                     .padding(.horizontal, 16)
                     .padding(.bottom, 16)
@@ -153,16 +161,19 @@ struct ChangeRequestPanel: View {
 
     @ViewBuilder
     private func conversation(_ snapshot: ChangeRequestSnapshot) -> some View {
-        let tasks: [TaskRecord] = if let focus { model.activeTask(for: focus).map { [$0] } ?? [] }
+        let tasks: [TaskRecord] = if let focus { model.activeConversationTask(for: focus).map { [$0] } ?? [] }
             else { model.tasks(for: snapshot.key).filter { !$0.task.isTerminal } }
         ForEach(tasks) { LinkedTaskCard(model: model, record: $0) }
         let reviewerIDs = Set(snapshot.reviewers.map(\.person.remoteID) + snapshot.reviews.map(\.author.remoteID))
         let checkout = model.mapping(for: snapshot.key.repo)?.checkoutPath
-        if let focus, let threadKey = focus.thread, let thread = snapshot.thread(threadKey) {
+        if let focus, let thread = model.conversationThread(for: focus) {
+            // The whole conversation (replies, threads on the same line, top-level comments) in time order.
+            let unread = model.conversationItems(for: focus).filter(\.isUnread).map(\.createdAt).min()
             ThreadView(thread: thread, providerKind: snapshot.summary.providerKind,
-                       unreadSince: focus.isUnread ? focus.createdAt : nil, currentUserID: snapshot.key.account.remoteUserID,
+                       unreadSince: unread, currentUserID: snapshot.key.account.remoteUserID,
                        now: model.now, reviewers: reviewerIDs, authorID: snapshot.summary.author.remoteID, checkoutPath: checkout,
-                       onOpen: open, showsHeader: false)
+                       onOpen: open, showsHeader: false, codeLines: model.codeLines(for: thread, snapshot: snapshot),
+                       isLoadingCode: isLoadingCode(snapshot))
         } else if let focus, let checkKey = focus.check, let check = snapshot.check(checkKey) {
             CheckDetail(model: model, check: check)
                 .padding(14)
@@ -170,20 +181,28 @@ struct ChangeRequestPanel: View {
         } else {
             if let description = snapshot.description, !description.isEmpty {
                 Card("Description", systemImage: "text.alignleft") {
-                    CommentBody(text: description)
+                    CommentBody(text: description, onOpen: open)
                 }
             }
             ReviewersCard(snapshot: snapshot)
-            let threads = snapshot.threads.sorted { lhs, rhs in
-                if lhs.isUnresolved != rhs.isUnresolved { return lhs.isUnresolved }
-                return lhs.lastActivityAt > rhs.lastActivityAt
+            // One card per conversation, like the Inbox.
+            let threads = ConversationGrouping.conversations(snapshot).compactMap { group -> (ReviewThread, [ThreadKey])? in
+                ConversationGrouping.merged(group).map { ($0, group.map(\.key)) }
             }
-            ForEach(threads) { thread in
-                let item = model.state.attention.first { $0.thread == thread.key }
+            .sorted { lhs, rhs in
+                if lhs.0.isUnresolved != rhs.0.isUnresolved { return lhs.0.isUnresolved }
+                return lhs.0.lastActivityAt > rhs.0.lastActivityAt
+            }
+            ForEach(threads, id: \.0.id) { entry in
+                let (thread, keys) = entry
+                let unread = model.state.attention
+                    .filter { item in item.isUnread && item.thread.map(keys.contains) == true }
+                    .map(\.createdAt).min()
                 ThreadView(thread: thread, providerKind: snapshot.summary.providerKind,
-                           unreadSince: item?.isUnread == true ? item?.createdAt : nil, currentUserID: snapshot.key.account.remoteUserID,
+                           unreadSince: unread, currentUserID: snapshot.key.account.remoteUserID,
                            now: model.now, reviewers: reviewerIDs, authorID: snapshot.summary.author.remoteID, checkoutPath: checkout,
-                           onOpen: open)
+                           onOpen: open, codeLines: model.codeLines(for: thread, snapshot: snapshot),
+                           isLoadingCode: isLoadingCode(snapshot))
                     .padding(.top, 6)
             }
             if threads.isEmpty {
@@ -197,44 +216,110 @@ struct ChangeRequestPanel: View {
     private func open(_ url: URL) {
         Task { await model.send(.openURL(url)) }
     }
+
+    /// The diff that gives line comments their code is still to come.
+    private func isLoadingCode(_ snapshot: ChangeRequestSnapshot) -> Bool {
+        model.isLoadingDiff(snapshot) || (model.needsDiff(snapshot) && model.diffFiles(for: snapshot) == nil)
+    }
 }
 
-/// Mark read, acknowledge, snooze, dismiss, show PR details, open in provider.
+/// The ••• button of an inbox item (list card and detail header). Same actions as its right-click menu.
 struct ItemActionsMenu: View {
     let model: AppModel
     let item: AttentionItem
+    var size: CGFloat = 28
 
     var body: some View {
         Menu {
-            Button(item.isUnread ? "Mark as Read" : "Mark as Unread") {
-                Task { await model.send(.markRead(attentionID: item.id, read: item.isUnread)) }
-            }
-            if item.isActionable(now: model.now) {
-                Button("Acknowledge") { Task { await model.send(.acknowledge(attentionID: item.id)) } }
-                Menu("Snooze") {
-                    Button("For 1 Hour") { snooze(model.now.addingTimeInterval(3_600)) }
-                    Button("Until Tomorrow Morning") { snooze(PauseOptions.tomorrowMorning(after: model.now)) }
-                    Button("For a Week") { snooze(model.now.addingTimeInterval(7 * 86_400)) }
-                }
-            }
-            Divider()
-            Button("Show \(item.providerKind.changeRequestAbbreviation) Details") { model.showChangeRequest(item.changeRequest) }
-            Button("Dismiss") { Task { await model.send(.dismissAttention(attentionID: item.id)) } }
+            ItemActionsMenuContent(model: model, item: item)
         } label: {
             Image(systemName: "ellipsis")
                 .scaledFont(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.textSecondary)
-                .frame(width: 28, height: 28)
+                .frame(width: size, height: size)
+                .glassShape(Circle())
+                .contentShape(Circle())
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
         .help("More actions")
         .accessibilityLabel("More actions")
     }
+}
+
+/// Actions on an inbox item's conversation: start or view its task, mark read, acknowledge, snooze, show the PR/MR,
+/// open or copy the provider link, copy the latest comment, dismiss. Used by the ••• menu and the context menu, and
+/// applied to every item of the conversation (`AppModel+Conversations`).
+struct ItemActionsMenuContent: View {
+    let model: AppModel
+    let item: AttentionItem
+    /// Shown in the list's context menu, where the card is not open yet.
+    var includesOpen = false
+
+    var body: some View {
+        let isUnread = model.conversationIsUnread(item)
+        let isActionable = model.conversationItems(for: item).contains { $0.isActionable(now: model.now) }
+        if includesOpen {
+            Button("Open") { model.openInboxItem(item.id) }
+        }
+        let attachable = model.attachableTasks(for: item)
+        if let task = model.activeConversationTask(for: item) {
+            Button("View Task") { model.showTask(task.id) }
+            if model.attachingTask(for: item) != nil {
+                if !attachable.isEmpty {
+                    Menu("Move to Task") { taskButtons(attachable) }
+                }
+                Button("Remove from Task") { Task { await model.removeConversationFromTask(item) } }
+            }
+        } else {
+            if case .createTask(let id, let type) = PopoverDerivation.primaryAction(for: item) {
+                Button(type.menuTitle) { Task { await model.createTaskAndShow(attentionID: id, type: type) } }
+                Menu("Start Task") {
+                    ForEach(TaskType.allCases, id: \.self) { other in
+                        Button(other.menuTitle) { Task { await model.createTaskAndShow(attentionID: id, type: other) } }
+                    }
+                }
+            }
+            if !attachable.isEmpty {
+                Menu("Add to Task") { taskButtons(attachable) }
+            }
+        }
+        Divider()
+        Button(isUnread ? "Mark as Read" : "Mark as Unread") {
+            Task { await model.markConversation(item, read: isUnread) }
+        }
+        if isActionable {
+            Button("Acknowledge") { Task { await model.acknowledgeConversation(item) } }
+            Menu("Snooze") {
+                Button("For 1 Hour") { snooze(model.now.addingTimeInterval(3_600)) }
+                Button("Until Tomorrow Morning") { snooze(PauseOptions.tomorrowMorning(after: model.now)) }
+                Button("For a Week") { snooze(model.now.addingTimeInterval(7 * 86_400)) }
+            }
+        }
+        Divider()
+        Button("Show \(item.providerKind.changeRequestAbbreviation) Details") { model.showChangeRequest(item.changeRequest) }
+        if let url = model.providerURL(for: item) {
+            Button("Open in \(item.providerKind.displayName)") { Task { await model.send(.openURL(url)) } }
+            Button("Copy Link") { model.copyToPasteboard(url.absoluteString, confirmation: "Link copied") }
+        }
+        if let comment = model.conversationThread(for: item)?.latestComment {
+            Button("Copy Latest Comment") { model.copyToPasteboard(comment.body, confirmation: "Comment copied") }
+        }
+        Divider()
+        Button("Dismiss") { Task { await model.dismissConversation(item) } }
+    }
 
     private func snooze(_ until: Date) {
-        Task { await model.send(.snooze(attentionID: item.id, until: until)) }
+        Task { await model.snoozeConversation(item, until: until) }
+    }
+
+    /// One button per task on this change request ("Investigate CI failure · Working").
+    private func taskButtons(_ tasks: [TaskRecord]) -> some View {
+        ForEach(tasks) { task in
+            Button(model.taskMenuTitle(task)) { Task { await model.addConversation(item, to: task.id) } }
+        }
     }
 }
 
@@ -283,6 +368,7 @@ struct AITaskSplitButton: View {
             } label: {
                 HStack(spacing: 10) {
                     SparkleIcon(size: 16)
+                        .symbolEffect(.bounce, options: .repeat(.periodic(delay: 4)))
                     Text(defaultType.actionTitle)
                 }
                 .scaledFont(.system(size: 16, weight: .semibold))
@@ -292,10 +378,11 @@ struct AITaskSplitButton: View {
                 .frame(minHeight: 50)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(PlainRowButtonStyle(cornerRadius: 12))
+            .buttonStyle(PressScaleButtonStyle())
             .keyboardShortcut(.return, modifiers: .command)
-            .help("\(defaultType.actionTitle) — creates a task for your agent (⌘↩)")
+            .help("\(defaultType.actionTitle): creates a task for your agent (⌘↩)")
             .accessibilityHint("Creates a task for your agent. Command-Return")
+            Rectangle().fill(.white.opacity(0.3)).frame(width: 1, height: 26).accessibilityHidden(true)
             Menu {
                 Section("Task") {
                     ForEach(TaskType.allCases, id: \.self) { type in
@@ -310,26 +397,24 @@ struct AITaskSplitButton: View {
                     }
                 }
             } label: {
+                // A plain menu draws the label exactly as laid out, so the chevron sits in the middle of its segment.
                 Image(systemName: "chevron.down")
                     .scaledFont(.system(size: 14, weight: .bold))
                     .foregroundStyle(.white)
-                    .frame(width: 50)
-                    .frame(minHeight: 50)
+                    .frame(width: 54, height: 50)
                     .contentShape(Rectangle())
             }
-            .menuStyle(.borderlessButton)
+            .menuStyle(.button)
+            .buttonStyle(.plain)
             .menuIndicator(.hidden)
-            .frame(width: 50)
-            .frame(maxHeight: .infinity)
-            .overlay(alignment: .leading) {
-                Rectangle().fill(.white.opacity(0.28)).frame(width: 1).accessibilityHidden(true)
-            }
+            .fixedSize()
             .accessibilityLabel("More AI actions")
         }
         .fixedSize(horizontal: false, vertical: true)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.actionGradient))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.white.opacity(0.2), lineWidth: 1))
-        .shadow(color: Color(hex: 0x3B82F6).opacity(0.3), radius: 12, y: 3)
+        .background(Capsule().fill(Theme.actionGradient))
+        .sheen(shape: Capsule())
+        .glassShape(Capsule(), tint: Theme.blue, fallback: .clear)
+        .contentShape(Capsule())
     }
 
     private func start(_ type: TaskType) {

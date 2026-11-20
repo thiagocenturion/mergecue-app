@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import MergeCueCore
 import Observation
+import SwiftUI
 
 /// Main window screens (⌘1–⌘5).
 public nonisolated enum MainScreen: String, Sendable, Hashable, CaseIterable, Identifiable {
@@ -133,6 +134,10 @@ public struct AppEnvironment {
     public var notificationPermission: (() async -> NotificationPermission)?
     /// Opens System Settings › Notifications › MergeCue.
     public var openNotificationSettings: (() -> Void)?
+    /// Animates state changes (off in tests and snapshots, which render a single frame).
+    public var animatesChanges = false
+    /// Applies Settings › General › Appearance to the whole app (`NSApp.appearance`). Inert in tests and snapshots.
+    public var applyAppearance: (AppearancePreference) -> Void = { _ in }
 
     public init(now: @escaping () -> Date, copyToPasteboard: @escaping (String) -> Void, openURL: @escaping (URL) -> Void,
                 autoDismissBanners: Bool, tickInterval: Duration?, userFullName: String? = nil) {
@@ -157,6 +162,7 @@ public struct AppEnvironment {
             tickInterval: .seconds(30),
             userFullName: NSFullUserName()
         )
+        .animating()
     }
 
     /// Frozen clock, no side effects (tests, snapshots).
@@ -167,12 +173,20 @@ public struct AppEnvironment {
 }
 
 extension AppEnvironment {
+    /// The same environment with animated state changes.
+    func animating() -> AppEnvironment {
+        var copy = self
+        copy.animatesChanges = true
+        return copy
+    }
+
     /// `.system` plus the services only the installed app uses: persisted preferences, VoiceOver announcements and
     /// the real notification permission.
     public static func withSystemServices() -> AppEnvironment {
         var environment = AppEnvironment.system
         environment.preferences = .userDefaults
         environment.announce = { message, tone in AccessibilityAnnouncer.announce(message, tone: tone) }
+        environment.applyAppearance = { preference in NSApp?.appearance = preference.nsAppearance }
         environment.notificationPermission = { await NotificationPermission.current() }
         environment.openNotificationSettings = { NotificationPermission.openSystemSettings() }
         return environment
@@ -193,6 +207,9 @@ public final class AppModel {
     public private(set) var isRefreshing = false
     public private(set) var logExcerpts: [String: LogExcerpt] = [:]
     public private(set) var loadingLogIDs: Set<String> = []
+    /// Parsed change request diffs by `ChangeRequestKey.id` (code context for comments without a provider hunk).
+    var changeRequestDiffs: [String: LoadedDiff] = [:]
+    var loadingDiffIDs: Set<String> = []
     private(set) var indexes: Indexes
 
     // MARK: Navigation and selection
@@ -239,6 +256,24 @@ public final class AppModel {
     public var textSize: TextSizePreference = .standard {
         didSet { environment.preferences.save(UIPreferenceKeys.textSize, textSize.rawValue) }
     }
+    /// Settings › General › Appearance: follow macOS, or always light / dark (persisted).
+    public var appearance: AppearancePreference = .system {
+        didSet {
+            environment.preferences.save(UIPreferenceKeys.appearance, appearance.rawValue)
+            environment.applyAppearance(appearance)
+        }
+    }
+    /// Settings › General › Dark mode style (persisted). Root views re-render with `.id(darkStyle)` when it changes.
+    public var darkStyle: DarkStyle = .graphite {
+        didSet {
+            DarkStyle.current = darkStyle
+            environment.preferences.save(UIPreferenceKeys.darkStyle, darkStyle.rawValue)
+        }
+    }
+    /// Task screen: "Open in your coding agent" shown as a compact card (persisted).
+    public var handoffCollapsed = false {
+        didSet { environment.preferences.save(UIPreferenceKeys.handoffCollapsed, handoffCollapsed ? "1" : nil) }
+    }
     /// Settings › General › Global shortcut that opens the popover from anywhere (persisted).
     public var globalHotKey: HotKeyPreset = .defaultPreset {
         didSet { environment.preferences.save(UIPreferenceKeys.globalHotKey, globalHotKey.rawValue) }
@@ -277,6 +312,11 @@ public final class AppModel {
         self.isLoaded = initialState != nil
         self.textSize = environment.preferences.load(UIPreferenceKeys.textSize).flatMap(TextSizePreference.init(rawValue:)) ?? .standard
         self.globalHotKey = environment.preferences.load(UIPreferenceKeys.globalHotKey).flatMap(HotKeyPreset.init(rawValue:)) ?? .defaultPreset
+        self.appearance = environment.preferences.load(UIPreferenceKeys.appearance).flatMap(AppearancePreference.init(rawValue:)) ?? .system
+        self.darkStyle = environment.preferences.load(UIPreferenceKeys.darkStyle).flatMap(DarkStyle.init(rawValue:)) ?? .graphite
+        DarkStyle.current = darkStyle
+        environment.applyAppearance(appearance)
+        self.handoffCollapsed = environment.preferences.load(UIPreferenceKeys.handoffCollapsed) == "1"
     }
 
     // MARK: Lifecycle
@@ -301,6 +341,17 @@ public final class AppModel {
             }
         }
         await reload()
+        await askForNotificationsIfNeeded()
+    }
+
+    /// Live app with a connected account and macOS has never asked: ask now, so notifications can't stay
+    /// silently off when the setup assistant was skipped.
+    func askForNotificationsIfNeeded() async {
+        guard mode == .live, !state.accounts.isEmpty, environment.notificationPermission != nil else { return }
+        await refreshNotificationPermission()
+        guard notificationPermission == .notDetermined else { return }
+        _ = await send(.requestNotificationPermission)
+        await refreshNotificationPermission()
     }
 
     /// Stops observing the backend.
@@ -313,7 +364,12 @@ public final class AppModel {
 
     public func reload() async {
         let fresh = await backend.loadState()
-        apply(fresh)
+        // Cards slide in and out and counters roll when sync or a command changes the state (D41).
+        if environment.animatesChanges, isLoaded, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            withAnimation(Motion.smooth) { apply(fresh) }
+        } else {
+            apply(fresh)
+        }
     }
 
     /// Replaces the state and recomputes everything derived from it.
@@ -473,7 +529,7 @@ public final class AppModel {
     /// Non-terminal task linked to an attention item, if any.
     public func activeTask(for item: AttentionItem) -> TaskRecord? {
         if let linked = task(item.linkedTaskID), !linked.task.isTerminal { return linked }
-        return state.tasks.first { $0.task.origin.attentionItemID == item.id && !$0.task.isTerminal }
+        return state.tasks.first { !$0.task.isTerminal && $0.task.coveredAttentionIDs.contains(item.id) }
     }
 
     /// Tasks created from a change request (newest first).

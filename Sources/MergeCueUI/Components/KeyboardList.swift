@@ -38,7 +38,7 @@ struct KeyboardListModifier: ViewModifier {
             }
             .overlay {
                 if isFocused.wrappedValue && !hasSelection {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    SmoothRect()
                         .strokeBorder(Theme.focusRing, lineWidth: 2)
                         .padding(2)
                         .allowsHitTesting(false)
@@ -58,7 +58,7 @@ extension View {
     func keyboardSelectionRing(_ active: Bool, cornerRadius: CGFloat) -> some View {
         overlay {
             if active {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                SmoothRect(radius: cornerRadius)
                     .strokeBorder(Theme.focusRing, lineWidth: 2)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)

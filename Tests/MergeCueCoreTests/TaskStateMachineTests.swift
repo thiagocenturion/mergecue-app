@@ -17,7 +17,7 @@ private enum ExpectedTable {
         .approveAction(.applyPatch), .approveAction(.postReply), .approveAction(.resolveThread),
         .approveAction(.requestChanges), .approveAction(.commitAndPush), .approveAction(.merge),
         .rejectResult, .actionSucceeded, .actionBlocked, .actionFailed, .markDone,
-        .cancel, .dismiss, .retry, .reopen, .block, .unblock,
+        .cancel, .dismiss, .retry, .reopen, .block, .unblock, .startManually,
     ]
 
     static let nonTerminal: [TaskState] = [.waitingForAgent, .working, .readyForReview, .approvedAction, .blocked, .failed, .stale]
@@ -56,6 +56,10 @@ private enum ExpectedTable {
         add(terminal, [.reopen], [.user], .waitingForAgent)
         add([.waitingForAgent, .working], [.block], [.system, .user], .blocked)
         add([.blocked], [.unblock], [.user], .waitingForAgent)
+        // Status set by hand (D40).
+        add([.waitingForAgent, .stale, .failed, .blocked], [.startManually], [.user], .working)
+        add([.waitingForAgent, .working, .blocked, .failed, .stale], [.markDone], [.user], .done)
+        add([.working], [.retry], [.user], .waitingForAgent)
         return table
     }()
 }
@@ -66,7 +70,7 @@ struct TaskStateMachineTests {
 
     @Test func triggerCatalogueIsComplete() {
         #expect(TaskTrigger.allTriggers == ExpectedTable.triggers)
-        #expect(ExpectedTable.triggers.count == 27)
+        #expect(ExpectedTable.triggers.count == 28)
         #expect(TaskState.allCases.count == 10)
         #expect(TransitionActor.allCases.count == 3)
     }
@@ -97,7 +101,7 @@ struct TaskStateMachineTests {
             }
         }
         #expect(legal == ExpectedTable.rows.count)
-        #expect(ExpectedTable.rows.count == 48)
+        #expect(ExpectedTable.rows.count == 58)
     }
 
     @Test(arguments: TaskState.allCases)
@@ -193,7 +197,8 @@ struct TaskStateMachineTests {
         #expect(try TaskStateMachine.next(from: .working, on: .leaseExpired, by: .system) == .stale)
         #expect(throws: TaskTransitionError.self) { try TaskStateMachine.next(from: .working, on: .leaseExpired, by: .agent) }
         for trigger in [TaskTrigger.submitResult, .markDone, .heartbeat, .actionSucceeded, .leaseExpired] {
-            for actor in TransitionActor.allCases {
+            // Only the owner can finish a stale task, by marking it done explicitly (D40); never an agent or the system.
+            for actor in [TransitionActor.agent, .system] {
                 #expect(throws: TaskTransitionError.self) { try TaskStateMachine.next(from: .stale, on: trigger, by: actor) }
             }
         }

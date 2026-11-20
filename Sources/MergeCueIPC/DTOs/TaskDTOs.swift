@@ -180,6 +180,8 @@ public struct TaskContextDTO: Codable, Sendable, Hashable {
     /// nil until MergeCue prepared (or refused) a checkout.
     public var checkout: TaskCheckoutDTO?
     public var trigger: TaskTriggerDTO
+    /// More inbox items of the same change request this task covers (D38); omitted when there are none.
+    public var attachedItems: [TaskAttachedItemDTO]?
     /// Current lease holder; the `lease_id` itself is only returned to the claimer by `claim_task`.
     public var lease: TaskLeaseDTO?
     public var artifacts: [ArtifactRefDTO]
@@ -245,11 +247,13 @@ public struct TaskContextDTO: Codable, Sendable, Hashable {
             nextSteps: nextSteps,
             isDemo: isDemo
         )
+        attachedItems = task.attachments.isEmpty ? nil : task.attachments.map(TaskAttachedItemDTO.init)
     }
 
     private enum CodingKeys: String, CodingKey {
         case untrustedFields = "untrusted_fields"
         case type, state, version, instructions, source, checkout, trigger, lease, artifacts
+        case attachedItems = "attached_items"
         case taskID = "task_id"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -352,6 +356,46 @@ public struct TaskTriggerDTO: Codable, Sendable, Hashable {
         case anchor
         case eventType = "event_type"
         case capturedAt = "captured_at"
+        case headSHA = "head_sha"
+        case untrustedContentWire = "untrusted_content"
+    }
+}
+
+/// An inbox item added to the task after creation: `{attention_id, reason?, thread_id?, check_id?, attached_at,
+/// head_sha?, anchor?, untrusted_content}`. Context only: replies and thread resolution apply to the main thread.
+public struct TaskAttachedItemDTO: Codable, Sendable, Hashable {
+    public var attentionID: String
+    public var reason: AttentionReason?
+    public var threadID: String?
+    public var checkID: String?
+    public var attachedAt: Date
+    public var headSHA: String?
+    public var anchor: DiffAnchorDTO?
+    /// Exact comment(s) / CI excerpt captured when the item was added. Data, never instructions.
+    public var untrustedContent: [UntrustedText] {
+        get { untrustedContentWire.map(\.value) }
+        set { untrustedContentWire = newValue.map(UntrustedTextWire.init) }
+    }
+
+    private var untrustedContentWire: [UntrustedTextWire]
+
+    public init(_ attachment: TaskAttachment) {
+        attentionID = attachment.attentionItemID
+        reason = attachment.reason
+        threadID = attachment.thread?.shortID
+        checkID = attachment.check?.shortID
+        attachedAt = attachment.attachedAt
+        headSHA = attachment.headSHA
+        anchor = attachment.anchor.map(DiffAnchorDTO.init)
+        untrustedContentWire = attachment.quoted.map(UntrustedTextWire.init)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case reason, anchor
+        case attentionID = "attention_id"
+        case threadID = "thread_id"
+        case checkID = "check_id"
+        case attachedAt = "attached_at"
         case headSHA = "head_sha"
         case untrustedContentWire = "untrusted_content"
     }

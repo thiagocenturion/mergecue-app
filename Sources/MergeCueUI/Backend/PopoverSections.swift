@@ -194,10 +194,20 @@ public nonisolated enum PopoverDerivation {
         let attentionWithActiveTask = Set(activeTasks.compactMap(\.task.origin.attentionItemID))
 
         var sections = PopoverSections()
-        for item in state.attention where item.isActionable(now: now) {
-            if let linked = item.linkedTaskID, activeTaskIDs.contains(linked) { continue }
-            if attentionWithActiveTask.contains(item.id) { continue }
-            sections.needsYou.append(row(for: item, now: now))
+        // One row per conversation (`ConversationGrouping`); a conversation with an active task is not "needs you".
+        let snapshots = Dictionary(state.changeRequests.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
+        let hasActiveTask = { (item: AttentionItem) in
+            item.linkedTaskID.map(activeTaskIDs.contains) == true || attentionWithActiveTask.contains(item.id)
+        }
+        let actionable = state.attention.filter { $0.isActionable(now: now) }
+        let conversations = ConversationGrouping.group(actionable, snapshots: snapshots) { lhs, rhs in
+            lhs.priority != rhs.priority ? lhs.priority > rhs.priority : lhs.updatedAt > rhs.updatedAt
+        }
+        for members in conversations {
+            guard let first = members.first, !members.contains(where: hasActiveTask) else { continue }
+            var row = row(for: first, now: now)
+            row.isUnread = members.contains(where: \.isUnread)
+            sections.needsYou.append(row)
         }
         for record in state.tasks {
             guard let section = section(for: record) else { continue }

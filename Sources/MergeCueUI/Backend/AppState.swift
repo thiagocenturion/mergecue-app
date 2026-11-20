@@ -49,6 +49,12 @@ public nonisolated struct TaskRecord: Sendable, Hashable, Identifiable {
     public var hasRealClaim: Bool {
         task.state == .working && task.lease != nil
     }
+
+    /// `working` because the owner set "In progress" by hand (no agent lease).
+    public var isManuallyInProgress: Bool {
+        task.state == .working && task.lease == nil
+            && activities.last(where: { $0.toState == .working })?.kind == .startedManually
+    }
 }
 
 /// Whether the MergeCue MCP server is registered with (and verified for) an agent. The agent kinds and the

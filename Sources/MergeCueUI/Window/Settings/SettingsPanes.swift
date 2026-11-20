@@ -342,7 +342,7 @@ struct NotificationsSettings: View {
                     ForEach(NotificationCategory.allCases, id: \.self) { category in
                         Toggle(category.displayName, isOn: categoryBinding(category))
                     }
-                    Text("One grouped notification per PR/MR. Your own comments and green re-runs never notify. Switching a kind off only silences its alerts — the items still appear in the inbox.")
+                    Text("One grouped notification per PR/MR. Your own comments and green re-runs never notify. Switching a kind off only silences its alerts. The items still appear in the inbox.")
                         .scaledFont(.caption)
                         .foregroundStyle(Theme.textSecondary)
                 }
@@ -398,6 +398,13 @@ struct NotificationPermissionCard: View {
                         Button("Open System Settings…") { model.openNotificationSettings() }
                             .help("System Settings › Notifications › MergeCue")
                     }
+                    Button("Send Test Notification") {
+                        Task {
+                            await model.send(.sendTestNotification)
+                            await model.refreshNotificationPermission()
+                        }
+                    }
+                    .help("Shows one notification now and tells you if macOS blocked it")
                 }
                 .accessibilityElement(children: .contain)
                 Text(explanation(permission))
@@ -504,6 +511,32 @@ struct GeneralSettings: View {
             Card("Menu bar", systemImage: "menubar.rectangle") {
                 Toggle("Show the “Needs you” count next to the icon", isOn: $model.showCountInMenuBar)
                     .toggleStyle(.switch)
+            }
+            Card("Appearance", systemImage: "circle.lefthalf.filled") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Picker("Appearance", selection: $model.appearance) {
+                        ForEach(AppearancePreference.allCases) { Text($0.displayName).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    .accessibilityLabel("Appearance")
+                    HStack(spacing: 10) {
+                        Text("Dark mode style")
+                            .scaledFont(.callout)
+                        Spacer(minLength: 8)
+                        Picker("Dark mode style", selection: $model.darkStyle) {
+                            ForEach(DarkStyle.allCases) { Text($0.displayName).tag($0) }
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                        .accessibilityLabel("Dark mode style")
+                    }
+                    Text("Graphite uses neutral grays. Midnight blue is the original deep blue.")
+                        .scaledFont(.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Card("Text size", systemImage: "textformat.size") {
                 VStack(alignment: .leading, spacing: 8) {

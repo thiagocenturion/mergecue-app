@@ -44,8 +44,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.titlebarSeparatorStyle = .none
-        window.toolbar = nil
-        window.backgroundColor = Theme.adaptiveNSColor(light: 0xF3F5FA, dark: 0x0B1020)
+        // An empty unified toolbar makes the title bar taller and centres the traffic lights in it, so they sit
+        // inside the floating sidebar's rounded corner (D43). No items: it only shapes the title bar.
+        let toolbar = NSToolbar(identifier: "MergeCueMain")
+        toolbar.showsBaselineSeparator = false
+        toolbar.displayMode = .iconOnly
+        window.toolbar = toolbar
+        window.toolbarStyle = .unified
+        // The palette colour, so the window behind the content follows the dark style (graphite or midnight).
+        window.backgroundColor = Palette.windowBackground.nsColor
         window.setContentSize(MainWindowMetrics.defaultSize)
         window.contentMinSize = MainWindowMetrics.minimumSize
         window.isReleasedWhenClosed = false

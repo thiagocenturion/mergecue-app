@@ -41,13 +41,16 @@ extension AppModel {
     public func showAttention(_ id: String) {
         screen = .inbox
         selectedAttentionID = id
-        let visible = InboxQuery.run(state: state, filter: inboxFilter, now: now, showRead: showReadInInbox).visibleItems
-        if !visible.contains(where: { $0.id == id }) {
+        var result = InboxQuery.run(state: state, filter: inboxFilter, now: now, showRead: showReadInInbox)
+        if !result.visibleItems.contains(where: { $0.id == id }) && result.containingCard(of: id) == nil {
             inboxFilter = InboxFilter(collapseRead: inboxFilter.collapseRead)
             showReadInInbox = true
+            result = InboxQuery.run(state: state, filter: inboxFilter, now: now, showRead: showReadInInbox)
         }
-        if let item = attentionItem(id), item.isUnread {
-            Task { await send(.markRead(attentionID: id, read: true)) }
+        // An item folded into a conversation is shown through the card that represents it.
+        if let card = result.containingCard(of: id) { selectedAttentionID = card }
+        if let item = attentionItem(id), conversationIsUnread(item) {
+            Task { await markConversation(item, read: true) }
         }
         openMainWindow()
     }

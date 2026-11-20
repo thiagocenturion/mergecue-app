@@ -34,7 +34,7 @@ struct ChangeRequestList: View {
                                     let isSelected = model.selectedChangeRequestID == snapshot.id
                                     ChangeRequestRow(model: model, snapshot: snapshot, isSelected: isSelected,
                                                      syncError: section.failure(for: snapshot.key))
-                                        .keyboardSelectionRing(isSelected && listFocused, cornerRadius: 11)
+                                        .keyboardSelectionRing(isSelected && listFocused, cornerRadius: Theme.radius)
                                         .onTapGesture {
                                             model.openChangeRequest(snapshot.id)
                                             listFocused = true
@@ -306,11 +306,8 @@ struct ChangeRequestRow: View {
             .labelStyle(.titleAndIcon)
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 11, style: .continuous)
-            .fill(isSelected ? Theme.surfaceSelected : (isHovering ? Theme.surfaceHover : Theme.surface)))
-        .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
-            .strokeBorder(isSelected ? Theme.accent.opacity(0.7) : Theme.border, lineWidth: isSelected ? 1.3 : 1))
-        .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .selectableGlass(isSelected: isSelected, isHovering: isHovering)
+        .contentShape(SmoothRect())
         .onHover { isHovering = $0 }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : [.isButton])

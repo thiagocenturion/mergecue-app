@@ -58,6 +58,8 @@ struct Scene {
     var size: NSSize?
     var configure: (AppModel) -> Void = { _ in }
     var kind: SceneKind
+    /// Edits the preview state before the model is built (scenes render synchronously).
+    var prepare: ((inout AppState) -> Void)?
 }
 
 let now = MergeCuePreview.referenceDate()
@@ -87,6 +89,32 @@ func samplePreview(_ model: AppModel, _ action: RemoteActionKind) -> ActionPrevi
         createdAt: now, isSimulated: true)
 }
 
+/// GitHub #42: the "changes requested" review added to the CI failure task (one task for both, D38).
+func attachReviewToCITask(_ state: inout AppState) {
+    guard let review = state.attention.first(where: { $0.providerKind == .github && $0.number == 42 && $0.reason == .changesRequested }),
+          let ci = state.attention.first(where: { $0.providerKind == .github && $0.number == 42 && $0.reason == .ciFailed }),
+          let taskIndex = state.tasks.firstIndex(where: { $0.task.coveredAttentionIDs.contains(ci.id) || $0.id == ci.linkedTaskID }),
+          let reviewIndex = state.attention.firstIndex(where: { $0.id == review.id })
+    else { return }
+    let snapshot = state.changeRequests.first { $0.key == review.changeRequest }
+    let thread = review.thread.flatMap { snapshot?.thread($0) }
+    let quoted = (thread?.comments ?? []).suffix(2).map {
+        UntrustedText.bounded(source: UntrustedText.Source.reviewComment, author: $0.author.username, createdAt: $0.createdAt, text: $0.body, maxBytes: 4_096)
+    }
+    state.tasks[taskIndex].task.attachments.append(TaskAttachment(
+        attentionItemID: review.id, reason: review.reason, thread: review.thread, attachedAt: now.addingTimeInterval(-6 * 60),
+        headSHA: snapshot?.summary.headSHA, quoted: quoted, anchor: thread?.anchor
+    ))
+    state.attention[reviewIndex].linkedTaskID = state.tasks[taskIndex].id
+    state.attention[reviewIndex].isUnread = false
+}
+
+func showCITask(_ model: AppModel) {
+    model.screen = .tasks
+    let ci = model.state.attention.first { $0.providerKind == .github && $0.number == 42 && $0.reason == .ciFailed }
+    model.selectedTaskID = ci.flatMap { model.activeTask(for: $0)?.id }
+}
+
 func showTask(_ state: TaskState) -> (AppModel) -> Void {
     { model in
         model.screen = .tasks
@@ -104,6 +132,10 @@ let scenes: [Scene] = [
     }, kind: window),
     Scene(name: "2-menubar-popover", kind: popover),
     Scene(name: "3-agent-handoff", size: windowSize, configure: showTask(.waitingForAgent), kind: window),
+    Scene(name: "window-task-handoff-collapsed", size: windowSize, configure: { model in
+        showTask(.waitingForAgent)(model)
+        model.handoffCollapsed = true
+    }, kind: window),
     Scene(name: "4-result-review", size: windowSize, configure: showTask(.readyForReview), kind: window),
     Scene(name: "menubar-icon", kind: .menuBar),
 
@@ -144,6 +176,9 @@ let scenes: [Scene] = [
         }?.id
     }, kind: window),
     Scene(name: "window-tasks", size: windowSize, configure: { $0.screen = .tasks }, kind: window),
+    Scene(name: "window-tasks-merged", size: windowSize, configure: { $0.screen = .tasks }, kind: window, prepare: attachReviewToCITask),
+    Scene(name: "window-task-merged", size: NSSize(width: windowSize.width, height: 1500), configure: showCITask, kind: window,
+          prepare: attachReviewToCITask),
     Scene(name: "window-task-working", size: windowSize, configure: showTask(.working), kind: window),
     Scene(name: "window-task-blocked", size: windowSize, configure: showTask(.blocked), kind: window),
     Scene(name: "window-task-stale", size: windowSize, configure: showTask(.stale), kind: window),
@@ -235,7 +270,7 @@ func writePNG(of view: NSView, to url: URL) -> Bool {
 
 /// Hosts a single view (sized to fit unless `size` is given) and writes its PNG.
 func renderView(_ view: AnyView, size: NSSize?, appearance: NSAppearance.Name, to url: URL) -> Bool {
-    let hosting = NSHostingView(rootView: view.environment(\.controlActiveState, .key))
+    let hosting = NSHostingView(rootView: view.environment(\.controlActiveState, .key).environment(\.glassEffectsEnabled, false))
     let window = SnapshotWindow(contentRect: NSRect(origin: NSPoint(x: -30_000, y: -30_000), size: size ?? NSSize(width: 404, height: 600)),
                                 styleMask: [.borderless], backing: .buffered, defer: false)
     window.appearance = NSAppearance(named: appearance)
@@ -254,7 +289,7 @@ func renderView(_ view: AnyView, size: NSSize?, appearance: NSAppearance.Name, t
 
 /// Renders `view` into a bitmap through a borderless offscreen window.
 func bitmap(of view: AnyView, size: NSSize, appearance: NSAppearance.Name) -> NSBitmapImageRep? {
-    let hosting = NSHostingView(rootView: view.environment(\.controlActiveState, .key))
+    let hosting = NSHostingView(rootView: view.environment(\.controlActiveState, .key).environment(\.glassEffectsEnabled, false))
     let window = SnapshotWindow(contentRect: NSRect(origin: NSPoint(x: -30_000, y: -30_000), size: size),
                                 styleMask: [.borderless], backing: .buffered, defer: false)
     window.appearance = NSAppearance(named: appearance)
@@ -411,7 +446,7 @@ func renderEngineDemo() -> [String] {
         return []
     }
     defer { _ = runBlocking { await backend.shutdown() } }
-    let engineScenes: [EngineScene] = [
+    var engineScenes: [EngineScene] = [
         EngineScene(name: "engine-demo-inbox", size: windowSize, configure: { model in
             model.screen = .inbox
             model.selectedAttentionID = model.state.attention.first { $0.providerKind == .github && $0.number == 42 }?.id
@@ -445,6 +480,23 @@ func renderEngineDemo() -> [String] {
             AnyView(MergeCuePreview.connectAccountSheet(model: model, kind: .github).background(Color(nsColor: .windowBackgroundColor)))
         }),
     ]
+    // Bitbucket sends no diff hunk: the code under a comment comes from the pull request diff.
+    let bitbucketPR: String? = state.changeRequests
+        .first(where: { (snapshot: ChangeRequestSnapshot) -> Bool in snapshot.summary.providerKind == .bitbucketCloud && snapshot.key.number == 42 })?
+        .id
+    let bitbucketConversationItem: String? = state.attention
+        .first(where: { (item: AttentionItem) -> Bool in item.providerKind == .bitbucketCloud && item.thread?.kind == .conversation })?
+        .id
+    let bitbucketDetail = EngineScene(name: "engine-demo-bitbucket-code-context", size: NSSize(width: 1360, height: 2400), configure: { model in
+        model.screen = .changeRequests
+        model.selectedChangeRequestID = bitbucketPR
+    })
+    // Top-level comments of one pull request read as one conversation.
+    let bitbucketConversation = EngineScene(name: "engine-demo-bitbucket-conversation", size: windowSize, configure: { model in
+        model.screen = .inbox
+        model.selectedAttentionID = bitbucketConversationItem
+    })
+    engineScenes += [bitbucketDetail, bitbucketConversation]
     var names: [String] = []
     let now = Date()
     for scene in engineScenes where filter.map({ scene.name.contains($0) }) ?? true {
@@ -472,7 +524,16 @@ if !arguments.contains("--no-engine-demo"), filter.map({ $0.hasPrefix("engine") 
 
 for scene in scenes where filter.map({ !$0.hasPrefix("engine") && scene.name.contains($0) }) ?? true {
     for (suffix, appearance) in [("dark", NSAppearance.Name.darkAqua), ("light", NSAppearance.Name.aqua)] {
-        let model = MergeCuePreview.makeModel(variant: scene.variant, now: now)
+        let model: AppModel
+        if let prepare = scene.prepare {
+            var state = MergeCuePreview.makeState(variant: scene.variant, now: now)
+            prepare(&state)
+            model = AppModel(backend: MergeCuePreview.makeBackend(variant: scene.variant, now: now), initialState: state,
+                             environment: .fixed(now: now, userFullName: NSFullUserName()))
+            for (id, excerpt) in PreviewBackend.logExcerpts(now: now) { model.seedLogExcerpt(excerpt, checkID: id) }
+        } else {
+            model = MergeCuePreview.makeModel(variant: scene.variant, now: now)
+        }
         scene.configure(model)
         let url = outputDirectory.appending(path: "\(scene.name)-\(suffix).png")
         let ok = switch scene.kind {

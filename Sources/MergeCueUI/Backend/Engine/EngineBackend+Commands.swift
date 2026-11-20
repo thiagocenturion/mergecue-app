@@ -53,9 +53,21 @@ extension EngineBackend {
         case .unblockTask(let id):
             _ = try await engine.unblockTask(id)
             return AppCommandResult(message: "Task \(id) unblocked")
+        case .attachToTask(let id, let attentionIDs):
+            let task = try await engine.attachToTask(id, attentionIDs: attentionIDs)
+            return AppCommandResult(message: "Added to task \(task.id). It now covers \(task.coveredAttentionIDs.count) items.")
+        case .detachFromTask(let id, let attentionID):
+            _ = try await engine.detachFromTask(id, attentionID: attentionID)
+            return AppCommandResult(message: "Removed from task \(id)")
+        case .mergeTask(let source, let target):
+            let task = try await engine.mergeTask(source, into: target)
+            return AppCommandResult(message: "Task \(source) merged into \(task.id)")
         case .markTaskDone(let id):
             _ = try await engine.markTaskDone(id)
-            return AppCommandResult(message: "Task \(id) marked done (nothing was written anywhere)")
+            return AppCommandResult(message: "Task \(id) marked done (nothing was written anywhere)", tone: .success)
+        case .startTaskManually(let id):
+            _ = try await engine.startTaskManually(id)
+            return AppCommandResult(message: "Task \(id) is in progress")
         case .rejectResult(let id, let note):
             _ = try await engine.rejectResult(id, note: note)
             return AppCommandResult(message: "Result discarded — task \(id) is ready to start again")
@@ -185,6 +197,8 @@ extension EngineBackend {
                                     tone: .success)
         case .loadCheckLog(let check):
             return AppCommandResult(logExcerpt: try await engine.loadCheckLog(check))
+        case .loadDiff(let key):
+            return AppCommandResult(diff: try await engine.loadDiff(key))
         case .openURL(let url):
             if mode == .demo, Self.isFixtureLink(url) {
                 return AppCommandResult(message: "Demo data — \(url.host() ?? "this link") has no such repository, so the link wasn't opened.")
@@ -224,6 +238,12 @@ extension EngineBackend {
                 ? "Notifications allowed. One grouped notification per PR/MR."
                 : "Notifications are off. You can allow them later in System Settings › Notifications › MergeCue.",
                                     tone: granted ? .success : .attention)
+        case .sendTestNotification:
+            if let problem = await options.sendTestNotification() {
+                return AppCommandResult(message: "The test notification wasn't shown. \(problem)", tone: .attention)
+            }
+            return AppCommandResult(message: "Test notification sent. If no banner appeared, check Focus and System Settings › Notifications › MergeCue.",
+                                    tone: .success)
         case .exportDatabase(let url):
             try await engine.exportDatabase(to: MergeCuePaths.fileSystemPath(url))
             return AppCommandResult(message: "Database exported to \(UIFormat.abbreviatedPath(MergeCuePaths.fileSystemPath(url))) (no credentials inside)",

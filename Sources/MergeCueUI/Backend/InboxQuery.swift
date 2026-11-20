@@ -76,7 +76,11 @@ public nonisolated struct InboxGroup: Sendable, Hashable, Identifiable {
     public var changeRequest: ChangeRequestKey
     public var repoFullPath: String
     public var title: String
+    /// One item per conversation (the item that represents it: unread first, then actionable, then newest).
     public var items: [AttentionItem]
+    /// Every item of each conversation, keyed by the representing item's id (itself included).
+    public var members: [String: [AttentionItem]] = [:]
+    /// Read conversations hidden by `collapseRead`.
     public var hiddenReadCount: Int
     public var latest: Date
 
@@ -92,6 +96,22 @@ public nonisolated struct InboxResult: Sendable, Hashable {
     public var totalCount: Int
 
     public var visibleItems: [AttentionItem] { groups.flatMap(\.items) }
+
+    /// Id of the card that shows item `id` (itself, or the item representing its conversation).
+    public func containingCard(of id: String) -> String? {
+        for group in groups {
+            for (card, members) in group.members where members.contains(where: { $0.id == id }) { return card }
+        }
+        return nil
+    }
+
+    /// Every item of the conversation represented by `id` (just that item when it stands alone).
+    public func members(of id: String) -> [AttentionItem] {
+        for group in groups {
+            if let members = group.members[id] { return members }
+        }
+        return []
+    }
 }
 
 /// Pure inbox filtering and grouping.
@@ -112,18 +132,26 @@ public nonisolated enum InboxQuery {
 
         var hiddenTotal = 0
         var groups: [InboxGroup] = []
+        let byPriority = itemOrder(now: now)
         for key in order {
-            let items = (buckets[key] ?? []).sorted(by: itemOrder(now: now))
+            let items = (buckets[key] ?? []).sorted(by: byPriority)
+            // One card per conversation: replies, threads on the same line and top-level comments read as one.
+            let conversations = ConversationGrouping.group(items, snapshots: snapshots, order: byPriority)
             let collapse = filter.collapseRead && !showRead && filter.status != .done
-            let visible = collapse ? items.filter { $0.isUnread || $0.isActionable(now: now) } : items
-            let hidden = items.count - visible.count
+            let visible = collapse
+                ? conversations.filter { $0.contains { $0.isUnread || $0.isActionable(now: now) } }
+                : conversations
+            let hidden = conversations.count - visible.count
             hiddenTotal += hidden
             guard !visible.isEmpty, let first = items.first else { continue }
+            let representatives = visible.compactMap(\.first)
             groups.append(InboxGroup(
                 changeRequest: key,
                 repoFullPath: first.repoFullPath,
                 title: snapshots[key]?.summary.title ?? first.title,
-                items: visible,
+                items: representatives,
+                members: Dictionary(visible.compactMap { group in group.first.map { ($0.id, group) } },
+                                    uniquingKeysWith: { first, _ in first }),
                 hiddenReadCount: hidden,
                 latest: items.map(\.updatedAt).max() ?? first.updatedAt
             ))

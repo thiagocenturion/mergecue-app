@@ -66,6 +66,40 @@ public final class UserNotificationDeliverer: NotificationDelivering {
         }
     }
 
+    /// Settings › Notifications › "Send Test Notification": delivers one notification now and returns why it could
+    /// not be shown (nil when macOS accepted it). Asks for permission first when macOS hasn't asked yet.
+    public func deliverTest() async -> String? {
+        guard Self.isAvailable else { return "Notifications only work in the installed MergeCue app, not in this build." }
+        let center = UNUserNotificationCenter.current()
+        var status = await center.notificationSettings().authorizationStatus
+        if status == .notDetermined {
+            _ = await requestAuthorization()
+            status = await center.notificationSettings().authorizationStatus
+        }
+        switch status {
+        case .denied:
+            return "macOS blocks MergeCue's notifications. Turn them on in System Settings › Notifications › MergeCue."
+        case .notDetermined:
+            return "macOS hasn't allowed notifications for MergeCue yet."
+        default:
+            break
+        }
+        let content = UNMutableNotificationContent()
+        content.title = isDemo ? "Demo · MergeCue test" : "MergeCue test"
+        content.body = "Notifications work. You'll get one grouped notification per pull or merge request."
+        content.sound = .default
+        content.interruptionLevel = .active
+        let request = UNNotificationRequest(identifier: "ntf_test_\(UUID().uuidString)", content: content, trigger: nil)
+        do {
+            try await center.add(request)
+            log.notice("Test notification delivered (authorization \(status.rawValue)).")
+            return nil
+        } catch {
+            log.error("Test notification failed: \(error.localizedDescription)")
+            return error.localizedDescription
+        }
+    }
+
     public func deliver(_ notification: GroupedNotification) async {
         let title = isDemo ? "Demo · \(notification.title)" : notification.title
         guard Self.isAvailable else {
@@ -83,6 +117,7 @@ public final class UserNotificationDeliverer: NotificationDelivering {
         let request = UNNotificationRequest(identifier: notification.id, content: content, trigger: nil)
         do {
             try await UNUserNotificationCenter.current().add(request)
+            log.notice("Notification delivered for \(notification.changeRequest.kind.rawValue) change request (\(notification.attentionItemIDs.count) item(s)).")
         } catch {
             log.error("Could not deliver a notification: \(error.localizedDescription)")
         }

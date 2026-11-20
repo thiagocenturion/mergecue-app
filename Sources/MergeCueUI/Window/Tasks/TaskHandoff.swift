@@ -20,10 +20,15 @@ struct TaskHandoffScreen: View {
                     .padding(.leading, -6)
                 header
                     .padding(.top, 8)
-                let wide = availableWidth >= 1_000
+                let panel = panelWidth
                 HStack(alignment: .top, spacing: 18) {
-                    leftColumn.frame(width: wide ? 320 : 300)
-                    TaskStatePanel(model: model, record: record, wide: wide)
+                    VStack(spacing: 18) {
+                        leftColumn
+                        CoveredItemsCard(model: model, record: record)
+                    }
+                    .frame(minWidth: 300, maxWidth: .infinity)
+                    TaskStatePanel(model: model, record: record, wide: panel >= 720)
+                        .frame(width: panel)
                 }
                 .padding(.top, 24)
             }
@@ -32,7 +37,6 @@ struct TaskHandoffScreen: View {
             .padding(.bottom, 24)
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width - 56 } action: { availableWidth = $0 }
-        .background(Theme.contentBackground)
     }
 
     // MARK: Header
@@ -47,7 +51,7 @@ struct TaskHandoffScreen: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                         .accessibilityAddTraits(.isHeader)
-                    StatusPill(text: TaskStateStyle.label(record), color: TaskStateStyle.color(record), textColor: TaskStateStyle.textColor(record), symbol: statusSymbol, size: 13.5)
+                    TaskStatusPillMenu(model: model, record: record, symbol: statusSymbol)
                 }
                 HStack(spacing: 10) {
                     ProviderGlyph(kind: task.origin.providerKind, size: 18)
@@ -86,6 +90,15 @@ struct TaskHandoffScreen: View {
             Spacer(minLength: 12)
             TaskActionsMenu(model: model, record: record)
         }
+    }
+
+    /// The comment column takes what the state panel leaves. A collapsed handoff card is narrow; otherwise the
+    /// panel takes a bit more than half (the agent preview sits beside the controls from 720 pt).
+    private var panelWidth: CGFloat {
+        let showsHandoff = [.waitingForAgent, .stale].contains(task.state)
+            || (task.state == .working && !record.hasRealClaim && !record.isManuallyInProgress)
+        if showsHandoff && model.handoffCollapsed { return 380 }
+        return min(max(availableWidth * 0.56, 520), 820)
     }
 
     private var statusSymbol: String? {
@@ -186,8 +199,8 @@ struct ContextRow: View {
                 .scaledFont(.system(size: 16))
                 .foregroundStyle(Theme.textSecondary)
                 .frame(width: 42, height: 42)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.surfaceRaised))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.border, lineWidth: 1))
+                .glassShape(Circle(), interactive: false)
+                .overlay(SmoothRect().strokeBorder(Theme.border, lineWidth: 1))
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.title)
                     .scaledFont(.system(size: 14, weight: .medium))
@@ -230,7 +243,7 @@ struct ContextRow: View {
         case .ready:
             Image(systemName: "checkmark.circle.fill")
                 .scaledFont(.system(size: 21))
-                .foregroundStyle(Color(hex: 0x0B1020), Theme.mint)
+                .foregroundStyle(Theme.onStatusFill, Theme.mint)
                 .symbolRenderingMode(.palette)
         case .warning:
             Image(systemName: "exclamationmark.triangle.fill")
@@ -263,6 +276,8 @@ struct TaskStatePanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             content
+                .id("\(task.state)|\(model.handoffCollapsed)")
+                .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             HandoffTracker(current: Presentation.handoffStep(record), currentColor: trackerColor, currentLabel: trackerLabel)
                 .padding(.top, 30)
             ThemeDivider().padding(.top, 24)
@@ -278,6 +293,7 @@ struct TaskStatePanel: View {
         .padding(24)
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardBackground(Theme.surface, radius: 16)
+        .animation(Motion.smooth, value: task.state)
     }
 
     @ViewBuilder
@@ -289,6 +305,12 @@ struct TaskStatePanel: View {
         case .working:
             if record.hasRealClaim {
                 WorkingView(model: model, record: record)
+            } else if record.isManuallyInProgress {
+                StatusCallout(tone: .progress, symbol: "hammer.fill", title: "In progress",
+                              message: "You marked this task in progress. Mark it done when it's finished, or hand it to an agent.") {
+                    Button("Mark Done") { send(.markTaskDone(task.id)) }.buttonStyle(GradientButtonStyle(size: .small))
+                    Button("Hand to an Agent") { send(.retryTask(task.id)) }.buttonStyle(SecondaryButtonStyle(size: .small))
+                }
             } else {
                 HandoffStepView(model: model, record: record, wide: wide, number: "1", title: "Open in your coding agent",
                                 message: "No agent holds this task yet.")
@@ -349,6 +371,7 @@ struct TaskStatePanel: View {
     private var trackerLabel: String? {
         switch task.state {
         case .stale: "Stalled"
+        case .working where record.isManuallyInProgress: "In progress"
         case .blocked: "Blocked"
         case .failed: "Failed"
         case .done: "Done"
@@ -394,36 +417,90 @@ struct HandoffStepView: View {
     private var detected: AgentStatus? { model.state.agents.first { $0.kind == agentKind } }
 
     var body: some View {
-        if wide {
+        if model.handoffCollapsed {
+            compact
+        } else if wide {
             HStack(alignment: .top, spacing: 22) {
                 controls
                 TerminalPreview(model: model, record: record, agent: agentKind)
                     .frame(width: 250)
             }
         } else {
-            VStack(alignment: .leading, spacing: 18) {
-                controls
-                TerminalPreview(model: model, record: record, agent: agentKind)
+            // The terminal preview is illustration only; below the controls it just makes the panel taller.
+            controls
+        }
+    }
+
+    /// Collapsed: the title, Open and Copy, nothing else.
+    private var compact: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            header(showsMessage: false)
+            VStack(spacing: 10) {
+                openButton.buttonStyle(GradientButtonStyle(size: .tall, fullWidth: true))
+                copyButton.buttonStyle(SecondaryButtonStyle(size: .tall, fullWidth: true))
             }
+            agentNote
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func header(showsMessage: Bool) -> some View {
+        HStack(alignment: .top, spacing: 16) {
+            StepNumber(text: number)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .scaledFont(.system(size: 21, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if showsMessage, let message {
+                    Text(message)
+                        .scaledFont(.system(size: 13.5))
+                        .foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 8)
+            Button {
+                withAnimation(.snappy(duration: 0.25)) { model.handoffCollapsed.toggle() }
+            } label: {
+                Image(systemName: model.handoffCollapsed ? "chevron.down" : "chevron.up")
+            }
+            .buttonStyle(IconButtonStyle(size: 30, filled: false))
+            .help(model.handoffCollapsed ? "Show the command and agent options" : "Collapse to make room for the comment")
+            .accessibilityLabel(model.handoffCollapsed ? "Expand agent handoff" : "Collapse agent handoff")
+        }
+    }
+
+    private var openButton: some View {
+        Button {
+            Task { await model.send(.openInAgent(record.id, agent: agentKind)) }
+        } label: {
+            HStack(spacing: 9) {
+                AgentMark(kind: agentKind, size: 16, monochrome: .white)
+                Text("Open in \(agentKind.shortName)")
+                Image(systemName: "arrow.right").scaledFont(.system(size: 13, weight: .semibold))
+            }
+            .lineLimit(1)
+        }
+        .disabled(!(detected?.canOpenTasks ?? false))
+        .help(openHelp)
+    }
+
+    private var copyButton: some View {
+        Button {
+            Task { await model.send(.copyHandoffCommand(record.id, agent: agentKind)) }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "doc.on.doc")
+                Text("Copy command")
+            }
+            .lineLimit(1)
         }
     }
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 16) {
-                StepNumber(text: number)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(title)
-                        .scaledFont(.system(size: 21, weight: .semibold))
-                        .foregroundStyle(Theme.textPrimary)
-                    if let message {
-                        Text(message)
-                            .scaledFont(.system(size: 13.5))
-                            .foregroundStyle(Theme.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
+            header(showsMessage: true)
             SegmentedTrack(options: AgentKind.allCases, selection: Binding(get: { agentKind }, set: { model.selectedAgentKind = $0 }), height: 44) { kind, selected in
                 HStack(spacing: 10) {
                     AgentMark(kind: kind, size: 20)
@@ -443,31 +520,8 @@ struct HandoffStepView: View {
             }
             .padding(.top, 8)
             HStack(spacing: 12) {
-                Button {
-                    Task { await model.send(.openInAgent(record.id, agent: agentKind)) }
-                } label: {
-                    HStack(spacing: 9) {
-                        AgentMark(kind: agentKind, size: 16, monochrome: .white)
-                        Text("Open in \(agentKind.shortName)")
-                        Image(systemName: "arrow.right").scaledFont(.system(size: 13, weight: .semibold))
-                    }
-                    .lineLimit(1)
-                    .fixedSize()
-                }
-                .buttonStyle(GradientButtonStyle(size: .tall))
-                .disabled(!(detected?.canOpenTasks ?? false))
-                .help(openHelp)
-                Button {
-                    Task { await model.send(.copyHandoffCommand(record.id, agent: agentKind)) }
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "doc.on.doc")
-                        Text("Copy command")
-                    }
-                    .lineLimit(1)
-                    .fixedSize()
-                }
-                .buttonStyle(SecondaryButtonStyle(size: .tall))
+                openButton.fixedSize().buttonStyle(GradientButtonStyle(size: .tall))
+                copyButton.fixedSize().buttonStyle(SecondaryButtonStyle(size: .tall))
             }
             .padding(.top, 16)
             agentNote
@@ -547,7 +601,7 @@ struct TerminalPreview: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 4)
             .frame(minHeight: 34)
-            .background(Color(hex: 0x1A2133))
+            .background(Color.black.opacity(0.25))
             VStack(alignment: .leading, spacing: 4) {
                 line("> ", firstSentence, prompt: true)
                     .padding(.bottom, 8)
@@ -567,9 +621,10 @@ struct TerminalPreview: View {
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Theme.terminalBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.borderStrong, lineWidth: 1))
+        // A dark terminal on glass: the tint keeps its light text readable in light mode too.
+        .background(Theme.terminalBackground.opacity(0.82))
+        .clipShape(SmoothRect())
+        .glassCard()
         .help("Illustration of the handoff — not live output from your agent.")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Preview of the command in \(agent.shortName). Illustration, not live output.")

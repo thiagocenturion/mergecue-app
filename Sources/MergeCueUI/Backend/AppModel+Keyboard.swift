@@ -52,8 +52,8 @@ extension AppModel {
     public func openInboxItem(_ id: String) {
         selectedAttentionID = id
         changeRequestTab = .conversation
-        if let item = attentionItem(id), item.isUnread {
-            Task { await send(.markRead(attentionID: id, read: true)) }
+        if let item = attentionItem(id), conversationIsUnread(item) {
+            Task { await markConversation(item, read: true) }
         }
     }
 
@@ -64,7 +64,7 @@ extension AppModel {
     /// ⌘↩: the selected item's primary action — its active task, else "Fix with AI" (or the item's other task type).
     public func performInboxPrimaryAction() async {
         guard let item = attentionItem(selectedAttentionID) else { return }
-        if let task = activeTask(for: item) {
+        if let task = activeConversationTask(for: item) {
             showTask(task.id)
             return
         }

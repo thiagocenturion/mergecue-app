@@ -120,6 +120,14 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
     case dismissTask(TaskID)
     case unblockTask(TaskID)
     case markTaskDone(TaskID)
+    /// "In progress" set by hand (D40).
+    case startTaskManually(TaskID)
+    /// Adds inbox items (same change request) to an active task; an item attached elsewhere moves (D38).
+    case attachToTask(TaskID, attentionIDs: [String])
+    /// Removes an attached item from a task; the item returns to the inbox without a task.
+    case detachFromTask(TaskID, attentionID: String)
+    /// Merges the first task into the second (same change request); the first is dismissed.
+    case mergeTask(TaskID, into: TaskID)
     /// "Discard and retry": rejects the submitted result and returns the task to `waiting_for_agent`.
     case rejectResult(TaskID, note: String?)
     /// Builds the exact preview of an action for the review gate.
@@ -176,6 +184,9 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
     case openInAgent(TaskID, agent: AgentKind)
     /// On-demand CI log excerpt for a failing check (bounded, redacted).
     case loadCheckLog(CheckKey)
+    /// On-demand unified diff of a change request (bounded, redacted): code context for comments whose provider
+    /// sends no diff hunk (Bitbucket, GitLab).
+    case loadDiff(ChangeRequestKey)
     case openURL(URL)
 
     // MARK: Agent setup (wizard)
@@ -208,6 +219,8 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
     case setLaunchAtLogin(Bool)
     /// Asks macOS for notification permission (onboarding; never silently at launch).
     case requestNotificationPermission
+    /// Settings › Notifications › Send Test Notification.
+    case sendTestNotification
     /// Writes a copy of the local database (no credentials) to a file the owner picked.
     case exportDatabase(to: URL)
     /// Deletes every stored credential and record (after the owner confirmed).
@@ -227,6 +240,10 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
         case .dismissTask: "dismissTask"
         case .unblockTask: "unblockTask"
         case .markTaskDone: "markTaskDone"
+        case .startTaskManually: "startTaskManually"
+        case .attachToTask(_, let ids): "attachToTask(\(ids.count))"
+        case .detachFromTask: "detachFromTask"
+        case .mergeTask: "mergeTask"
         case .rejectResult: "rejectResult"
         case .requestActionPreview(_, let kind): "requestActionPreview(\(kind.rawValue))"
         case .approvePreview: "approvePreview"
@@ -255,6 +272,7 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
         case .copyHandoffCommand: "copyHandoffCommand"
         case .openInAgent(_, let agent): "openInAgent(\(agent.rawValue))"
         case .loadCheckLog: "loadCheckLog"
+        case .loadDiff: "loadDiff"
         case .openURL: "openURL"
         case .refreshAgents: "refreshAgents"
         case .prepareAgentRegistration(let kind, let action): "prepareAgentRegistration(\(kind.rawValue), \(action.rawValue))"
@@ -266,6 +284,7 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
         case .scanCheckouts(let repos): "scanCheckouts(\(repos.count))"
         case .setLaunchAtLogin(let enabled): "setLaunchAtLogin(\(enabled))"
         case .requestNotificationPermission: "requestNotificationPermission"
+        case .sendTestNotification: "sendTestNotification"
         case .exportDatabase: "exportDatabase"
         case .resetAllData: "resetAllData"
         }
@@ -286,6 +305,8 @@ public nonisolated struct AppCommandResult: Sendable {
     public var createdTaskID: TaskID?
     /// Set by `.loadCheckLog`.
     public var logExcerpt: LogExcerpt?
+    /// Set by `.loadDiff`.
+    public var diff: DiffPayload?
     /// Set by `.prepareAgentRegistration`: shown in full before the owner consents.
     public var registrationPlan: MCPRegistrationPlan?
     /// Set by `.verifyAgent`.
@@ -307,6 +328,7 @@ public nonisolated struct AppCommandResult: Sendable {
         urlToOpen: URL? = nil,
         createdTaskID: TaskID? = nil,
         logExcerpt: LogExcerpt? = nil,
+        diff: DiffPayload? = nil,
         registrationPlan: MCPRegistrationPlan? = nil,
         verification: AgentVerification? = nil,
         mappingSuggestions: [MappingSuggestion]? = nil,
@@ -322,6 +344,7 @@ public nonisolated struct AppCommandResult: Sendable {
         self.urlToOpen = urlToOpen
         self.createdTaskID = createdTaskID
         self.logExcerpt = logExcerpt
+        self.diff = diff
         self.registrationPlan = registrationPlan
         self.verification = verification
         self.mappingSuggestions = mappingSuggestions

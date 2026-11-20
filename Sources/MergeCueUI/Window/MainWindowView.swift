@@ -20,14 +20,20 @@ public struct MainWindowView: View {
     public var body: some View {
         HStack(spacing: 0) {
             if !isFocusedReview {
+                // A floating glass sidebar (D43): inset from the window edges, the glow running underneath.
                 Sidebar(model: model, compact: compactSidebar)
                     .frame(width: compactSidebar ? Theme.compactSidebarWidth : Theme.sidebarWidth)
-                    .background(Theme.sidebarBackground)
-                Rectangle().fill(Theme.divider).frame(width: 1)
+                    .frame(maxHeight: .infinity)
+                    .glassCard()
+                    .padding(Sidebar.floatingInset)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
             }
             ScreenContent(model: model)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .animation(Motion.smooth, value: isFocusedReview)
+        // One glow for the whole window, so navigating keeps the loop running instead of restarting it.
+        .auroraBackdrop(height: 560)
         .background(Theme.windowBackground)
         .overlay(alignment: .top) { BannerStack(model: model) }
         .ignoresSafeArea()
@@ -60,6 +66,9 @@ public struct MainWindowView: View {
             Text("This link comes from provider data and points outside your connected accounts and known CI services:\n\(pending.url.absoluteString)")
         }
         .dynamicTypeSize(model.textSize.dynamicTypeSize)
+        .defaultGlassButtons()
+        // Palette colours resolve the dark style when drawn; a new identity redraws everything after a change.
+        .id(model.darkStyle)
     }
 
     private var linkConfirmationBinding: Binding<Bool> {
@@ -82,6 +91,17 @@ struct ScreenContent: View {
     let model: AppModel
 
     var body: some View {
+        let key = "\(model.screen)|\(model.selectedTaskID?.rawValue ?? "")"
+        ZStack {
+            screen
+                .id(key)
+                .transition(Motion.screenTransition)
+        }
+        .animation(Motion.smooth, value: key)
+    }
+
+    @ViewBuilder
+    private var screen: some View {
         switch model.screen {
         case .inbox:
             InboxScreen(model: model)
@@ -126,12 +146,10 @@ struct TwoColumnScreen<List: View, Detail: View>: View {
                 .padding(.top, MainWindowMetrics.contentTopInset - 8)
                 .frame(width: listWidth)
                 .frame(maxHeight: .infinity)
-                .background(Theme.contentBackground)
             Rectangle().fill(Theme.divider).frame(width: 1)
             detail
                 .padding(.top, MainWindowMetrics.contentTopInset - 8)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Theme.windowBackground)
         }
     }
 }

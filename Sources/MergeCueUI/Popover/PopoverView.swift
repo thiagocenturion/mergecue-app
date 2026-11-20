@@ -56,14 +56,22 @@ public struct PopoverView: View {
             } else {
                 sectionsScroll
             }
-            VStack(spacing: 0) {
-                ThemeDivider().padding(.horizontal, 20)
-                PopoverFooter(model: model)
-            }
+            // A floating glass footer bar, like the window's floating sidebar (D43).
+            PopoverFooter(model: model)
+                .glassShape(Capsule(), interactive: false, fallback: Theme.surface)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
+                .padding(.top, 4)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bottomHeight = $0 }
         }
         .frame(width: width)
-        .background(Theme.popoverBackground.ignoresSafeArea())
+        .background(alignment: .top) {
+            ZStack(alignment: .top) {
+                Theme.popoverBackground
+                AuroraGlow(opacity: 0.55).frame(height: 260)
+            }
+            .ignoresSafeArea()
+        }
         // The container takes keyboard focus for ↑/↓/Return; the selected row shows it (a 2 pt focus ring)
         // instead of a system ring around the whole popover.
         .focusable()
@@ -97,6 +105,8 @@ public struct PopoverView: View {
         .dynamicTypeSize(model.textSize.dynamicTypeSize)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("MergeCue")
+        .defaultGlassButtons()
+        .id(model.darkStyle)
     }
 
     private var sectionsScroll: some View {
@@ -338,8 +348,8 @@ struct PopoverFooter: View {
                     .accessibilityHidden(true)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
     }
 }
 
@@ -428,6 +438,7 @@ struct PopoverSectionView: View {
                         ForEach(items.prefix(AppModel.popoverRowLimit)) { item in
                             PopoverRowView(model: model, item: item, voiceOverFocus: voiceOverFocus)
                                 .id(item.id)
+                                .transition(Motion.listTransition)
                         }
                     }
                     if items.count > AppModel.popoverRowLimit {
@@ -523,7 +534,7 @@ struct HandoffCallout: View {
             }
         }
         .padding(12)
-        .cardBackground(Theme.waiting.opacity(0.07), radius: 12, border: Theme.waiting.opacity(0.35))
+        .glassCard(tint: Theme.waiting)
     }
 }
 

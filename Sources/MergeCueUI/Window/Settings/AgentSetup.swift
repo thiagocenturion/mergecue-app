@@ -322,7 +322,7 @@ struct CommandBlock: View {
             .fixedSize(horizontal: false, vertical: true)
             .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 6).fill(Theme.surfaceSunken))
+            .cardBackground(Theme.surfaceSunken)
     }
 }
 

@@ -128,7 +128,7 @@ struct InboxFilterTests {
     @Test func rateLimitAndRequestUsageTexts() {
         let key = AccountKey(kind: .github, host: "github.com", remoteUserID: "1")
         let limited = AccountSyncStatus(account: key, state: .rateLimited(until: testNow))
-        #expect(UIFormat.syncText(limited, now: testNow) == "Rate limited — retrying at \(UIFormat.time(testNow))")
+        #expect(UIFormat.syncText(limited, now: testNow) == "Rate limited. Retrying at \(UIFormat.time(testNow))")
         #expect(!UIFormat.syncText(limited, now: testNow).contains("hour"))
         var usage = AccountSyncStatus(account: key, state: .ok, requestsLastHour: 142, requestBudget: 1_500)
         #expect(UIFormat.requestUsageText(usage) == "142 requests in the last hour · budget 1500/h")

@@ -49,7 +49,6 @@ struct TaskList: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Theme.contentBackground)
     }
 }
 
@@ -82,6 +81,10 @@ struct TaskCard: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
+                if !task.attachments.isEmpty {
+                    Chip(text: "\(task.coveredAttentionIDs.count) items", symbol: "link")
+                        .help("This task covers \(task.coveredAttentionIDs.count) inbox items from this \(task.origin.providerKind.changeRequestNoun)")
+                }
                 if record.hasRealClaim { WorkingSpinner(size: 22) }
                 StatusPill(text: TaskStateStyle.label(record), color: color, textColor: TaskStateStyle.textColor(record), showsDot: true, size: 11.5, cueSymbol: TaskStateStyle.symbol(record))
                 Text(UIFormat.compactAge(from: task.updatedAt, now: model.now))
@@ -93,11 +96,16 @@ struct TaskCard: View {
                     .foregroundStyle(Theme.textTertiary)
             }
             .padding(14)
-            .background(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).fill(isHovering ? Theme.surfaceHover : Theme.surface))
-            .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).strokeBorder(Theme.border, lineWidth: 1))
+            .selectableGlass(isSelected: false, isHovering: isHovering)
         }
         .buttonStyle(PlainRowButtonStyle())
         .onHover { isHovering = $0 }
+        .contextMenu {
+            Button("Open") { model.selectedTaskID = task.id }
+            Section("Set Status") { TaskStatusMenuItems(model: model, task: task) }
+            Divider()
+            Button("Show \(task.origin.providerKind.changeRequestAbbreviation) Details") { model.showChangeRequest(task.origin.changeRequest) }
+        }
         .accessibilityLabel("Task \(task.id.rawValue), \(Presentation.taskTitle(record, snapshot: snapshot)), \(TaskStateStyle.label(record))")
     }
 }
