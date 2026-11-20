@@ -73,11 +73,23 @@ extension GitHubProvider {
     /// keeps listing after it drops the review request; open, non-archived), cursor-paginated. The involved scope is
     /// bounded by `query.updatedSince` (Sync passes its involvement window) and `maxInvolvedPages`. Namespace restrictions are applied as `user:` qualifiers when the query stays within the
     /// search length limit, and always re-checked client-side.
+    ///
+    /// With `restrictToRepositories` (watched repositories, DECISIONS D36) the search is qualified with
+    /// `repo:owner/name` for every watched repository in **one** query (split into a few queries only when the
+    /// qualifiers would exceed the 256-character search limit), and results are re-checked client-side.
     public func listChangeRequests(_ query: ChangeRequestQuery) async throws -> ChangeRequestPage {
-        let searchQuery = Self.searchQuery(query)
-        let wantedNamespaces = Set(query.namespaces.map { $0.lowercased() })
         var items: [ChangeRequestSummary] = []
         var seen = Set<String>()
+        for searchQuery in Self.searchQueries(query) {
+            try await search(searchQuery, query: query, into: &items, seen: &seen)
+        }
+        return ChangeRequestPage(items: items)
+    }
+
+    private func search(
+        _ searchQuery: String, query: ChangeRequestQuery, into items: inout [ChangeRequestSummary], seen: inout Set<String>
+    ) async throws {
+        let wantedNamespaces = query.restrictToRepositories ? [] : Set(query.namespaces.map { $0.lowercased() })
         var cursor: String?
         var pages = 0
         repeat {
@@ -99,13 +111,39 @@ extension GitHubProvider {
                 if !wantedNamespaces.isEmpty, !wantedNamespaces.contains(summary.repository.namespacePath.lowercased()) {
                     continue
                 }
+                guard query.includes(summary.key.repo) else { continue }
                 guard seen.insert(summary.key.id).inserted else { continue }
                 items.append(summary)
             }
             pages += 1
             cursor = data.search.pageInfo?.hasNextPage == true ? data.search.pageInfo?.endCursor : nil
         } while cursor != nil && pages < (query.scope == .involved ? Self.maxInvolvedPages : Self.maxPages)
-        return ChangeRequestPage(items: items)
+    }
+
+    /// The searches of a listing: one, or (watched repositories) as few as fit the 256-character limit with one
+    /// `repo:` qualifier per repository.
+    static func searchQueries(_ query: ChangeRequestQuery) -> [String] {
+        guard query.restrictToRepositories else { return [searchQuery(query)] }
+        var unrestricted = query
+        unrestricted.namespaces = []
+        let base = searchQuery(unrestricted)
+        let qualifiers = query.repositories
+            .map(\.fullPath)
+            .filter { path in
+                path.contains("/") && path.allSatisfy { $0.isLetter || $0.isNumber || "-_./".contains($0) }
+            }
+            .map { "repo:\($0)" }
+        var queries: [String] = []
+        var current = base
+        for qualifier in qualifiers {
+            if current != base, current.count + 1 + qualifier.count > 256 {
+                queries.append(current)
+                current = base
+            }
+            current += " " + qualifier
+        }
+        if current != base { queries.append(current) }
+        return queries
     }
 
     /// GitHub search string for a listing query (max 256 characters).

@@ -51,7 +51,11 @@ struct WriteAndDetailTests {
 
     @Test func requestChangesPostsTheVerdictThenTheExplanation() async throws {
         let harness = try await primed()
-        try await harness.provider.requestChanges(on: Fx.prKey(42), body: "Please propagate the gateway error.")
+        let posting = Task { try await harness.provider.requestChanges(on: Fx.prKey(42), body: "Please propagate the gateway error.") }
+        // The comment waits one second after the verdict (writes are spaced out).
+        await harness.clock.waitForSleepers(count: 1)
+        harness.clock.advance(by: 1)
+        try await posting.value
         let writes = harness.transport.requests.filter { $0.method == "POST" }
         #expect(writes.map { $0.url.lastPathComponent } == ["request-changes", "comments"])
         #expect(writes.first?.body == nil)

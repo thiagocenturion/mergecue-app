@@ -155,6 +155,11 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
     case connectAccount(ConnectAccountRequest)
     case disconnectAccount(AccountKey)
     case setWritesEnabled(AccountKey, Bool)
+    /// Settings ▸ Accounts ▸ "Repositories to watch": only these repositories are synced (nil follows the
+    /// mapped checkouts again; an empty list syncs every repository).
+    case setWatchedRepositories(AccountKey, [RepoKey]?)
+    /// Settings ▸ Accounts ▸ "Check for updates".
+    case setRefreshInterval(AccountKey, RefreshInterval)
 
     // MARK: Repository mappings
     case addMapping(repo: RepoKey, repoFullPath: String, checkoutPath: String)
@@ -239,6 +244,8 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
         case .connectAccount(let request): "connectAccount(\(request.kind.rawValue))"
         case .disconnectAccount: "disconnectAccount"
         case .setWritesEnabled: "setWritesEnabled"
+        case .setWatchedRepositories(_, let repos): "setWatchedRepositories(\(repos?.count ?? -1))"
+        case .setRefreshInterval(_, let interval): "setRefreshInterval(\(interval.rawValue))"
         case .addMapping: "addMapping"
         case .mapCheckoutFolder(_, _, _, let anyway): "mapCheckoutFolder(anyway: \(anyway))"
         case .cancelCheckoutScan: "cancelCheckoutScan"

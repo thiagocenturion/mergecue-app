@@ -1,4 +1,5 @@
 import Foundation
+import os
 import MergeCueCore
 
 /// The production transport: an ephemeral `URLSession` with no cookies, no URL cache and no stored URL
@@ -70,7 +71,8 @@ public final class URLSessionTransport: HTTPTransport {
 
     public func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         let urlRequest = makeURLRequest(request)
-        let (data, response) = try await session.data(for: urlRequest)
+        let counter = RedirectCounter()
+        let (data, response) = try await session.data(for: urlRequest, delegate: counter)
         guard let http = response as? HTTPURLResponse else {
             throw URLError(.badServerResponse)
         }
@@ -79,6 +81,8 @@ public final class URLSessionTransport: HTTPTransport {
             guard let name = key as? String else { continue }
             headers[name] = (value as? String) ?? String(describing: value)
         }
+        let hops = counter.hops
+        if hops > 0 { headers[HTTPHeaders.redirectHops] = String(hops) }
         return HTTPResponse(status: http.statusCode, headers: headers, body: data, url: http.url ?? request.url)
     }
 
@@ -158,6 +162,24 @@ struct Origin: Hashable {
         case (nil, "http"): self.port = 80
         default: self.port = nil
         }
+    }
+}
+
+/// Per-request delegate: applies `RedirectPolicy` and counts the redirects that were followed.
+private final class RedirectCounter: NSObject, URLSessionTaskDelegate, Sendable {
+    private let count = OSAllocatedUnfairLock(initialState: 0)
+
+    var hops: Int { count.withLock { $0 } }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest
+    ) async -> URLRequest? {
+        let follow = RedirectPolicy.followRequest(original: task.originalRequest, proposed: request)
+        if follow != nil { count.withLock { $0 += 1 } }
+        return follow
     }
 }
 

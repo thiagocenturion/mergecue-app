@@ -102,7 +102,7 @@ struct AccountsSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("MergeCue reads each provider's API directly with a token stored in your Keychain. Accounts sync independently — a problem with one never blocks the others.")
+            Text("MergeCue reads each provider's API directly with a token stored in your Keychain. Accounts sync independently: a problem with one never blocks the others.")
                 .scaledFont(.callout)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -218,6 +218,11 @@ struct AccountCard: View {
                     }
                 }
                 .toggleStyle(.switch)
+                Divider()
+                AccountRefreshIntervalRow(model: model, account: account)
+                Divider()
+                WatchedRepositoriesSection(model: model, account: account)
+                Divider()
                 CapabilitySummary(manifest: account.capabilities)
                 HStack {
                     Button("Refresh") { Task { await model.send(.refresh(account: account.id)) } }

@@ -153,7 +153,7 @@ private struct AccountRepositoriesCard: View {
                 row(repo, hasOpenPRs: false)
             }
             if others.count > Self.visibleLimit {
-                Text("Showing \(Self.visibleLimit) of \(others.count) — search to narrow the list.")
+                Text("Showing \(Self.visibleLimit) of \(others.count). Search to narrow the list.")
                     .scaledFont(.caption).foregroundStyle(Theme.textSecondary)
             }
         } else if case .loaded? = list {

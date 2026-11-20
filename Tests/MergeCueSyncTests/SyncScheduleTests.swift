@@ -25,7 +25,7 @@ struct SyncScheduleTests {
         #expect(d.requestBudget(for: .gitlab) == 1000)
         #expect(d.requestBudget(for: .bitbucketCloud) == 500)
         #expect(d.backoffCap == 900)
-        #expect(d.hydrateConcurrency == 4)
+        #expect(d.hydrateConcurrency == 3)
     }
 
     // MARK: Detail tiers
@@ -34,16 +34,38 @@ struct SyncScheduleTests {
         func interval(_ age: TimeInterval, hot: Bool = false, pending: Bool = false, slowdown: Double = 1) -> TimeInterval {
             SyncSchedule.detailInterval(sinceChange: age, isHot: hot, checksPending: pending, slowdown: slowdown, configuration: config)
         }
-        #expect(interval(0) == 30)
-        #expect(interval(599) == 30)
-        #expect(interval(600) == 300)
-        #expect(interval(3_599) == 300)
+        #expect(interval(0) == 300, "recent: 5 min at the default 15-minute interval (D36)")
+        #expect(interval(599) == 300)
+        #expect(interval(600) == 900, "quiet: never faster than the list interval")
+        #expect(interval(3_599) == 900)
         #expect(interval(3_600) == 1_800)
         #expect(interval(86_400) == 1_800)
         #expect(interval(86_400, hot: true) == 30, "an active task keeps its CR at the fast tier")
         #expect(interval(86_400, pending: true) == 30, "pending checks keep the CR at the fast tier")
+        #expect(interval(0, hot: true) == 30)
         #expect(interval(86_400, slowdown: 4) == 7_200, "budget pressure slows every tier")
-        #expect(interval(0, slowdown: 0.5) == 30, "slowdown never speeds up")
+        #expect(interval(0, slowdown: 0.5) == 300, "slowdown never speeds up")
+    }
+
+    @Test func detailTiersScaleWithTheAccountsRefreshInterval() {
+        func interval(_ age: TimeInterval, every list: TimeInterval, pending: Bool = false) -> TimeInterval {
+            SyncSchedule.detailInterval(sinceChange: age, isHot: false, checksPending: pending, listInterval: list, configuration: config)
+        }
+        // Every 5 min: recent 100 s, quiet 5 min, idle 10 min.
+        #expect([interval(0, every: 300), interval(900, every: 300), interval(7_200, every: 300)] == [100, 300, 600])
+        // Every hour: recent 20 min, quiet 1 h, idle 2 h; pending checks still 30 s.
+        #expect([interval(0, every: 3_600), interval(900, every: 3_600), interval(7_200, every: 3_600)] == [1_200, 3_600, 7_200])
+        #expect(interval(7_200, every: 3_600, pending: true) == 30)
+        let manual = Account(
+            id: F.github, instance: .githubCom, username: "me", authMethod: .personalAccessToken,
+            connectedAt: F.at(0), refreshInterval: .manual
+        )
+        #expect(SyncSchedule.listInterval(for: manual, configuration: config) == nil)
+        var hourly = manual
+        hourly.refreshInterval = .oneHour
+        #expect(SyncSchedule.listInterval(for: hourly, configuration: config) == 3_600)
+        hourly.refreshInterval = nil
+        #expect(SyncSchedule.listInterval(for: hourly, configuration: config) == config.listInterval)
     }
 
     @Test func changeRequestBackoffLadder() {
@@ -102,10 +124,10 @@ struct SyncScheduleTests {
         schedule.seed(from: [old, fresh])
         let hints = ScheduleHints(now: now)
         #expect(schedule.dueDate(schedule.tracker(old.key)!, hints: hints, configuration: config) == F.at(-60 + 1_800))
-        #expect(schedule.dueDate(schedule.tracker(fresh.key)!, hints: hints, configuration: config) == F.at(-60 + 30))
-        #expect(schedule.dueKeys(hints: hints, configuration: config) == [fresh.key])
+        #expect(schedule.dueDate(schedule.tracker(fresh.key)!, hints: hints, configuration: config) == F.at(-60 + 300))
+        #expect(schedule.dueKeys(hints: hints, configuration: config).isEmpty, "recent: due 5 min after its last fetch")
         var hot = hints
-        hot.hotKeys = [old.key]
+        hot.hotKeys = [old.key, fresh.key]
         #expect(Set(schedule.dueKeys(hints: hot, configuration: config)) == [old.key, fresh.key])
     }
 

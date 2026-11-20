@@ -298,7 +298,7 @@ struct SyncCoordinatorTests {
         let h = try await SyncHarness()
         let remote = h.remote()
         remote.put(F.snapshot(cr))
-        var configuration = SyncConfiguration.deterministic
+        var configuration = SyncHarness.fastRecentTier
         configuration.quietHours = QuietHours(startMinute: 23 * 60, endMinute: 7 * 60, timeZoneID: "UTC")
         let coordinator = await h.makeCoordinator(configuration: configuration)
         await h.start(coordinator)

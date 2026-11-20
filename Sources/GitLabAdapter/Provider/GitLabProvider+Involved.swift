@@ -16,7 +16,7 @@ extension GitLabProvider {
     /// commented on: one page of the user's own `GET /events?action=commented&target_type=note&after=<day>` →
     /// distinct (project, iid) pairs of merge-request notes → per project (at most `maxInvolvedProjects`)
     /// `GET /projects/:id/merge_requests?iids[]=…&state=opened`. The user's own merge requests are left to the
-    /// authored listing.
+    /// authored listing. With watched repositories only their projects are looked up.
     func listInvolved(_ query: ChangeRequestQuery) async throws -> ChangeRequestPage {
         let user = try await cachedUser()
         let userID = String(user.id)
@@ -37,7 +37,9 @@ extension GitLabProvider {
         var projectOrder: [Int] = []
         var iidsByProject: [Int: [Int]] = [:]
         for event in events {
-            guard let project = event.projectId, event.note?.noteableType == "MergeRequest", let iid = event.note?.noteableIid else {
+            guard let project = event.projectId, event.note?.noteableType == "MergeRequest", let iid = event.note?.noteableIid,
+                  query.includes(RepoKey(account: account, remoteRepoID: String(project)))
+            else {
                 continue
             }
             if iidsByProject[project] == nil {

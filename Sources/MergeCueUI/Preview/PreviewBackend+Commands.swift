@@ -115,6 +115,15 @@ extension PreviewBackend {
                 ? "Remote writes on for \(name). Every reply or resolve still needs your approval."
                 : "Remote writes off for \(name)")
 
+        case .setWatchedRepositories(let key, let repos):
+            guard let index = state.accounts.firstIndex(where: { $0.id == key }) else { throw AppBackendError.notFound("The account") }
+            state.accounts[index].account.watchedRepositories = repos
+            return AppCommandResult(message: "Preview data: watched repositories updated, nothing was synced.")
+        case .setRefreshInterval(let key, let interval):
+            guard let index = state.accounts.firstIndex(where: { $0.id == key }) else { throw AppBackendError.notFound("The account") }
+            state.accounts[index].account.refreshInterval = interval
+            return AppCommandResult(message: "Preview data: \(interval.displayName.lowercased()).")
+
         case .addMapping(let repo, let path, let checkoutPath):
             state.mappings.removeAll { $0.repo == repo && $0.checkoutPath == checkoutPath }
             state.mappings.append(RepoMapping(id: IDGenerator.mappingID(), repo: repo, repoFullPath: path, checkoutPath: checkoutPath,

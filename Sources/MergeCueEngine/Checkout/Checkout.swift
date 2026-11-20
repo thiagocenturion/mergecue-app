@@ -17,7 +17,8 @@ extension MergeCueEngine {
         try await uiCall { try await database.mappings(repo: repo) }
     }
 
-    /// Maps a repository to a local checkout. The confidence comes from `WorkspaceInspecting.match` (remote URL /
+    /// Maps a repository to a local checkout and watches it (`watchMappedRepository`, DECISIONS D36). The
+    /// confidence comes from `WorkspaceInspecting.match` (remote URL /
     /// host / path); only an `exact` match is confirmed automatically — others require `confirmMapping`, unless
     /// `confirm` is true (the owner explicitly chose "Map anyway" after seeing `previewMapping`). A subfolder of a
     /// checkout maps the checkout's top level. Missing folders and folders that are not git checkouts are refused.
@@ -43,6 +44,7 @@ extension MergeCueEngine {
             )
             try await database.upsertMapping(mapping)
             emit(.mappings)
+            if existing == nil { try await watchMappedRepository(repo) }
             return mapping
         }
     }
@@ -109,6 +111,8 @@ extension MergeCueEngine {
                 throw EngineError.notFound("Mapping \(id)")
             }
             emit(.mappings)
+            // Watched repositories that follow the mappings change with them.
+            await env.sync.accountsDidChange()
         }
     }
 

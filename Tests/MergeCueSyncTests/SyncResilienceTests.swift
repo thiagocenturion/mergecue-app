@@ -183,7 +183,7 @@ struct SyncResilienceTests {
         let keys = (1...10).map { F.crKey(number: $0) }
         // Quiet for a day: the slow detail tier (30 min).
         for key in keys { h.remote().put(F.snapshot(key, updatedAt: F.at(-86_400))) }
-        var configuration = SyncConfiguration.deterministic
+        var configuration = SyncHarness.fastRecentTier
         configuration.hydrateConcurrency = 2
         let coordinator = await h.makeCoordinator(configuration: configuration)
         await h.start(coordinator)
@@ -206,7 +206,7 @@ struct SyncResilienceTests {
 
     @Test func disabledAccountsArePaused() async throws {
         let h = try await SyncHarness(accounts: [F.github, F.gitlab])
-        var configuration = SyncConfiguration.deterministic
+        var configuration = SyncHarness.fastRecentTier
         configuration.disabledAccounts = [F.gitlab]
         let coordinator = await h.makeCoordinator(configuration: configuration)
         await h.start(coordinator, sleepers: 1)

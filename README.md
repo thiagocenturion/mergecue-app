@@ -124,28 +124,55 @@ count as **Reviewing** in filters. Only threads you took part in create inbox it
 
 ### How syncing works
 
-MergeCue polls each account on its own schedule, modelled on GitButler (DECISIONS D35):
+MergeCue polls each account on its own schedule, modelled on GitButler (DECISIONS D35, D36):
 
-- **Lists** of your PRs/MRs are fetched at launch, every 15 minutes, when you press **Refresh**, and when you come
-  back to MergeCue (open the popover, focus the main window), after the Mac wakes and when the network returns —
-  at most once a minute for those automatic triggers. Refresh is never held back.
-- **Details** of each PR/MR (threads, checks, reviews) refresh by how recently it changed: every 30 s during the first
-  10 minutes after a change, every 5 min up to an hour, then every 30 min. PRs/MRs with a task waiting for or claimed
-  by an agent, or with checks still running, stay at 30 s. A change in the list is picked up at once.
+- **Repositories to watch** (Settings ▸ Accounts ▸ your account): only these repositories are synced. The list
+  starts with the repositories you mapped to a local checkout (mapping one in setup or Settings ▸ Repositories adds
+  it); add or remove repositories with **Add Repository…** / **Remove**. With nothing watched every repository is
+  synced and the account card asks you to pick some. MergeCue never lists your repositories while syncing: the
+  picker uses the repository list fetched when you open it (kept for 6 hours).
+- **Check for updates** (same card): every 5, 15 (default) or 30 minutes, every hour, or **Manually only**. Lists of
+  your PRs/MRs are fetched at launch, at that interval, when you press **Refresh**, and when you come back to
+  MergeCue (open the popover, focus the main window), after the Mac wakes and when the network returns, at most
+  once a minute for those automatic triggers. "Manually only" checks at launch and on Refresh, nothing else.
+- **Details** of each PR/MR refresh by how recently it changed, scaled to the interval (at 15 minutes: every 5 min for
+  10 minutes after a change, every 15 min up to an hour, then every 30 min). Only PRs/MRs with a task waiting for or
+  claimed by an agent, or with checks still running, refresh every 30 s (never with "Manually only"). A change in
+  the list is picked up at once. Refresh lists again and only re-reads what changed (plus failed PRs/MRs and PRs/MRs
+  with checks still running).
+- **Only what changed is fetched again.** Each provider's change indicators decide: Bitbucket `comment_count`,
+  `task_count`, `updated_on`, source/destination commits and commit statuses; GitLab `user_notes_count`,
+  `updated_at`, head/base commits and the head pipeline; GitHub's one GraphQL query per PR only runs when the PR's
+  list entry changed (updated time, head, check rollup). Identity (`/user`, workspaces) is fetched once per session.
+  At most three requests per account (two for Bitbucket) are in flight at once, and identical concurrent requests
+  are shared.
 - **A PR/MR that fails to load** is retried after 30 s, 5 min, then every 30 min. "Not found" and "no access" stop
   retrying until the PR/MR changes, you press Refresh, or you come back a while later; the account shows
   "1 PR couldn't be loaded: not found (tap to retry)" and the row says why, so an account never looks empty when its
   PRs failed.
 
+Measured with the real adapters (`SyncRequestCountTests`, fixture data), provider requests including redirects:
+
+| Scenario | First sync | Refresh, nothing changed | Refresh, one new comment |
+| --- | --- | --- | --- |
+| Bitbucket, 500 repositories, 2 authored PRs, before | 19 | 2 | 10 |
+| Bitbucket, same, 2 watched repositories, after | 10 | 1 | 2 |
+| Bitbucket with review requests on, before | 520 | 502 | 510 |
+| Bitbucket with review requests on, 2 watched, after | 12 | 3 | 4 |
+| GitHub fixtures, before / after | 5 / 5 | 1 / 1 | 4 / 4 |
+| GitLab fixtures, before / after (1 watched project) | 23 / 21 | 2 / 2 | 12 / 9 |
+
 ### Rate limits
 
-- Settings ▸ Accounts shows **N requests in the last hour** per account (answers "not modified" to conditional
-  requests are free and not counted). Above 75 % of a soft budget — GitHub 1500/h, GitLab 1000/h, Bitbucket Cloud
-  500/h — details refresh half as often, above the budget four times less often.
+- Settings ▸ Accounts shows **N requests in the last hour** per account, redirects included (answers "not modified"
+  to conditional requests are free on GitHub and GitLab and not counted; Bitbucket does not document them as free, so
+  they count). Above 75 % of a soft budget (GitHub 1500/h, GitLab 1000/h, Bitbucket Cloud 500/h) details refresh
+  half as often, above the budget four times less often; the same slowdown applies for 15 minutes when Bitbucket
+  says the token is near its limit (`X-RateLimit-NearLimit`).
 - When a provider rate-limits an account, MergeCue waits exactly until the reset time the provider sends
-  (`Retry-After`, GitHub `x-ratelimit-reset`, GitLab `RateLimit-Reset`); without one it backs off 5, then 15, then
-  60 minutes. The account shows **Rate limited — retrying at HH:MM** with the provider and account; other accounts
-  keep syncing.
+  (`Retry-After`, GitHub `x-ratelimit-reset`, GitLab `RateLimit-Reset`); without one it waits until the account's
+  own requests of the last hour are well under its budget, at least 5 minutes (then 15, then 60). The account shows
+  **Rate limited**, retrying at HH:MM, with the provider and account; other accounts keep syncing.
 - Conditional requests (`If-None-Match`) are used for GitLab listings, GitHub REST reads and Bitbucket reads.
   GitHub's PR listing and details use GraphQL, which has no ETags.
 

@@ -14,8 +14,9 @@ final class SyncEnvironment: Sendable {
         var configuration: SyncConfiguration
         var pausedUntil: Date?
         var preferences: NotificationPreferences = .allEnabled
-        /// Scopes listed besides "authored". `.all` until the engine forwards the owner's choice.
-        var tracking: TrackingPreferences = .all
+        /// Scopes listed besides "authored". Authored only (the live default) until the engine forwards the owner's
+        /// choice, so a sync that starts before the engine never lists review requests across every repository.
+        var tracking: TrackingPreferences = .authoredOnly
         var hotUntil: Date?
         /// Change requests with an active agent task (fast detail tier).
         var hotChangeRequests: Set<ChangeRequestKey> = []

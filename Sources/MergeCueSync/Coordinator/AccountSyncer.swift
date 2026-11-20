@@ -2,9 +2,10 @@ import Foundation
 import MergeCueCore
 import MergeCueStore
 
-/// Independent polling loop of one account (DECISIONS D35):
-/// - **lists** on start, every `listInterval` (15 min), on manual refresh and on debounced events (return/focus,
-///   wake, network recovery);
+/// Independent polling loop of one account (DECISIONS D35, D36):
+/// - **lists** on start, every list interval (the account's `refreshInterval`, default 15 min), on manual refresh
+///   and on debounced events (return/focus, wake, network recovery); "Manually only" accounts list at start and on
+///   manual refresh only;
 /// - between lists, **detail** cycles hydrate the change requests whose progressive refresh is due
 ///   (`ChangeRequestSchedule`);
 /// - account-level failures back off (exponential; rate limits wait for the provider's reset, else 5 → 15 → 60 min);
@@ -18,6 +19,8 @@ actor AccountSyncer {
         var resetFailures = false
         /// Retry change requests that failed terminally at least `terminalRetryOnReturnAfter` ago (return/focus).
         var resetOldTerminalFailures = false
+        /// A manual refresh: also hydrates CRs whose state the listing cannot show (pending checks, active task).
+        var isManual = false
 
         static let list = Work(mode: .full)
         static let details = Work(mode: .details)
@@ -27,14 +30,20 @@ actor AccountSyncer {
             return Work(
                 mode: mode == .full || other.mode == .full ? .full : .details,
                 resetFailures: resetFailures || other.resetFailures,
-                resetOldTerminalFailures: resetOldTerminalFailures || other.resetOldTerminalFailures
+                resetOldTerminalFailures: resetOldTerminalFailures || other.resetOldTerminalFailures,
+                isManual: isManual || other.isManual
             )
         }
     }
 
-    let account: Account
+    /// The account (metadata changes such as watched repositories or the refresh interval are applied in place
+    /// with `update(account:watched:)`, keeping the provider and its identity caches).
+    private(set) var account: Account
+    /// Effective watched repositories (`WatchedRepositories.effective`; empty = all).
+    private(set) var watched: [RepoKey]
     let credential: Credential?
-    private let provider: (any ReviewProvider)?
+    /// Long-lived for the syncer's lifetime: its caches (`/user`, workspaces, ETags) survive across cycles.
+    let provider: (any ReviewProvider)?
     private let environment: SyncEnvironment
     private(set) var status: AccountSyncStatus
     private var loopTask: Task<Void, Never>?
@@ -57,12 +66,14 @@ actor AccountSyncer {
 
     init(
         account: Account,
+        watched: [RepoKey] = [],
         credential: Credential?,
         provider: (any ReviewProvider)?,
         environment: SyncEnvironment,
         previousStatus: AccountSyncStatus?
     ) {
         self.account = account
+        self.watched = watched
         self.credential = credential
         self.provider = provider
         self.environment = environment
@@ -105,10 +116,39 @@ actor AccountSyncer {
     }
 
     /// Manual refresh: lists now (or right after the cycle in flight), retries every failed change request and
-    /// returns when the cycle finished. Returns immediately when the account cannot sync now (stopped,
-    /// `authExpired`, `paused`, or rate limited until a future reset).
+    /// returns when the cycle finished. Only change requests whose list version changed, that are due, failed, or
+    /// whose state the listing cannot show (pending checks, active task) are hydrated. Returns immediately when the
+    /// account cannot sync now (stopped, `authExpired`, `paused`, or rate limited until a future reset).
     func refresh() async {
-        await request(Work(mode: .full, resetFailures: true))
+        await request(Work(mode: .full, resetFailures: true, isManual: true))
+    }
+
+    /// Applies account metadata changes in place (same credential and instance): the provider, its caches and the
+    /// per-CR schedule are kept. A changed listing scope (watched repositories, namespaces) lists right away; a
+    /// changed refresh interval only moves the next list.
+    func update(account newAccount: Account, watched newWatched: [RepoKey]) {
+        let scopeChanged = newWatched != watched || newAccount.selectedNamespaces != account.selectedNamespaces
+        let intervalChanged = newAccount.refreshInterval != account.refreshInterval
+        account = newAccount
+        watched = newWatched
+        guard isRunning else { return }
+        if scopeChanged {
+            if cycleInProgress {
+                pendingWork = Work.list.merged(with: pendingWork)
+            } else if canRunNow {
+                startLoop(with: .list)
+            }
+        } else if intervalChanged {
+            if let listInterval, let lastListedAt {
+                nextListAt = lastListedAt.addingTimeInterval(listInterval)
+            }
+            if !cycleInProgress, loopTask != nil { startLoop(with: nil) }
+        }
+    }
+
+    /// The account's list interval; nil = "Manually only".
+    private var listInterval: TimeInterval? {
+        SyncSchedule.listInterval(for: account, configuration: environment.current.configuration)
     }
 
     /// Event-triggered refresh (return/focus, wake, network recovery), skipped within `eventRefreshDebounce` of the
@@ -116,7 +156,7 @@ actor AccountSyncer {
     /// Returns whether a cycle ran.
     @discardableResult
     func eventRefresh(retryTerminalFailures: Bool) async -> Bool {
-        guard isRunning, canRunNow else { return false }
+        guard isRunning, canRunNow, listInterval != nil else { return false }
         let now = environment.clock.now
         let debounce = environment.current.configuration.eventRefreshDebounce
         let recent = [lastEventRefreshAt, lastListedAt].compactMap { $0 }.max()
@@ -201,7 +241,7 @@ actor AccountSyncer {
         case .rateLimited, .offline, .permissionDenied, .error:
             return (failureRetryAt ?? .distantPast) <= now ? .list : nil
         }
-        if (nextListAt ?? .distantPast) <= now { return .list }
+        if listInterval != nil, (nextListAt ?? .distantPast) <= now { return .list }
         let configuration = environment.current.configuration
         return schedule.dueKeys(hints: hints(now: now), configuration: configuration).isEmpty ? nil : .details
     }
@@ -214,8 +254,12 @@ actor AccountSyncer {
         case .authExpired, .paused:
             return nil
         case .ok, .idle, .syncing:
-            var wake = nextListAt ?? now
-            if let due = schedule.earliestDue(hints: hints(now: now), configuration: configuration), due < wake { wake = due }
+            // "Manually only": no list timer; the loop ends until a manual refresh (or a due CR) restarts it.
+            var wake: Date? = listInterval == nil ? nil : (nextListAt ?? now)
+            if let due = schedule.earliestDue(hints: hints(now: now), configuration: configuration), due < (wake ?? .distantFuture) {
+                wake = due
+            }
+            guard let wake else { return nil }
             return max(configuration.minimumDelay, wake.timeIntervalSince(now))
         case .rateLimited, .offline, .permissionDenied, .error:
             let retryAt = failureRetryAt ?? now
@@ -223,7 +267,7 @@ actor AccountSyncer {
         }
     }
 
-    private func hints(now: Date) -> ScheduleHints {
+    private func hints(now: Date, manual: Bool = false) -> ScheduleHints {
         let settings = environment.current
         let used = environment.requestLedger.count(account.id, now: now)
         let budget = settings.configuration.requestBudget(for: account.kind)
@@ -231,7 +275,13 @@ actor AccountSyncer {
             now: now,
             hotKeys: settings.hotChangeRequests,
             allHot: settings.hotUntil.map { $0 > now } ?? false,
-            slowdown: SyncSchedule.budgetSlowdown(used: used, budget: budget, configuration: settings.configuration)
+            slowdown: max(
+                SyncSchedule.budgetSlowdown(used: used, budget: budget, configuration: settings.configuration),
+                // The provider itself said fewer than 20 % of requests are left (Bitbucket `X-RateLimit-NearLimit`).
+                environment.requestLedger.isNearLimit(account.id, now: now) ? max(1, settings.configuration.budgetSlowdown) : 1
+            ),
+            listInterval: SyncSchedule.listInterval(for: account, configuration: settings.configuration),
+            isManualRefresh: manual
         )
     }
 
@@ -250,16 +300,18 @@ actor AccountSyncer {
         }
         setStatus { $0.state = .syncing; $0.lastAttemptAt = startedAt; $0.nextRunAt = nil }
 
-        let cycle = SyncCycle(account: account, provider: provider, environment: environment)
+        let cycle = SyncCycle(account: account, watched: watched, provider: provider, environment: environment)
         do {
-            let outcome = try await cycle.run(mode: work.mode, schedule: schedule, hints: hints(now: startedAt))
+            let outcome = try await cycle.run(mode: work.mode, schedule: schedule, hints: hints(now: startedAt, manual: work.isManual))
             let finishedAt = environment.clock.now
             schedule = outcome.schedule
             if work.mode == .full {
                 lastListedAt = finishedAt
-                nextListAt = finishedAt.addingTimeInterval(
-                    SyncSchedule.listDelay(configuration: configuration, jitterSample: environment.jitter())
-                )
+                nextListAt = listInterval.map {
+                    finishedAt.addingTimeInterval(
+                        SyncSchedule.listDelay(configuration: configuration, listInterval: $0, jitterSample: environment.jitter())
+                    )
+                }
             }
             failureRetryAt = nil
             let finalState = isRunning ? .ok : (stoppedState ?? .ok)
@@ -294,7 +346,14 @@ actor AccountSyncer {
             if let until, until > now {
                 message = "\(provider) rate limit reached for @\(account.username). MergeCue waits for the reset time \(provider) sent."
             } else {
-                let wait = SyncSchedule.rateLimitFallback(consecutiveFailures: failures, configuration: configuration)
+                // No reset time (Bitbucket sends none for its rolling hour): wait until this account's own requests
+                // of the last hour are well under its soft budget, at least the fallback's first step.
+                var wait = SyncSchedule.rateLimitFallback(consecutiveFailures: failures, configuration: configuration)
+                if let budget = configuration.requestBudget(for: account.kind) {
+                    let calm = environment.requestLedger.date(account.id, whenCountBelow: budget / 2, now: now)
+                    let first = SyncSchedule.rateLimitFallback(consecutiveFailures: 1, configuration: configuration)
+                    if calm.timeIntervalSince(now) > first { wait = calm.timeIntervalSince(now) }
+                }
                 state = .rateLimited(until: now.addingTimeInterval(wait))
                 message = "\(provider) rate limit reached for @\(account.username) (no reset time sent). "
                     + "MergeCue backs off for \(Int((wait / 60).rounded())) min."

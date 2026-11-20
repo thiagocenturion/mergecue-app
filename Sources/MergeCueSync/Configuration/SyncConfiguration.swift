@@ -7,7 +7,8 @@ import MergeCueCore
 public struct SyncConfiguration: Sendable, Hashable {
     // MARK: List cadence
 
-    /// Interval between list polls of one account (15 min).
+    /// Interval between list polls of an account that never chose one (15 min). An account's
+    /// `Account.refreshInterval` (Settings ▸ Accounts ▸ "Check for updates") replaces it for that account.
     public var listInterval: TimeInterval
     /// Minimum time between an event-triggered refresh (return/focus, wake, network recovery) of one account and its
     /// previous event refresh or successful list (60 s). Manual refreshes are never debounced.
@@ -16,17 +17,19 @@ public struct SyncConfiguration: Sendable, Hashable {
     /// at least this old (15 min), so reopening the popover repeatedly cannot hammer a dead PR.
     public var terminalRetryOnReturnAfter: TimeInterval
 
-    // MARK: Detail tiers (per change request, by time since it last changed)
+    // MARK: Detail tiers (per change request, by time since it last changed; DECISIONS D35, D36)
 
-    /// Detail refresh interval while the CR changed recently, is hot (active task) or has pending checks (30 s).
+    /// Detail refresh interval of a CR with an active agent task or pending checks (30 s). Never used for an
+    /// account whose refresh interval is "Manually only".
     public var fastDetailInterval: TimeInterval
-    /// The fast tier applies while the CR changed less than this long ago (10 min).
+    /// A CR that changed less than this long ago is "recent" (10 min).
     public var fastDetailWindow: TimeInterval
-    /// Interval after the fast window, up to `mediumDetailWindow` (5 min).
+    /// Interval of a recent CR, scaled by the account's list interval ÷ `listInterval` (5 min at 15 min).
     public var mediumDetailInterval: TimeInterval
-    /// The medium tier applies while the CR changed less than this long ago (1 h).
+    /// A CR that changed less than this long ago (and is not recent) is "quiet"; older ones are "idle" (1 h).
     public var mediumDetailWindow: TimeInterval
-    /// Interval for CRs that have not changed for longer than `mediumDetailWindow` (30 min).
+    /// Interval of an idle CR, scaled like `mediumDetailInterval` (30 min at 15 min). Quiet and idle CRs are never
+    /// refreshed faster than the account's list interval.
     public var slowDetailInterval: TimeInterval
 
     // MARK: Per-CR error backoff
@@ -59,7 +62,7 @@ public struct SyncConfiguration: Sendable, Hashable {
 
     // MARK: Other
 
-    /// Maximum concurrent `hydrate` calls per account.
+    /// Maximum concurrent `hydrate` calls per account (3; each adapter also caps its own concurrent requests).
     public var hydrateConcurrency: Int
     /// Floor of every sleep of an account loop (guards against tight loops).
     public var minimumDelay: TimeInterval
@@ -91,7 +94,7 @@ public struct SyncConfiguration: Sendable, Hashable {
         budgetWarningFraction: Double = 0.75,
         budgetWarningSlowdown: Double = 2,
         budgetSlowdown: Double = 4,
-        hydrateConcurrency: Int = 4,
+        hydrateConcurrency: Int = 3,
         minimumDelay: TimeInterval = 1,
         quietHours: QuietHours? = nil,
         disabledAccounts: Set<AccountKey> = [],
@@ -149,25 +152,44 @@ public struct SyncConfiguration: Sendable, Hashable {
 
 /// Pure scheduling arithmetic (unit tested; the syncer only adds the random jitter sample).
 public enum SyncSchedule {
-    /// Detail refresh interval of one change request: the fast tier when it is hot (active task / `setHot`), has
-    /// pending checks, or changed less than `fastDetailWindow` ago; then medium up to `mediumDetailWindow`; then
-    /// slow. Multiplied by `slowdown` (request budget pressure, ≥ 1).
+    /// Detail refresh interval of one change request of an account polling its lists every `listInterval`
+    /// (default: `configuration.listInterval`; DECISIONS D36):
+    /// - hot (active agent task / `setHot`) or pending checks → `fastDetailInterval` (30 s);
+    /// - recent (changed less than `fastDetailWindow` ago) → `mediumDetailInterval` × scale (5 min at 15 min);
+    /// - quiet (less than `mediumDetailWindow`) → the list interval;
+    /// - idle → `slowDetailInterval` × scale (30 min at 15 min), never less than the list interval.
+    /// `scale` = `listInterval ÷ configuration.listInterval`. Multiplied by `slowdown` (request budget, ≥ 1).
+    /// An account checking "Manually only" has no automatic detail refreshes (see `ChangeRequestSchedule`).
     public static func detailInterval(
         sinceChange: TimeInterval,
         isHot: Bool,
         checksPending: Bool,
         slowdown: Double = 1,
+        listInterval: TimeInterval? = nil,
         configuration: SyncConfiguration
     ) -> TimeInterval {
+        let reference = max(1, configuration.listInterval)
+        let list = max(0, listInterval ?? configuration.listInterval)
+        let scale = list / reference
+        let fast = max(0, configuration.fastDetailInterval)
         let base: TimeInterval
-        if isHot || checksPending || sinceChange < configuration.fastDetailWindow {
-            base = configuration.fastDetailInterval
+        if isHot || checksPending {
+            base = fast
+        } else if sinceChange < configuration.fastDetailWindow {
+            base = max(fast, configuration.mediumDetailInterval * scale)
         } else if sinceChange < configuration.mediumDetailWindow {
-            base = configuration.mediumDetailInterval
+            base = max(fast, list, configuration.mediumDetailInterval * scale)
         } else {
-            base = configuration.slowDetailInterval
+            base = max(fast, list, configuration.slowDetailInterval * scale)
         }
         return max(0, base) * max(1, slowdown.isFinite ? slowdown : 1)
+    }
+
+    /// The list interval of `account`: its own refresh interval when chosen, else `configuration.listInterval`;
+    /// nil when it checks "Manually only".
+    public static func listInterval(for account: Account, configuration: SyncConfiguration) -> TimeInterval? {
+        guard let chosen = account.refreshInterval else { return configuration.listInterval }
+        return chosen.listInterval
     }
 
     /// Retry delay of a change request after `failures` consecutive non-terminal hydration failures.
@@ -223,10 +245,12 @@ public enum SyncSchedule {
         }
     }
 
-    /// List interval with symmetric jitter.
-    public static func listDelay(configuration: SyncConfiguration, jitterSample: Double = 0.5) -> TimeInterval {
+    /// List interval (default: `configuration.listInterval`) with symmetric jitter.
+    public static func listDelay(
+        configuration: SyncConfiguration, listInterval: TimeInterval? = nil, jitterSample: Double = 0.5
+    ) -> TimeInterval {
         let fraction = max(0, min(configuration.jitterFraction, 1))
-        return configuration.listInterval * (1 + fraction * (2 * min(max(jitterSample, 0), 1) - 1))
+        return (listInterval ?? configuration.listInterval) * (1 + fraction * (2 * min(max(jitterSample, 0), 1) - 1))
     }
 
     private static func ladder(_ steps: [TimeInterval], step: Int, fallback: TimeInterval) -> TimeInterval {

@@ -202,11 +202,15 @@ struct BitbucketConditionalRequestTests {
                 return StubTransport.json(body, headers: ["ETag": etag])
             },
         ], baseURL: BitbucketFixtures.instance.apiURL)
+        let clock = TestClock()
         let provider = BitbucketCloudProvider(
             instance: BitbucketFixtures.instance, credential: .bearer("fixture-bitbucket-token"), transport: stub,
-            clock: TestClock(), directory: BitbucketRepositoryDirectory()
+            clock: clock, directory: BitbucketRepositoryDirectory()
         )
         let first = try await provider.listNamespaces()
+        _ = try await provider.listNamespaces()
+        #expect(stub.requests.count == 1, "workspaces are cached for the session (D36)")
+        clock.advance(by: 7 * 3_600)
         let second = try await provider.listNamespaces()
         #expect(first.map(\.path) == ["acme"])
         #expect(second == first, "a 304 serves the cached page")

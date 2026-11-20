@@ -17,7 +17,8 @@ public struct LiveProviderFactory: ProviderFactory {
 
     public let clock: any MCClock
     /// Every HTTP request an account's providers send (Sync's and the engine's) is recorded here per account
-    /// (`CountingTransport`; 304s excluded). Probes (connecting an account) are not counted.
+    /// (`CountingTransport`: redirect hops included; 304s excluded except for Bitbucket, which does not document
+    /// conditional requests as free). Probes (connecting an account) are not counted.
     public let requestLedger: ProviderRequestLedger
     private let transport: TransportProvider
 
@@ -40,7 +41,10 @@ public struct LiveProviderFactory: ProviderFactory {
     }
 
     public func makeProvider(account: Account, credential: Credential) -> any ReviewProvider {
-        let counted = CountingTransport(transport(account.instance), ledger: requestLedger, account: account.id, clock: clock)
+        let counted = CountingTransport(
+            transport(account.instance), ledger: requestLedger, account: account.id, clock: clock,
+            countsNotModified: account.kind == .bitbucketCloud
+        )
         return make(instance: account.instance, credential: credential, grantedScopes: account.grantedScopes, transport: counted)
     }
 

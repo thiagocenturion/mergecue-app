@@ -90,7 +90,7 @@ struct SyncPollingModelTests {
         let remote = h.remote()
         let key = F.crKey()
         remote.put(F.snapshot(key)) // changed "now"
-        let coordinator = await h.makeCoordinator()
+        let coordinator = await h.makeCoordinator(configuration: .deterministic)
         await h.start(coordinator)
 
         var gaps: [TimeInterval] = []
@@ -105,10 +105,12 @@ struct SyncPollingModelTests {
             }
         }
         await coordinator.stop()
-        #expect(gaps.prefix(20).allSatisfy { $0 == 30 }, "fast tier for the first 10 minutes: \(gaps.prefix(21))")
-        #expect(gaps.contains(300), "medium tier up to an hour")
-        #expect(gaps.last == 1_800, "slow tier after an hour")
-        #expect(calls < 45, "about 20 + 10 + 2 detail refreshes in 2 h instead of 80 polls at 90 s (\(calls))")
+        // D36 at the default 15-minute interval: recent 5 min, quiet = the interval, idle 30 min; 30 s only for
+        // pending checks / active tasks.
+        #expect(gaps.prefix(2).allSatisfy { $0 == 300 }, "recent tier for the first 10 minutes: \(gaps)")
+        #expect(gaps.contains(900), "never faster than the list interval while quiet: \(gaps)")
+        #expect(gaps.last == 1_800, "idle tier after an hour")
+        #expect(calls < 12, "about 2 + 3 + 2 detail refreshes in 2 h instead of 80 polls at 90 s (\(calls))")
     }
 
     @Test func newActivityReturnsTheChangeRequestToTheFastTier() async throws {
@@ -310,7 +312,7 @@ struct SyncPollingModelTests {
         let h = try await SyncHarness(accounts: [F.github, F.gitlab])
         h.remote(F.github).put(F.snapshot(F.crKey(F.github)))
         h.remote(F.gitlab).put(F.snapshot(F.crKey(F.gitlab), updatedAt: Self.quiet))
-        var configuration = SyncConfiguration.deterministic
+        var configuration = SyncHarness.fastRecentTier
         configuration.requestBudgets[.github] = 10
         let coordinator = await h.makeCoordinator(configuration: configuration)
         await h.start(coordinator)

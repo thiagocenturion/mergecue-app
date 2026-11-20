@@ -10,6 +10,11 @@ struct ScheduleHints: Sendable {
     var allHot = false
     /// Budget slowdown factor (≥ 1) of the account.
     var slowdown: Double = 1
+    /// The account's list interval; nil = "Manually only" (no automatic detail refreshes at all).
+    var listInterval: TimeInterval? = SyncConfiguration.default.listInterval
+    /// The cycle is a manual refresh: CRs whose state the listing cannot show (pending checks, active agent
+    /// task) are hydrated too, even when their automatic slot is not due (or there is none, "Manually only").
+    var isManualRefresh = false
 
     func isHot(_ key: ChangeRequestKey) -> Bool { allHot || hotKeys.contains(key) }
 }
@@ -17,8 +22,10 @@ struct ScheduleHints: Sendable {
 /// Per-change-request polling state of one account (in memory; rebuilt from stored snapshots after a relaunch).
 ///
 /// - Detail refreshes are progressive by "time since the CR last changed" (new activity, head change, check
-///   state change): fast (30 s) for the first 10 min, medium (5 min) up to 1 h, slow (30 min) after; hot CRs and CRs
-///   with pending checks stay fast. A changed list version always hydrates immediately.
+///   state change) and scale with the account's list interval (`SyncSchedule.detailInterval`, D36): at 15 min,
+///   5 min while recent (< 10 min), 15 min up to 1 h, 30 min after; hot CRs and CRs with pending checks use the
+///   30 s tier. "Manually only" accounts have no automatic detail refreshes. A changed list version always
+///   hydrates immediately.
 /// - A failed hydration backs off (30 s → 5 min → 30 min). `not found` / `forbidden` are terminal: the CR is not
 ///   retried until its list version changes, a manual refresh, or the user returns (`resetFailures`).
 struct ChangeRequestSchedule: Sendable {
@@ -87,6 +94,10 @@ struct ChangeRequestSchedule: Sendable {
         }
         if !hasSnapshot && tracker.failures == 0 { return true }
         if hasSnapshot, storedListVersion != listVersion { return true }
+        if hints.isManualRefresh, tracker.failures == 0, !tracker.isFinished,
+           tracker.checksPending || hints.isHot(summary.key) {
+            return true
+        }
         guard let due = dueDate(tracker, hints: hints, configuration: configuration) else { return false }
         return due <= hints.now
     }
@@ -106,10 +117,11 @@ struct ChangeRequestSchedule: Sendable {
     }
 
     /// When the tracker is next due (`distantPast` = now: never attempted or reset), or nil (terminal failure,
-    /// finished).
+    /// finished, or an account that checks "Manually only").
     func dueDate(_ tracker: Tracker, hints: ScheduleHints, configuration: SyncConfiguration) -> Date? {
         guard !tracker.isTerminal, !tracker.isFinished else { return nil }
         guard let last = tracker.lastAttemptAt else { return .distantPast }
+        guard let listInterval = hints.listInterval else { return nil }
         if tracker.failures > 0 {
             return last.addingTimeInterval(SyncSchedule.changeRequestBackoff(failures: tracker.failures, configuration: configuration))
         }
@@ -118,6 +130,7 @@ struct ChangeRequestSchedule: Sendable {
             isHot: hints.isHot(tracker.summary.key),
             checksPending: tracker.checksPending,
             slowdown: hints.slowdown,
+            listInterval: listInterval,
             configuration: configuration
         )
         return last.addingTimeInterval(interval)

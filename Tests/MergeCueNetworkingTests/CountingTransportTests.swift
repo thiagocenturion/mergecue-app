@@ -33,4 +33,41 @@ struct CountingTransportTests {
         #expect(ledger.count(account, now: clock.now) == 2, "error responses reached the provider and count")
         #expect(ledger.count(AccountKey(instance: .githubCom, remoteUserID: "2"), now: clock.now) == 0)
     }
+
+    @Test func redirectHopsNotModifiedForBitbucketAndNearLimitAreRecorded() async throws {
+        let stub = StubTransport(routes: [
+            StubTransport.Route(method: "GET", pathPattern: "/diffstat") { _, _ in
+                StubTransport.json("{}", headers: [HTTPHeaders.redirectHops: "1"])
+            },
+            StubTransport.Route(method: "GET", pathPattern: "/same") { _, _ in StubTransport.empty(status: 304) },
+            StubTransport.Route(method: "GET", pathPattern: "/near") { _, _ in
+                StubTransport.json("{}", headers: ["X-RateLimit-NearLimit": "true", "X-RateLimit-Limit": "1000"])
+            },
+        ], baseURL: NetFixture.githubAPI)
+        let clock = TestClock()
+        let ledger = ProviderRequestLedger()
+        let account = AccountKey(instance: .bitbucketCloud, remoteUserID: "{u}")
+        let counted = CountingTransport(stub, ledger: ledger, account: account, clock: clock, countsNotModified: true)
+        let url = NetFixture.githubAPI
+        _ = try await counted.send(HTTPRequest(method: "GET", url: url.appending(path: "diffstat")))
+        #expect(ledger.count(account, now: clock.now) == 2, "the 302 hop is a request too")
+        _ = try await counted.send(HTTPRequest(method: "GET", url: url.appending(path: "same")))
+        #expect(ledger.count(account, now: clock.now) == 3, "Bitbucket 304s count")
+        #expect(!ledger.isNearLimit(account, now: clock.now))
+        _ = try await counted.send(HTTPRequest(method: "GET", url: url.appending(path: "near")))
+        #expect(ledger.isNearLimit(account, now: clock.now))
+        clock.advance(by: ProviderRequestLedger.nearLimitHold)
+        #expect(!ledger.isNearLimit(account, now: clock.now), "the slowdown lasts 15 minutes")
+    }
+
+    @Test func ledgerTellsWhenTheCountDropsBelowALimit() {
+        let ledger = ProviderRequestLedger()
+        let account = AccountKey(instance: .bitbucketCloud, remoteUserID: "{u}")
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        for minute in 0..<10 { ledger.record(account, at: start.addingTimeInterval(TimeInterval(minute * 60))) }
+        let now = start.addingTimeInterval(600)
+        #expect(ledger.date(account, whenCountBelow: 20, now: now) == now)
+        // Below 4 means dropping the 7 oldest: the 7th (minute 6) leaves the window an hour after it was sent.
+        #expect(ledger.date(account, whenCountBelow: 4, now: now) == start.addingTimeInterval(6 * 60 + 3_600))
+    }
 }
