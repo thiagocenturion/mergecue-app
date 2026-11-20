@@ -281,10 +281,10 @@ struct RepositoriesStep: View {
 
     var body: some View {
         StepScaffold(title: "Map your repositories",
-                     subtitle: "Point each repository to its local checkout. Agents then work in an isolated worktree created from it; MergeCue never edits your checkout directly. Exact remote matches are confirmed automatically; anything less needs your confirmation.") {
+                     subtitle: "Point each repository to its local checkout. Agents then work in an isolated worktree created from it; MergeCue never edits your checkout directly. Exact remote matches are confirmed automatically; anything less needs your confirmation. MergeCue only syncs the repositories you map here; change the list any time in Settings › Accounts.") {
             VStack(alignment: .leading, spacing: 12) {
                 if model.state.accounts.isEmpty {
-                    Text("Connect an account first — then every repository it can access appears here. You can also map them later in Settings › Repositories.")
+                    Text("Connect an account first. Then every repository it can access appears here. You can also map them later in Settings › Repositories.")
                         .scaledFont(.callout)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)

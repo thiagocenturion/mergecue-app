@@ -42,6 +42,11 @@ public enum BitbucketIdentifiers {
     }
 
     /// `reviewers.uuid="{uuid}" AND state="OPEN"` — the per-repository review-requested query.
+    /// BBQL for the user's own open pull requests of one repository (watched repositories, DECISIONS D36).
+    public static func authorQuery(userUUID: String) -> String {
+        "author.uuid=\(bbqlString(normalizedUUID(userUUID) ?? userUUID)) AND state=\"OPEN\""
+    }
+
     public static func reviewerQuery(userUUID: String) -> String {
         "reviewers.uuid=\(bbqlString(normalizedUUID(userUUID) ?? userUUID)) AND state=\"OPEN\""
     }
@@ -49,8 +54,11 @@ public enum BitbucketIdentifiers {
     /// BBQL for the involved scope. Bitbucket rejects filtering on `participants` ("Field
     /// \".participants.user.uuid\" does not support filtering"), so this only selects open pull requests; the
     /// caller requests `fields=+values.participants` and filters on the user client-side.
-    public static func participantQuery(userUUID _: String) -> String {
-        "state=\"OPEN\""
+    public static func participantQuery(userUUID _: String, updatedSince: Date? = nil) -> String {
+        guard let updatedSince, let stamp = MergeCueCoding.formatWireDate(updatedSince) else { return "state=\"OPEN\"" }
+        // BBQL datetimes are unquoted; the window is applied server-side (and re-checked client-side).
+        let whole = stamp.split(separator: ".").first.map(String.init) ?? stamp
+        return "state=\"OPEN\" AND updated_on > \(whole.hasSuffix("Z") ? whole : whole + "Z")"
     }
 
     /// One encoded path segment (`acme`, `%7B…%7D`).

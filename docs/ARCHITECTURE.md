@@ -807,7 +807,8 @@ diff anchor, a failing and a passing check, and a reviewer comment containing a 
 
 Provider specifics (see §5.2–5.4 and each provider's current REST docs):
 - **GitHub.com** — REST v3 + GraphQL (review threads with `isResolved`, `isOutdated`, `resolveReviewThread`).
-  Listing via search (`is:pr is:open author:@me` / `review-requested:@me`, `archived:false`; involved:
+  Listing via search (`is:pr is:open author:@me` / `review-requested:@me`, `archived:false`, plus one `repo:` qualifier
+  per watched repository in the same search when `restrictToRepositories`; involved:
   `involves:@me -author:@me` + `updated:>=` window, ≤ 2 pages — GitHub drops the review request once the review is
   submitted, so this keeps reviewed PRs tracked). Distinguish review
   threads (`ThreadKind.diffThread`), issue comments (`.conversation`, key `ic:<id>`) and review bodies
@@ -816,14 +817,22 @@ Provider specifics (see §5.2–5.4 and each provider's current REST docs):
   `x-ratelimit-*`; secondary limits via 403 + `retry-after`. Listing and hydration are GraphQL (no ETags); REST
   directory/repository reads are conditional (`If-None-Match`).
 - **GitLab.com** — REST v4. Use project `id` + MR `iid` everywhere; `/merge_requests?scope=created_by_me&state=opened`
-  and `?reviewer_id=<me>&state=opened` (reviewers stay on an MR after reviewing, so reviewed MRs remain listed);
+  and `?reviewer_id=<me>&state=opened` (reviewers stay on an MR after reviewing, so reviewed MRs remain listed); with
+  watched repositories `/projects/:id/merge_requests?author_id=<me>` / `reviewer_id=<me>` per watched project;
+  incremental `hydrate(_:previous:)` per D36;
   involved = the user's own `/events?action=commented&target_type=note&after=<day>` (1 page) → per project (≤ 20)
   `/projects/:id/merge_requests?iids[]=…&state=opened`, own MRs excluded; discussions (+ notes, `resolvable`, `resolved`, `position`), approvals
   (`/approvals`), `/versions` for diff versions, pipelines + jobs + `/jobs/:id/trace`. Draft via `draft`.
   `fetchHeadSpec` → `refs/merge-requests/<iid>/head` on the target project (works for cross-project MRs).
   Rate limit headers `RateLimit-*`.
-- **Bitbucket Cloud** — REST 2.0. Authored PRs per workspace (`/workspaces/{ws}/pullrequests/{user_uuid}`), reviewer
-  PRs via per-repository BBQL queries on selected repositories (`q=reviewers.uuid="{uuid}" AND state="OPEN"`);
+- **Bitbucket Cloud** — REST 2.0. Authored PRs per workspace (`/workspaces/{ws}/pullrequests/{user_uuid}`; with
+  watched repositories only their workspaces, filtered client-side), reviewer
+  PRs via per-repository BBQL queries on the watched repositories (else the 30 most recent, cached 6 h)
+  (`q=reviewers.uuid="{uuid}" AND state="OPEN"`); listings ask `fields=+values.participants,+values.reviewers,
+  +values.summary` so hydration can skip the PR detail request; incremental `hydrate(_:previous:)` per D36
+  (comments / tasks / commits + diffstat (`/commits/{src}?exclude={dst}`, `/diffstat/{src}..{dst}?topic=true`) /
+  statuses / Pipelines steps only when their indicator changed); `/user` and `/user/workspaces` once per provider;
+  at most 2 requests in flight; `BitbucketRateLimitParser` (`X-RateLimit-Limit`, `X-RateLimit-NearLimit`);
   involved = the same repositories with `state="OPEN"` + `fields=+values.participants`, filtered client-side to PRs of
   others where the user is a participant (BBQL rejects filtering on `participants`).
   Comments with `parent` / `inline` (from/to/path) / `resolution`; tasks; `participants` (approved, state
@@ -838,19 +847,31 @@ Provider specifics (see §5.2–5.4 and each provider's current REST docs):
 ## 7. MergeCueSync
 `public actor SyncCoordinator: SyncControlling` —
 `init(database:, credentials: any CredentialStoring, providers: any ProviderFactory, notifier: any NotificationDelivering, clock: any MCClock, configuration: SyncConfiguration, requestLedger: ProviderRequestLedger? = nil, onChange: @Sendable (EngineChange) -> Void)`.
-Polling model (DECISIONS D35, modelled on GitButler); every tunable lives in `SyncConfiguration`:
-- One independent `AccountSyncer` per account; an outage or rate limit of one account never blocks another.
-- **Lists** (`listChangeRequests`): immediately at start, every `listInterval` (15 min, ±jitter), on manual refresh
-  (`refresh(account:)` / `refreshAll()`, never debounced, also retries every failed CR) and on events —
+Polling model (DECISIONS D35, D36, modelled on GitButler); every tunable lives in `SyncConfiguration`:
+- One independent `AccountSyncer` per account; an outage or rate limit of one account never blocks another. Its
+  provider lives as long as the account's credential/instance/scopes (identity caches and ETags survive cycles);
+  other account changes (watched repositories, refresh interval, label, namespaces) apply in place
+  (`accountsDidChange()` also reloads checkout mappings, which the default watched list follows).
+- **Watched repositories** (`Account.watchedRepositories`, `WatchedRepositories.effective`): when non-empty every
+  listing is `restrictToRepositories` to them and CRs of other repositories are dropped without another request.
+  Sync never lists repositories itself. Default tracking until the engine forwards the owner's: authored only.
+- **Lists** (`listChangeRequests`): immediately at start, every list interval (`Account.refreshInterval`, default
+  `listInterval` 15 min, ±jitter), on manual refresh
+  (`refresh(account:)` / `refreshAll()`, never debounced, also retries every failed CR; hydrates only changed, due,
+  failed, pending-checks and hot CRs) and on events —
   `userDidReturn()` (popover opened, main window key; also retries CRs that failed terminally ≥ 15 min ago),
   `handleSystemWake()`, network recovery — skipped within `eventRefreshDebounce` (60 s) of the previous event refresh
-  or successful list.
-- **Details** (`hydrate`), per change request (`ChangeRequestSchedule`, in memory, seeded from stored snapshots at
+  or successful list. "Manually only" accounts list at launch and on manual refresh only.
+- **Details** (`hydrate(_:previous:)` with the stored snapshot, so adapters skip unchanged parts), per change request
+  (`ChangeRequestSchedule`, in memory, seeded from stored snapshots at
   launch): by time since the CR last changed (activity fingerprint: updated time, head, state/draft, check states,
-  comments, reviews) — 30 s for the first 10 min, 5 min up to 1 h, 30 min after. Hot CRs
-  (`setActiveChangeRequests`, `setHot(until:)`) and CRs with pending checks stay at 30 s. A changed list version
+  comments, reviews), scaled by the account's list interval ÷ `listInterval` (`SyncSchedule.detailInterval`): at
+  15 min, 5 min while recent (< 10 min), 15 min up to 1 h, 30 min after. Hot CRs
+  (`setActiveChangeRequests`, `setHot(until:)`) and CRs with pending checks use 30 s; "Manually only" has no
+  automatic detail refresh. A changed list version
   always hydrates in the list cycle. Between lists the loop wakes at the earliest due CR and runs a detail-only
-  cycle. Bounded concurrency (`hydrateConcurrency` 4).
+  cycle. Bounded concurrency (`hydrateConcurrency` 3; `APIClient.maxConcurrentRequests` 3, Bitbucket 2; identical
+  concurrent GETs are shared).
 - **Per-CR failures**: `not found` / `forbidden` are terminal for that CR (not retried until its list version changes,
   a manual refresh, or a return ≥ 15 min later); server/decoding/invalid-request/conflict/unsupported back off
   30 s → 5 min → 30 min. They never fail the account and are published in `AccountSyncStatus.changeRequestErrors`.
@@ -861,8 +882,10 @@ Polling model (DECISIONS D35, modelled on GitButler); every tunable lives in `Sy
   and account; offline / server / permission errors back off exponentially with jitter (30 s doubling, cap 15 min).
   Manual and event refreshes are ignored while rate limited before the reset.
 - **Request accounting**: `ProviderRequestLedger` counts requests per account over a rolling hour. The runtime
-  injects the ledger its `CountingTransport`s record into (every HTTP response except 304s, Sync's and the
-  engine's); without one, Sync counts one request per provider call. `requestsLastHour` / `requestBudget` are in the
+  injects the ledger its `CountingTransport`s record into (every HTTP response plus its followed redirect hops,
+  except 304s on GitHub/GitLab, Sync's and the engine's; Bitbucket's `X-RateLimit-NearLimit` slows the account
+  ×4 for 15 min; a rate limit without a reset waits until the account's last-hour count is under half its budget);
+  without one, Sync counts one request per provider call. `requestsLastHour` / `requestBudget` are in the
   status; at ≥ 75 % of the provider's soft budget (GitHub 1500/h, GitLab 1000/h, Bitbucket 500/h) detail intervals
   ×2, at ≥ 100 % ×4.
 - Cycle: full = `listChangeRequests(.authored)` + `(.reviewRequested)` (+ `(.involved)` with `updatedSince = now −

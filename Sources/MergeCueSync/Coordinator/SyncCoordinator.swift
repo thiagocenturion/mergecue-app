@@ -78,8 +78,10 @@ public actor SyncCoordinator: SyncControlling {
         await syncers[account]?.refresh()
     }
 
-    /// Reloads accounts and credentials: new accounts start, removed ones stop, changed ones (or ones whose
-    /// credentials had expired) restart with a fresh provider and an immediate cycle.
+    /// Reloads accounts, credentials and checkout mappings: new accounts start, removed ones stop; a changed
+    /// credential, instance or scope set (or an expired credential) restarts the account with a fresh provider and
+    /// an immediate cycle; other changes (watched repositories, refresh interval, label, namespaces) apply in place
+    /// and keep the provider's caches. Call it after mappings change too (watched repositories default to them).
     public func accountsDidChange() async {
         await reloadAccounts()
     }
@@ -221,8 +223,10 @@ public actor SyncCoordinator: SyncControlling {
 
     private func reloadAccounts() async {
         let accounts: [Account]
+        let mappings: [RepoMapping]
         do {
             accounts = try await database.accounts()
+            mappings = try await database.mappings(repo: nil)
         } catch {
             MCLog.sync.error("Could not load accounts: \(error)")
             return
@@ -237,11 +241,22 @@ public actor SyncCoordinator: SyncControlling {
         for account in accounts {
             let credential = loadCredential(account.id)
             let isDisabled = disabled.contains(account.id)
+            let watched = WatchedRepositories.effective(
+                for: account, mapped: mappings.filter { $0.repo.account == account.id }.map(\.repo)
+            )
             var previousStatus: AccountSyncStatus?
             if let syncer = syncers[account.id] {
                 let status = await syncer.status
-                let unchanged = syncer.account == account && syncer.credential == credential && status.state != .authExpired
-                if unchanged {
+                let current = await syncer.account
+                // Same credential, instance and scopes: keep the syncer (provider caches, per-CR schedule) and
+                // apply metadata changes (watched repositories, refresh interval, label, …) in place.
+                let sameProvider = syncer.credential == credential && current.instance == account.instance
+                    && current.grantedScopes == account.grantedScopes && status.state != .authExpired
+                let currentWatched = await syncer.watched
+                if sameProvider {
+                    if current != account || currentWatched != watched {
+                        await syncer.update(account: account, watched: watched)
+                    }
                     if isDisabled {
                         if status.state != .paused { await syncer.stop(state: .paused) }
                     } else if isStarted {
@@ -254,7 +269,7 @@ public actor SyncCoordinator: SyncControlling {
             }
             let provider = credential.map { providers.makeProvider(account: account, credential: $0) }
             let syncer = AccountSyncer(
-                account: account, credential: credential, provider: provider, environment: environment,
+                account: account, watched: watched, credential: credential, provider: provider, environment: environment,
                 previousStatus: previousStatus
             )
             syncers[account.id] = syncer

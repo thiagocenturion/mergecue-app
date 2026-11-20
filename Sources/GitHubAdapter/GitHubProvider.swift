@@ -101,7 +101,8 @@ public struct GitHubProvider: ReviewProvider {
             extraHeaders: [
                 "Accept": "application/vnd.github+json",
                 "X-GitHub-Api-Version": "2022-11-28",
-            ]
+            ],
+            maxConcurrentRequests: 3
         )
         self.client = client
         self.graphQL = GitHubGraphQLClient(client: client, endpoint: GitHubGraphQLClient.endpoint(forAPIURL: instance.apiURL))

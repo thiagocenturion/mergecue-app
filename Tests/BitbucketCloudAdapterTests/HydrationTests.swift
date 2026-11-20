@@ -115,7 +115,7 @@ struct HydrationTests {
         #expect(snapshot.baseSHA == "9c1e4d2b7a60")
         #expect(snapshot.nativeRefs["open_task_count"] == "1")
         #expect(snapshot.nativeRefs["pull_request_id"] == "42")
-        #expect(snapshot.summary.versionToken == "2026-09-27T16:40:05.902114+00:00")
+        #expect(snapshot.summary.versionToken?.hasPrefix("2026-09-27T16:40:05.902114+00:00|c") == true)
     }
 
     @Test func readinessIsBlockedWithHonestReasons() async throws {
@@ -133,9 +133,15 @@ struct HydrationTests {
     }
 
     @Test func greenPullRequestIsChecksGreenNeverReadyToMerge() async throws {
-        let snapshot = try await Harness().snapshot(7)
+        let harness = Harness()
+        let snapshot = try await harness.snapshot(7)
         #expect(snapshot.aggregateCheckState == .passing)
-        #expect(snapshot.checks.map(\.name) == ["Vercel preview", "Pipeline › Build"], "the mirrored pipeline status is dropped")
+        // A green Pipelines run is reported by its commit status; steps are only read for runs that are not green
+        // (DECISIONS D36).
+        #expect(snapshot.checks.count == 2)
+        #expect(snapshot.checks.contains { $0.name == "Vercel preview" })
+        #expect(snapshot.checks.allSatisfy { $0.key.source == .bitbucketStatus && $0.status == .success })
+        #expect(harness.requests(containing: "/pipelines").isEmpty)
         #expect(snapshot.unresolvedThreadCount == 0)
         #expect(snapshot.readiness == .checksGreen)
         #expect(snapshot.reviewers.first?.state == .pending)
@@ -194,7 +200,7 @@ struct HydrationTests {
         #expect(unit.key.remoteID == "102/\(BitbucketFixtures.IDs.unitTestsStep102)", "the re-run supersedes run #101")
         #expect(unit.status == .failure)
         #expect(snapshot.checks.count == 3)
-        #expect(snapshot.summary.versionToken == "2026-09-27T18:02:31.330871+00:00")
+        #expect(snapshot.summary.versionToken?.hasPrefix("2026-09-27T18:02:31.330871+00:00|c") == true)
     }
 
     @Test func stepTwoAddsAReplyAndRecoversCI() async throws {

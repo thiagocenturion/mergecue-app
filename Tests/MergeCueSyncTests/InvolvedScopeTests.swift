@@ -118,7 +118,7 @@ struct InvolvedScopeTests {
         let remote = h.remote()
         remote.supportsInvolved = true
         remote.put(reviewRequested())
-        var configuration = SyncConfiguration.deterministic
+        var configuration = SyncHarness.fastRecentTier
         configuration.involvedWindow = nil
         let coordinator = await h.makeCoordinator(configuration: configuration)
         await h.start(coordinator)

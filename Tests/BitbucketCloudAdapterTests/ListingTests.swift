@@ -64,7 +64,7 @@ struct ListingTests {
         #expect(pr42.key.remoteID == "42")
         #expect(pr42.key.repo.remoteRepoID == BitbucketFixtures.IDs.paymentsRepoUUID)
         #expect(pr42.key.repo.account == BitbucketFixtures.accountKey)
-        #expect(pr42.versionToken == "2026-09-27T16:40:05.902114+00:00")
+        #expect(pr42.versionToken == "2026-09-27T16:40:05.902114+00:00|c10|t2", "updated_on + comment and task counts")
         #expect(pr42.updatedAt == ProviderDateParser.parse("2026-09-27T16:40:05.902114+00:00"))
         #expect(pr42.headSHA == "3f9c2e1d8b47")
         #expect(pr42.involvement == [.authored])
@@ -110,7 +110,7 @@ struct ListingTests {
         #expect(items.first?.involvement.contains(.participated) == true)
         // Bitbucket rejects BBQL filters on `participants`; the adapter lists open PRs with participants instead.
         let queries = harness.requests(containing: "/pullrequests?")
-            .filter { $0.queryItems.contains(URLQueryItem(name: "fields", value: "+values.participants")) }
+            .filter { $0.queryItems.contains { $0.name == "fields" && ($0.value ?? "").contains("+values.participants") } }
         #expect(queries.count == repos.count, "one query per repository, bounded like reviewer search")
         #expect(queries.allSatisfy { $0.queryItems.contains(URLQueryItem(name: "q", value: #"state="OPEN""#)) })
         #expect(harness.requests(containing: "/pullrequests?").allSatisfy {

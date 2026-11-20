@@ -15,6 +15,9 @@ import MergeCueCore
 ///   surfaces `.rateLimited` immediately. Writes are never retried automatically.
 /// - With `useETag`, a cached `ETag` is sent as `If-None-Match`; a `304` returns the cached body with status 200
 ///   and header `x-mergecue-cache: hit`.
+/// - Identical concurrent `GET`s (same URL, headers and ETag use) share one request (DECISIONS D36).
+/// - `maxConcurrentRequests` caps the requests in flight per client (queued in order), so a burst of parallel
+///   reads (several hydrations, each with parallel sub-resources) reaches the provider a few at a time.
 public actor APIClient {
     public nonisolated let baseURL: URL
     public nonisolated let retry: RetryPolicy
@@ -27,6 +30,18 @@ public actor APIClient {
     private let extraHeaders: [String: String]
     private let jitter: @Sendable () -> Double
     private let scrubber: CredentialScrubber
+    /// Requests allowed in flight at once (nil = unlimited).
+    public nonisolated let maxConcurrentRequests: Int?
+    private var activeRequests = 0
+    private var permitWaiters: [CheckedContinuation<Void, Never>] = []
+    /// In-flight `GET`s by `requestKey`, shared by identical concurrent callers.
+    private var inFlightReads: [String: SharedRead] = [:]
+
+    private struct SharedRead {
+        let id: UUID
+        let task: Task<HTTPResponse, any Error>
+        var waiters: Int
+    }
 
     /// Rate-limit information from the most recent response that carried any.
     public private(set) var lastRateLimit: RateLimitInfo?
@@ -36,6 +51,7 @@ public actor APIClient {
     ///   - extraHeaders: Sent with every request (e.g. `Accept`, `X-GitHub-Api-Version`); cannot override
     ///     `Authorization`.
     ///   - jitter: Source of backoff jitter in `0...1` (inject a constant in tests).
+    ///   - maxConcurrentRequests: Requests in flight at once (nil = unlimited).
     public init(
         baseURL: URL,
         credential: Credential,
@@ -45,8 +61,10 @@ public actor APIClient {
         etagCache: ETagCache? = ETagCache(),
         clock: any MCClock = SystemClock(),
         extraHeaders: [String: String] = [:],
-        jitter: @escaping @Sendable () -> Double = { Double.random(in: 0...1) }
+        jitter: @escaping @Sendable () -> Double = { Double.random(in: 0...1) },
+        maxConcurrentRequests: Int? = nil
     ) {
+        self.maxConcurrentRequests = maxConcurrentRequests.map { max(1, $0) }
         self.baseURL = baseURL
         self.credential = credential
         self.transport = transport
@@ -69,7 +87,7 @@ public actor APIClient {
         useETag: Bool = false
     ) async throws -> HTTPResponse {
         let url = try url(for: path, query: query)
-        return try await perform(HTTPRequest(method: "GET", url: url, headers: headers), useETag: useETag)
+        return try await sharedRead(HTTPRequest(method: "GET", url: url, headers: headers), useETag: useETag)
     }
 
     /// `GET` and decode the body as `T` (default decoder: `JSONDecoder.mergeCueProvider`). Decoding happens off
@@ -89,7 +107,7 @@ public actor APIClient {
     /// `GET` an absolute URL (pagination `next` links). The URL must have the base URL's origin.
     public func getAbsolute(_ url: URL, headers: [String: String] = [:], useETag: Bool = false) async throws -> HTTPResponse {
         try checkSameOrigin(url)
-        return try await perform(HTTPRequest(method: "GET", url: url, headers: headers), useETag: useETag)
+        return try await sharedRead(HTTPRequest(method: "GET", url: url, headers: headers), useETag: useETag)
     }
 
     // MARK: Writes
@@ -231,12 +249,82 @@ public actor APIClient {
         return try await perform(HTTPRequest(method: method, url: url, headers: allHeaders, body: body), useETag: false)
     }
 
+    // MARK: Shared reads and the concurrency cap
+
+    /// Runs a `GET`, joining an identical one already in flight. The shared request is cancelled only when every
+    /// caller waiting for it was cancelled.
+    private func sharedRead(_ request: HTTPRequest, useETag: Bool) async throws -> HTTPResponse {
+        let key = Self.requestKey(request, useETag: useETag)
+        let shared: SharedRead
+        if var existing = inFlightReads[key] {
+            existing.waiters += 1
+            inFlightReads[key] = existing
+            shared = existing
+        } else {
+            let task = Task { try await self.perform(request, useETag: useETag) }
+            shared = SharedRead(id: UUID(), task: task, waiters: 1)
+            inFlightReads[key] = shared
+        }
+        let task = shared.task
+        let id = shared.id
+        do {
+            let response = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: {
+                Task { await self.readerCancelled(key: key, id: id) }
+            }
+            leaveRead(key: key, id: id)
+            return response
+        } catch {
+            leaveRead(key: key, id: id)
+            throw error
+        }
+    }
+
+    private func leaveRead(key: String, id: UUID) {
+        guard var shared = inFlightReads[key], shared.id == id else { return }
+        shared.waiters -= 1
+        inFlightReads[key] = shared.waiters > 0 ? shared : nil
+    }
+
+    private func readerCancelled(key: String, id: UUID) {
+        guard let shared = inFlightReads[key], shared.id == id, shared.waiters <= 1 else { return }
+        shared.task.cancel()
+    }
+
+    /// Method, URL, caller headers and ETag use (the credential is the client's own, identical for every request).
+    private static func requestKey(_ request: HTTPRequest, useETag: Bool) -> String {
+        let headers = request.headers.map { "\($0.key.lowercased())=\($0.value)" }.sorted().joined(separator: "&")
+        return "\(request.method.uppercased()) \(request.url.absoluteString) \(headers) etag:\(useETag)"
+    }
+
+    private func acquirePermit() async {
+        guard let limit = maxConcurrentRequests else { return }
+        if activeRequests < limit {
+            activeRequests += 1
+            return
+        }
+        await withCheckedContinuation { permitWaiters.append($0) }
+    }
+
+    /// Hands the permit to the next queued request, or frees it.
+    private func releasePermit() {
+        guard maxConcurrentRequests != nil else { return }
+        if permitWaiters.isEmpty {
+            activeRequests = max(0, activeRequests - 1)
+        } else {
+            permitWaiters.removeFirst().resume()
+        }
+    }
+
     private enum FailureDecision {
         case retry(after: TimeInterval)
         case fail(ProviderError)
     }
 
     private func perform(_ original: HTTPRequest, useETag: Bool) async throws -> HTTPResponse {
+        await acquirePermit()
+        defer { releasePermit() }
         var request = original
         request.headers = HTTPHeaders.merged(
             ["Accept": "application/json"],

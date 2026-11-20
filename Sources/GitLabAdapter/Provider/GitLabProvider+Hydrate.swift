@@ -16,29 +16,53 @@ extension GitLabProvider {
     /// project (clone URLs) and — for cross-project MRs — the source project, discussions, approvals, reviewers,
     /// head pipeline jobs, commits, changed files and diff versions.
     public func hydrate(_ summary: ChangeRequestSummary) async throws -> ChangeRequestSnapshot {
+        try await hydrate(summary, previous: nil)
+    }
+
+    /// Incremental hydration (DECISIONS D36). The merge request detail is always read; with the stored `previous`
+    /// snapshot of the same merge request:
+    /// - the target (and source) project is taken from `previous`;
+    /// - `/discussions` is skipped while `user_notes_count`, `updated_at` and the head are unchanged;
+    /// - `/approvals` and `/reviewers` while `updated_at` and the head are unchanged;
+    /// - pipeline jobs while the head pipeline (id and status) is unchanged and no check was pending;
+    /// - `/commits`, `/diffs` and `/versions` while the head, base and start commits are unchanged.
+    /// Skipped parts are taken from `previous`, so the snapshot equals a full hydration.
+    public func hydrate(_ summary: ChangeRequestSummary, previous: ChangeRequestSnapshot?) async throws -> ChangeRequestSnapshot {
         let key = summary.key
         let projectID = key.repo.remoteRepoID
         let mrPath = GitLabAPI.mergeRequest(key)
         let api = self.api
 
-        async let mrTask = api.get(GLMergeRequest.self, mrPath)
-        async let projectTask = Self.tolerant { try await api.get(GLProject.self, GitLabAPI.project(projectID)) }
-        async let discussionsTask = api.getAll(GLDiscussion.self, mrPath + "/discussions", maxPages: HydrationLimits.discussionPages)
-        async let approvalsTask = Self.tolerant { try await api.get(GLApprovals.self, mrPath + "/approvals") }
-        async let reviewersTask = Self.tolerant { try await api.get([GLReviewerEntry].self, mrPath + "/reviewers") }
-        async let commitsTask = api.getAll(GLCommit.self, mrPath + "/commits", maxPages: HydrationLimits.commitPages)
-        async let diffsTask = api.getAll(GLDiffFile.self, mrPath + "/diffs", maxPages: HydrationLimits.diffPages)
-        async let versionsTask = Self.tolerant {
-            try await api.getAll(GLVersion.self, mrPath + "/versions", maxPages: HydrationLimits.versionPages).items
-        }
-
-        let mr = try await mrTask
+        let mr = try await api.get(GLMergeRequest.self, mrPath)
+        let reuse = previous.flatMap { GitLabReuse(previous: $0, mr: mr) }
         let targetProjectID = mr.targetProjectId ?? mr.projectId
         let sourceProjectID = mr.sourceProjectId ?? targetProjectID
         let isCrossProject = sourceProjectID != targetProjectID
 
-        async let sourceProjectTask = Self.sourceProject(isCrossProject ? sourceProjectID : nil, api: api)
-        async let jobsTask: [GLJob] = Self.jobs(for: mr.headPipeline, fallbackProjectID: projectID, api: api)
+        let needProject = reuse?.repository == nil
+        let needDiscussions = reuse?.threads == nil
+        let needApprovals = reuse?.review == nil
+        let needContent = reuse?.content == nil
+        let needJobs = reuse?.checks == nil
+        let needSource = isCrossProject && reuse?.source == nil
+
+        async let projectTask: GLProject?? = needProject
+            ? Self.tolerant { try await api.get(GLProject.self, GitLabAPI.project(projectID)) } : nil
+        async let discussionsTask: GitLabAPI.Paged<GLDiscussion>? = needDiscussions
+            ? api.getAll(GLDiscussion.self, mrPath + "/discussions", maxPages: HydrationLimits.discussionPages) : nil
+        async let approvalsTask: GLApprovals?? = needApprovals
+            ? Self.tolerant { try await api.get(GLApprovals.self, mrPath + "/approvals") } : nil
+        async let reviewersTask: [GLReviewerEntry]?? = needApprovals
+            ? Self.tolerant { try await api.get([GLReviewerEntry].self, mrPath + "/reviewers") } : nil
+        async let commitsTask: GitLabAPI.Paged<GLCommit>? = needContent
+            ? api.getAll(GLCommit.self, mrPath + "/commits", maxPages: HydrationLimits.commitPages) : nil
+        async let diffsTask: GitLabAPI.Paged<GLDiffFile>? = needContent
+            ? api.getAll(GLDiffFile.self, mrPath + "/diffs", maxPages: HydrationLimits.diffPages) : nil
+        async let versionsTask: [GLVersion]?? = needContent
+            ? Self.tolerant { try await api.getAll(GLVersion.self, mrPath + "/versions", maxPages: HydrationLimits.versionPages).items }
+            : nil
+        async let sourceProjectTask: GLProject? = needSource ? Self.sourceProject(sourceProjectID, api: api) : nil
+        async let jobsTask: [GLJob]? = needJobs ? Self.jobs(for: mr.headPipeline, fallbackProjectID: projectID, api: api) : nil
 
         let project = try await projectTask
         let discussions = try await discussionsTask
@@ -46,13 +70,14 @@ extension GitLabProvider {
         let reviewerEntries = try await reviewersTask
         let commits = try await commitsTask
         let diffs = try await diffsTask
-        let versions = try await versionsTask ?? []
+        let fetchedVersions = try await versionsTask
+        let versions = fetchedVersions.map { $0 ?? [] } ?? reuse?.content?.versions ?? []
         let sourceProject = try await sourceProjectTask
         let jobs = try await jobsTask
 
         // Repository: full project details when readable, else what the list item carried.
-        var repository = summary.repository
-        if let project {
+        var repository = reuse?.repository ?? summary.repository
+        if let project = project ?? nil {
             repository = GitLabMapping.repository(project, account: key.repo.account)
         }
         let fresh = GitLabMapping.summary(
@@ -66,32 +91,52 @@ extension GitLabProvider {
         let webURL = URL(string: mr.webUrl)
         GitLabLinkCache.remember(changeRequest: fresh.key, webURL: fresh.webURL, projectWebURL: repository.webURL)
 
-        let threads = GitLabThreadMapping.threads(
-            discussions.items,
-            context: GitLabThreadContext(changeRequest: fresh.key, webURL: webURL, currentHeadSHA: headSHA, versions: versions)
-        )
+        let threads: [ReviewThread]
+        if let discussions {
+            threads = GitLabThreadMapping.threads(
+                discussions.items,
+                context: GitLabThreadContext(changeRequest: fresh.key, webURL: webURL, currentHeadSHA: headSHA, versions: versions)
+            )
+        } else {
+            threads = reuse?.threads ?? []
+        }
         for thread in threads {
             if let root = thread.rootComment {
                 GitLabLinkCache.remember(thread: thread.key, rootNoteID: root.id)
             }
         }
 
-        let checks = GitLabCheckMapping.checks(pipeline: mr.headPipeline, jobs: jobs, changeRequest: fresh.key, headSHA: headSHA)
+        let checks = jobs.map { GitLabCheckMapping.checks(pipeline: mr.headPipeline, jobs: $0, changeRequest: fresh.key, headSHA: headSHA) }
+            ?? reuse?.checks ?? []
         for check in checks {
             if let url = check.detailsURL { GitLabLinkCache.remember(check: check.key, webURL: url) }
         }
 
-        let reviewers = reviewerEntries.map(GitLabMapping.reviewers)
-            ?? (mr.reviewers ?? []).map { Reviewer(person: GitLabMapping.person($0), state: .pending) }
+        let reviewers: [Reviewer]
+        let reviews: [Review]
+        let approvalStatus: ApprovalStatus
+        if let reused = reuse?.review {
+            (reviewers, reviews, approvalStatus) = (reused.reviewers, reused.reviews, reused.approvals)
+        } else {
+            let entries = reviewerEntries ?? nil
+            reviewers = entries.map(GitLabMapping.reviewers)
+                ?? (mr.reviewers ?? []).map { Reviewer(person: GitLabMapping.person($0), state: .pending) }
+            reviews = GitLabMapping.reviews(approvals: approvals ?? nil, reviewers: entries ?? [], headSHA: headSHA)
+            approvalStatus = GitLabMapping.approvals(approvals ?? nil)
+        }
 
         let source: SourceRepositoryInfo
         if isCrossProject {
-            source = SourceRepositoryInfo(
-                fullPath: sourceProject?.pathWithNamespace ?? "",
-                cloneURLs: sourceProject.map { GitLabMapping.repository($0, account: key.repo.account).cloneURLs } ?? [],
-                remoteID: String(sourceProjectID),
-                isFork: true
-            )
+            if let reused = reuse?.source {
+                source = reused
+            } else {
+                source = SourceRepositoryInfo(
+                    fullPath: sourceProject?.pathWithNamespace ?? "",
+                    cloneURLs: sourceProject.map { GitLabMapping.repository($0, account: key.repo.account).cloneURLs } ?? [],
+                    remoteID: String(sourceProjectID),
+                    isFork: true
+                )
+            }
         } else {
             source = SourceRepositoryInfo(
                 fullPath: repository.fullPath,
@@ -116,9 +161,20 @@ extension GitLabProvider {
         nativeRefs["head_pipeline_project_id"] = mr.headPipeline?.projectId.map(String.init)
         nativeRefs["start_sha"] = mr.diffRefs?.startSha
         nativeRefs["latest_diff_version_id"] = versions.max { $0.id < $1.id }.map { String($0.id) }
-        if diffs.truncated { nativeRefs["changed_files_truncated"] = "true" }
-        if commits.truncated { nativeRefs["commits_truncated"] = "true" }
-        if discussions.truncated { nativeRefs["discussions_truncated"] = "true" }
+        // Change indicators for the next incremental hydration.
+        nativeRefs[GitLabReuse.Key.updatedAt] = mr.updatedAt
+        nativeRefs[GitLabReuse.Key.notesCount] = mr.userNotesCount.map(String.init)
+        nativeRefs[GitLabReuse.Key.headSHA] = headSHA
+        nativeRefs[GitLabReuse.Key.baseSHA] = mr.diffRefs?.baseSha
+        nativeRefs[GitLabReuse.Key.pipelineStatus] = mr.headPipeline?.status
+        nativeRefs[GitLabReuse.Key.versions] = GitLabReuse.encode(versions)
+        if let diffs, diffs.truncated { nativeRefs["changed_files_truncated"] = "true" }
+        if let commits, commits.truncated { nativeRefs["commits_truncated"] = "true" }
+        if let discussions, discussions.truncated { nativeRefs["discussions_truncated"] = "true" }
+        for key in ["changed_files_truncated", "commits_truncated"] where commits == nil {
+            nativeRefs[key] = previous?.nativeRefs[key]
+        }
+        if discussions == nil { nativeRefs["discussions_truncated"] = previous?.nativeRefs["discussions_truncated"] }
 
         return ChangeRequestSnapshot(
             summary: fresh,
@@ -126,12 +182,12 @@ extension GitLabProvider {
             source: source,
             baseSHA: mr.diffRefs?.baseSha,
             reviewers: reviewers,
-            reviews: GitLabMapping.reviews(approvals: approvals, reviewers: reviewerEntries ?? [], headSHA: headSHA),
-            approvals: GitLabMapping.approvals(approvals),
+            reviews: reviews,
+            approvals: approvalStatus,
             threads: threads,
             checks: checks,
-            commits: commits.items.map(GitLabMapping.commit),
-            changedFiles: diffs.items.map(GitLabMapping.changedFile),
+            commits: commits.map { $0.items.map(GitLabMapping.commit) } ?? reuse?.content?.commits ?? [],
+            changedFiles: diffs.map { $0.items.map(GitLabMapping.changedFile) } ?? reuse?.content?.files ?? [],
             readiness: GitLabCheckMapping.readiness(mr),
             fetchedAt: clock.now,
             nativeRefs: nativeRefs
@@ -196,5 +252,88 @@ extension GitLabProvider {
             GitLabLinkCache.remember(changeRequest: key.changeRequest, webURL: webURL, projectWebURL: GitLabMapping.projectWebURL(of: mr))
         }
         return thread
+    }
+}
+
+/// What an incremental GitLab hydration may take from the previous snapshot (nil member = fetch it again).
+struct GitLabReuse {
+    enum Key {
+        static let updatedAt = "updated_at"
+        static let notesCount = "user_notes_count"
+        static let headSHA = "head_sha"
+        static let baseSHA = "base_sha"
+        static let pipelineStatus = "head_pipeline_status"
+        static let versions = "diff_versions"
+    }
+
+    struct Review {
+        var reviewers: [Reviewer]
+        var reviews: [MergeCueCore.Review]
+        var approvals: ApprovalStatus
+    }
+
+    struct Content {
+        var commits: [CommitInfo]
+        var files: [ChangedFile]
+        var versions: [GLVersion]
+    }
+
+    var repository: Repository?
+    var source: SourceRepositoryInfo?
+    var threads: [ReviewThread]?
+    var review: Review?
+    var checks: [CheckRun]?
+    var content: Content?
+
+    /// nil when `previous` is another merge request or predates the change indicators.
+    init?(previous: ChangeRequestSnapshot, mr: GLMergeRequest) {
+        let refs = previous.nativeRefs
+        guard refs["merge_request_id"] == String(mr.id), let storedUpdatedAt = refs[Key.updatedAt] else { return nil }
+        let head = GitLabMapping.headSHA(mr)
+        let headUnchanged = head != nil && refs[Key.headSHA] == head
+        let sameUpdate = storedUpdatedAt == mr.updatedAt
+        repository = previous.summary.repository
+        if refs["source_project_id"] == String(mr.sourceProjectId ?? mr.targetProjectId ?? mr.projectId) {
+            source = previous.source
+        }
+        if headUnchanged, sameUpdate, let count = mr.userNotesCount, refs[Key.notesCount] == String(count) {
+            threads = previous.threads
+        }
+        if headUnchanged, sameUpdate {
+            review = Review(reviewers: previous.reviewers, reviews: previous.reviews, approvals: previous.approvals)
+        }
+        let pipelineUnchanged = refs["head_pipeline_id"] == mr.headPipeline.map { String($0.id) }
+            && refs[Key.pipelineStatus] == mr.headPipeline?.status
+        if headUnchanged, pipelineUnchanged, !previous.checks.contains(where: { !$0.status.isTerminal }) {
+            checks = previous.checks
+        }
+        if headUnchanged, refs[Key.baseSHA] == mr.diffRefs?.baseSha, refs["start_sha"] == mr.diffRefs?.startSha,
+           let versions = refs[Key.versions].flatMap(Self.decode) {
+            content = Content(commits: previous.commits, files: previous.changedFiles, versions: versions)
+        }
+    }
+
+    private struct StoredVersion: Codable {
+        var id: Int
+        var head: String?
+        var base: String?
+        var start: String?
+        var created: Double?
+    }
+
+    static func encode(_ versions: [GLVersion]) -> String? {
+        let stored = versions.map {
+            StoredVersion(id: $0.id, head: $0.headCommitSha, base: $0.baseCommitSha, start: $0.startCommitSha, created: $0.createdAt?.timeIntervalSince1970)
+        }
+        guard let data = try? JSONEncoder().encode(stored) else { return nil }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    static func decode(_ text: String) -> [GLVersion]? {
+        guard let stored = try? JSONDecoder().decode([StoredVersion].self, from: Data(text.utf8)) else { return nil }
+        return stored.map {
+            GLVersion(id: $0.id, headCommitSha: $0.head, baseCommitSha: $0.base, startCommitSha: $0.start,
+                      createdAt: $0.created.map(Date.init(timeIntervalSince1970:)))
+        }
     }
 }

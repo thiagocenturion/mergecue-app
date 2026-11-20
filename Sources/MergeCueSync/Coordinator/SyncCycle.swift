@@ -33,8 +33,18 @@ struct SyncCycle {
     static let lastCycleKey = "meta:last_cycle_at"
 
     let account: Account
+    /// Effective watched repositories (empty = all): listings are scoped to them and CRs of other repositories are
+    /// dropped (DECISIONS D36).
+    var watched: [RepoKey] = []
     let provider: any ReviewProvider
     let environment: SyncEnvironment
+
+    init(account: Account, watched: [RepoKey] = [], provider: any ReviewProvider, environment: SyncEnvironment) {
+        self.account = account
+        self.watched = watched
+        self.provider = provider
+        self.environment = environment
+    }
 
     func run(mode: Mode, schedule initial: ChangeRequestSchedule, hints: ScheduleHints) async throws -> Outcome {
         let database = environment.database
@@ -55,9 +65,12 @@ struct SyncCycle {
         var departedToHydrate: [ChangeRequestSummary] = []
         var listVersions: [ChangeRequestKey: String] = [:]
         var cursor: [String: String]
+        let watchedSet = Set(watched)
+        func isWatched(_ key: ChangeRequestKey) -> Bool { watchedSet.isEmpty || watchedSet.contains(key.repo) }
         switch mode {
         case .full:
-            let listed = Self.mergeLists(try await fetchLists(now: now, configuration: configuration), stored: storedSnapshots)
+            let pages = try await fetchLists(now: now, configuration: configuration, stored: storedSnapshots)
+            let listed = Self.mergeLists(pages, stored: storedSnapshots).filter { isWatched($0.key) }
             let listedKeys = Set(listed.map(\.key))
             cursor = [:]
             for summary in listed {
@@ -78,6 +91,8 @@ struct SyncCycle {
             // merged/closed) or the CR is gone (its last hydration said not found).
             departedToHydrate = departed.filter { snapshot in
                 guard snapshot.summary.state == .open else { return false }
+                // No longer watched: forgotten without another request.
+                guard isWatched(snapshot.key) else { return false }
                 if case .notFound? = schedule.tracker(snapshot.key)?.lastError { return false }
                 return true
             }.map(\.summary)
@@ -102,7 +117,7 @@ struct SyncCycle {
         let environment = environment
         let results = try await Self.hydrate(
             toHydrate + departedToHydrate, provider: provider, limit: configuration.hydrateConcurrency,
-            onCall: { environment.recordProviderCall(account) }
+            previous: stored, onCall: { environment.recordProviderCall(account) }
         )
 
         // 3. Derive events and attention per CR.
@@ -210,9 +225,17 @@ struct SyncCycle {
         )
     }
 
-    /// The listings of a full cycle: authored, review-requested (per tracking preferences) and involved.
-    private func fetchLists(now: Date, configuration: SyncConfiguration) async throws -> [(ChangeRequestScope, ChangeRequestPage)] {
-        let repositories = try await environment.database.repositories(account: account.id)
+    /// The listings of a full cycle: authored, review-requested (per tracking preferences) and involved. With
+    /// watched repositories every query is restricted to them (scoped provider queries); otherwise adapters use
+    /// their account-wide listings. The account's repository directory is never listed here.
+    private func fetchLists(
+        now: Date, configuration: SyncConfiguration, stored: [ChangeRequestSnapshot]
+    ) async throws -> [(ChangeRequestScope, ChangeRequestPage)] {
+        let repositories = try await watchedRepositories(stored: stored)
+        if !watched.isEmpty, repositories.isEmpty {
+            MCLog.sync.notice("None of the watched \(account.kind.rawValue) repositories could be resolved; nothing listed.")
+            return [(.authored, ChangeRequestPage(items: []))]
+        }
         let tracking = environment.current.tracking
         async let authoredPage = list(query(.authored, repositories: repositories))
         async let requestedPage: ChangeRequestPage? = tracking.includeReviewRequests
@@ -233,7 +256,43 @@ struct SyncCycle {
     }
 
     private func query(_ scope: ChangeRequestScope, repositories: [Repository]) -> ChangeRequestQuery {
-        ChangeRequestQuery(scope: scope, namespaces: account.selectedNamespaces, repositories: repositories)
+        ChangeRequestQuery(
+            scope: scope, namespaces: account.selectedNamespaces, repositories: repositories,
+            restrictToRepositories: !repositories.isEmpty
+        )
+    }
+
+    /// The watched repositories as `Repository` values (store directory, stored snapshots, then the checkout
+    /// mappings' paths), in watched order. Empty when nothing is watched (= all repositories).
+    func watchedRepositories(stored: [ChangeRequestSnapshot]) async throws -> [Repository] {
+        guard !watched.isEmpty else { return [] }
+        let database = environment.database
+        var known: [RepoKey: Repository] = [:]
+        for repository in try await database.repositories(account: account.id) where watched.contains(repository.key) {
+            known[repository.key] = repository
+        }
+        for snapshot in stored where known[snapshot.summary.repository.key] == nil && watched.contains(snapshot.summary.repository.key) {
+            known[snapshot.summary.repository.key] = snapshot.summary.repository
+        }
+        if known.count < watched.count {
+            for mapping in try await database.mappings(repo: nil) where known[mapping.repo] == nil && watched.contains(mapping.repo) {
+                known[mapping.repo] = Self.repository(mapping.repo, fullPath: mapping.repoFullPath, instance: account.instance)
+            }
+        }
+        return watched.compactMap { known[$0] }
+    }
+
+    /// A repository built from its key and full path (when only a checkout mapping knows it).
+    static func repository(_ key: RepoKey, fullPath: String, instance: ProviderInstance) -> Repository {
+        let trimmed = fullPath.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        let slash = trimmed.lastIndex(of: "/")
+        return Repository(
+            key: key,
+            namespacePath: slash.map { String(trimmed[..<$0]) } ?? "",
+            name: slash.map { String(trimmed[trimmed.index(after: $0)...]) } ?? trimmed,
+            fullPath: trimmed,
+            webURL: instance.webURL.appending(path: trimmed)
+        )
     }
 
     /// The involved listing (CRs of others the user reviewed or commented on), when the provider declares it and
@@ -318,6 +377,7 @@ struct SyncCycle {
     /// returned as failures; account-level failures (auth, rate limit, offline, timeout) cancel the rest and are thrown.
     static func hydrate(
         _ summaries: [ChangeRequestSummary], provider: any ReviewProvider, limit: Int,
+        previous: [ChangeRequestKey: ChangeRequestSnapshot] = [:],
         onCall: @escaping @Sendable () -> Void = {}
     ) async throws -> [ChangeRequestKey: Result<ChangeRequestSnapshot, ProviderError>] {
         guard !summaries.isEmpty else { return [:] }
@@ -329,7 +389,7 @@ struct SyncCycle {
             let width = max(1, limit)
             for _ in 0..<width {
                 guard let next = pending.popFirst() else { break }
-                group.addTask { try await hydrateOne(next, provider: provider, onCall: onCall) }
+                group.addTask { try await hydrateOne(next, previous: previous[next.key], provider: provider, onCall: onCall) }
             }
             while let (key, result) = try await group.next() {
                 if case .failure(let error) = result, !isPerChangeRequestFailure(error) {
@@ -338,19 +398,21 @@ struct SyncCycle {
                 }
                 results[key] = result
                 if let next = pending.popFirst() {
-                    group.addTask { try await hydrateOne(next, provider: provider, onCall: onCall) }
+                    group.addTask { try await hydrateOne(next, previous: previous[next.key], provider: provider, onCall: onCall) }
                 }
             }
             return results
         }
     }
 
+    /// One incremental hydration: the stored snapshot lets the adapter skip parts that did not change.
     private static func hydrateOne(
-        _ summary: ChangeRequestSummary, provider: any ReviewProvider, onCall: @Sendable () -> Void
+        _ summary: ChangeRequestSummary, previous: ChangeRequestSnapshot?, provider: any ReviewProvider,
+        onCall: @Sendable () -> Void
     ) async throws -> (ChangeRequestKey, Result<ChangeRequestSnapshot, ProviderError>) {
         onCall()
         do {
-            return (summary.key, .success(try await provider.hydrate(summary)))
+            return (summary.key, .success(try await provider.hydrate(summary, previous: previous)))
         } catch {
             guard let classified = ProviderError.classify(error) else { throw CancellationError() }
             return (summary.key, .failure(classified))

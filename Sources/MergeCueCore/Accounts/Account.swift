@@ -37,6 +37,12 @@ public struct Account: Codable, Sendable, Hashable, Identifiable {
     public var selectedNamespaces: [String]
     public var connectedAt: Date
     public var isDemo: Bool
+    /// Repositories whose PRs/MRs are synced (DECISIONS D36). nil = never chosen: the repositories mapped to a
+    /// local checkout, or all when none is mapped; empty = all repositories. Resolve with
+    /// `WatchedRepositories.effective(for:mapped:)`.
+    public var watchedRepositories: [RepoKey]?
+    /// How often the account checks for updates. nil = `RefreshInterval.default` (15 min).
+    public var refreshInterval: RefreshInterval?
 
     public init(
         id: AccountKey,
@@ -50,7 +56,9 @@ public struct Account: Codable, Sendable, Hashable, Identifiable {
         label: String? = nil,
         selectedNamespaces: [String] = [],
         connectedAt: Date,
-        isDemo: Bool = false
+        isDemo: Bool = false,
+        watchedRepositories: [RepoKey]? = nil,
+        refreshInterval: RefreshInterval? = nil
     ) {
         self.id = id
         self.instance = instance
@@ -64,9 +72,14 @@ public struct Account: Codable, Sendable, Hashable, Identifiable {
         self.selectedNamespaces = selectedNamespaces
         self.connectedAt = connectedAt
         self.isDemo = isDemo
+        self.watchedRepositories = watchedRepositories
+        self.refreshInterval = refreshInterval
     }
 
     public var kind: ProviderKind { id.kind }
+
+    /// The account's refresh interval (`RefreshInterval.default` when never chosen).
+    public var effectiveRefreshInterval: RefreshInterval { refreshInterval ?? .default }
 
     /// User label if set, otherwise the username.
     public var displayLabel: String { label ?? username }

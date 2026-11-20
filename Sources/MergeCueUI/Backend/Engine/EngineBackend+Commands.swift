@@ -122,6 +122,23 @@ extension EngineBackend {
                 ? "Remote writes on for \(key.kind.displayName). Every reply or resolve still needs your approval of an exact preview."
                 : "Remote writes off for \(key.kind.displayName)")
 
+        case .setWatchedRepositories(let key, let repos):
+            try await engine.setWatchedRepositories(key, repos)
+            let message: String
+            if let repos {
+                message = repos.isEmpty
+                    ? "Syncing every repository of this account"
+                    : "Syncing \(repos.count) repositor\(repos.count == 1 ? "y" : "ies") of this account"
+            } else {
+                message = "Syncing the repositories you mapped"
+            }
+            return AppCommandResult(message: message)
+        case .setRefreshInterval(let key, let interval):
+            try await engine.setRefreshInterval(key, interval)
+            return AppCommandResult(message: interval.isManual
+                ? "\(key.kind.displayName) checks for updates only when you refresh"
+                : "\(key.kind.displayName) checks for updates \(interval.displayName.lowercased())")
+
         // MARK: Mappings
         case .addMapping(let repo, let path, let checkoutPath):
             let mapping = try await engine.addMapping(repo: repo, repoFullPath: path, checkoutPath: checkoutPath)

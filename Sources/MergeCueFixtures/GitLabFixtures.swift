@@ -142,6 +142,24 @@ public enum GitLabFixtures {
                 let project = match["project"] ?? ""
                 let lists = ["merge_requests_review_requested", "merge_requests_authored_page1", "merge_requests_authored_page2"]
                 let all = lists.flatMap { name in (data(name, step: step).flatMap { try? jsonArray($0) }) ?? [] }
+                // Watched-project listings (`author_id` / `reviewer_id`, no `iids[]`), deduplicated per iid.
+                if iids.isEmpty {
+                    let author = match.query["author_id"]?.first
+                    let reviewer = match.query["reviewer_id"]?.first
+                    var seenIIDs = Set<String>()
+                    let selected = all.filter { mr in
+                        guard "\(mr["project_id"] ?? "")" == project, (mr["state"] as? String) == "opened",
+                              seenIIDs.insert("\(mr["iid"] ?? "")").inserted
+                        else { return false }
+                        if let author { return "\((mr["author"] as? [String: Any])?["id"] ?? "")" == author }
+                        if let reviewer {
+                            let reviewers = (mr["reviewers"] as? [[String: Any]]) ?? []
+                            return reviewers.contains { "\($0["id"] ?? "")" == reviewer }
+                        }
+                        return true
+                    }
+                    return respond(json: selected, request: request)
+                }
                 let selected = all.filter { mr in
                     "\(mr["project_id"] ?? "")" == project && iids.contains("\(mr["iid"] ?? "")") && (mr["state"] as? String) == "opened"
                 }

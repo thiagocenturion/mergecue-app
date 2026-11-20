@@ -27,7 +27,16 @@ final class SyncHarness: Sendable {
 
     func remote(_ account: AccountKey = SyncFixture.github) -> FakeRemote { factory.remote(account) }
 
-    func makeCoordinator(configuration: SyncConfiguration = .deterministic) async -> SyncCoordinator {
+    /// Deterministic configuration whose "recent" tier is 30 s (the D35 fast window), so coordinator tests can
+    /// observe a change and its follow-up within a minute. The D36 tiers themselves are covered with
+    /// `.deterministic` in `SyncScheduleTests` / `SyncPollingModelTests`.
+    static var fastRecentTier: SyncConfiguration {
+        var configuration = SyncConfiguration.deterministic
+        configuration.mediumDetailInterval = configuration.fastDetailInterval
+        return configuration
+    }
+
+    func makeCoordinator(configuration: SyncConfiguration = SyncHarness.fastRecentTier) async -> SyncCoordinator {
         let coordinator = SyncCoordinator(
             database: database,
             credentials: credentials,
@@ -38,6 +47,8 @@ final class SyncHarness: Sendable {
             onChange: { [changes] in changes.append($0) }
         )
         await coordinator.setEventHandler { [handledEvents] in handledEvents.append($0) }
+        // These tests cover every scope (Sync's own default is authored only, DECISIONS D36).
+        await coordinator.setTrackingPreferences(.all)
         return coordinator
     }
 
