@@ -582,7 +582,7 @@
 		</data>
 		<key>Resources/MergeCue_MergeCueFixtures.bundle/Contents/_CodeSignature/CodeSignature</key>
 		<data>
-		/UAAO9Je0VXNi/Fxppql1T2XjgI=
+		Ijq5/hUowQT0HQ9FXjbtnx+m1Oc=
 		</data>
 		<key>Resources/MergeCue_MergeCueUI.bundle/Contents/Info.plist</key>
 		<data>
@@ -646,7 +646,7 @@
 		</data>
 		<key>Resources/MergeCue_MergeCueUI.bundle/Contents/_CodeSignature/CodeSignature</key>
 		<data>
-		B8HOInjkIvCRShYTI0SctgMwk0s=
+		idoXlAi0NeoetPtzaocyn25/YV8=
 		</data>
 	</dict>
 	<key>files2</key>
@@ -655,7 +655,7 @@
 		<dict>
 			<key>cdhash</key>
 			<data>
-			mMzaC64GWvbw4SpU6tH8seW4l5I=
+			02Lfj4gvbf9/XUmwVnXHqP2v8f4=
 			</data>
 			<key>requirement</key>
 			<string>anchor apple generic and identifier "com.thiagocenturion.MergeCue.mcp" and (certificate leaf[field.1.2.840.113635.100.6.1.9] /* exists */ or certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = TTSKDZ455K)</string>
@@ -1672,7 +1672,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			FJUqOYGzyBqRpL8sgMMVhv/QVtVa81G5CnVQ1uwjJgY=
+			2WukgfGZ5IVyv2KDWEwZB88zBs71Zv8IH6jlJTbA5aA=
 			</data>
 		</dict>
 		<key>Resources/MergeCue_MergeCueUI.bundle/Contents/Info.plist</key>
@@ -1784,7 +1784,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			2A9M+ax5WdwQhNYRFPwFbAKTeLptABWvtCieGJ9cpxs=
+			XrJFKzD1o/bVYsBK3PQ6Q8dommWocuk7eUcBhAneB3U=
 			</data>
 		</dict>
 	</dict>
