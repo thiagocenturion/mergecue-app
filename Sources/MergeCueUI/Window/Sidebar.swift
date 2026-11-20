@@ -22,7 +22,7 @@ struct Sidebar: View {
                         ForEach(MainScreen.allCases) { screen in
                             SidebarNavItem(screen: screen, isSelected: model.screen == screen, badge: badge(for: screen), compact: compact) {
                                 model.screen = screen
-                                if screen == .tasks { model.selectedTaskID = nil }
+                                if screen == .tasks { model.selectedTaskID = nil; model.showsFinishedTasks = false }
                             }
                         }
                     }

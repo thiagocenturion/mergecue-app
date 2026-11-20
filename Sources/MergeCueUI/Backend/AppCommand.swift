@@ -112,7 +112,7 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
     case dismissAttention(attentionID: String)
 
     // MARK: Tasks
-    /// "Fix with AI" / "Investigate with AI" / "Draft reply" / "Address with AI". Creates `waiting_for_agent` only.
+    /// "Fix now" / "Investigate with AI" / "Draft reply" / "Address with AI". Creates `waiting_for_agent` only.
     case createTask(attentionID: String, type: TaskType)
     case cancelTask(TaskID)
     case retryTask(TaskID)

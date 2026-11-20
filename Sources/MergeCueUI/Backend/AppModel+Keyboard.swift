@@ -61,7 +61,7 @@ extension AppModel {
         if let id = selectedAttentionID { openInboxItem(id) }
     }
 
-    /// ⌘↩: the selected item's primary action — its active task, else "Fix with AI" (or the item's other task type).
+    /// ⌘↩: the selected item's primary action — its active task, else "Fix now" (or the item's other task type).
     public func performInboxPrimaryAction() async {
         guard let item = attentionItem(selectedAttentionID) else { return }
         if let task = activeConversationTask(for: item) {

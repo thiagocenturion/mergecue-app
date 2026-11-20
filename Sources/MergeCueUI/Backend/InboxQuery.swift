@@ -328,7 +328,7 @@ public nonisolated enum TaskGroup: String, Sendable, Hashable, CaseIterable, Ide
         switch self {
         case .ready: "Ready for review"
         case .needsAttention: "Needs your decision"
-        case .active: "Active"
+        case .active: "In progress"
         case .finished: "Finished"
         }
     }

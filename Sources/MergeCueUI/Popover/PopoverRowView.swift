@@ -2,7 +2,7 @@ import MergeCueCore
 import SwiftUI
 
 /// One popover card: provider tile, "GitHub · acme/payments-api #42 · 6m", headline and ONE trailing action
-/// (outlined gradient "✦ Fix with AI", neutral "Investigate", a spinner while an agent really works, mint
+/// (outlined gradient "✦ Fix now", neutral "Investigate", a spinner while an agent really works, mint
 /// "Review patch"). Clicking the card opens its detail in the main window.
 struct PopoverRowView: View {
     let model: AppModel
@@ -76,10 +76,10 @@ struct PopoverRowView: View {
     @ViewBuilder
     private var trailing: some View {
         let action = item.primaryAction
-        if item.section == .aiWorking {
+        if item.isRunning {
             WorkingSpinner(size: 28)
                 .padding(.trailing, 8)
-                .help("\(item.reason) — only shown while an agent holds the task")
+                .help("In progress: \(item.reason)")
         } else {
             let title = Presentation.compactTitle(action, section: item.section)
             let button = Button {

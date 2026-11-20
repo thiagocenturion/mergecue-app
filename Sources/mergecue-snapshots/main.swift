@@ -176,6 +176,10 @@ let scenes: [Scene] = [
         }?.id
     }, kind: window),
     Scene(name: "window-tasks", size: windowSize, configure: { $0.screen = .tasks }, kind: window),
+    Scene(name: "window-tasks-finished", size: windowSize, configure: { model in
+        model.screen = .tasks
+        model.showsFinishedTasks = true
+    }, kind: window),
     Scene(name: "window-tasks-merged", size: windowSize, configure: { $0.screen = .tasks }, kind: window, prepare: attachReviewToCITask),
     Scene(name: "window-task-merged", size: NSSize(width: windowSize.width, height: 1500), configure: showCITask, kind: window,
           prepare: attachReviewToCITask),

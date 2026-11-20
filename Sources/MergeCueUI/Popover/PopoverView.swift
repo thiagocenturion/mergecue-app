@@ -2,7 +2,7 @@ import MergeCueCore
 import SwiftUI
 
 /// The menu bar popover: header (app tile, "Your PRs at a glance", sync state), account problems, the sections
-/// Needs you / Waiting for agent (only when non-empty) / AI working / Ready (top 3 each, collapsible) and the footer
+/// Needs you / In progress (waiting for an agent or being worked on) / Ready (top 3 each, collapsible) and the footer
 /// (Open MergeCue, Refresh, Pause notifications, Settings).
 /// Keyboard: ↑/↓ select, Return or Space open the selected row's details, ⌘↩ runs its primary action, ⌘R refreshes,
 /// ⌘, opens Settings, ⌘O opens the window, Esc closes. The global shortcut (Settings › General) opens it from any app.
@@ -114,9 +114,7 @@ public struct PopoverView: View {
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 18) {
                     ForEach(PopoverSection.allCases) { section in
-                        if section != .waitingForAgent || !model.sections.items(section).isEmpty {
-                            PopoverSectionView(model: model, section: section, voiceOverFocus: $voiceOverFocus)
-                        }
+                        PopoverSectionView(model: model, section: section, voiceOverFocus: $voiceOverFocus)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -483,7 +481,7 @@ struct EmptySectionRow: View {
     }
 }
 
-/// Shown right after "Fix with AI" in the popover: hand the new task to an agent.
+/// Shown right after "Fix now" in the popover: hand the new task to an agent.
 struct HandoffCallout: View {
     let model: AppModel
     let offer: HandoffOffer

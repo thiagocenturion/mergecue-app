@@ -6,17 +6,16 @@ public nonisolated enum Tone: String, Sendable, Hashable, CaseIterable {
     case neutral, attention, critical, progress, success
 }
 
-/// The four popover sections (PLAN §4).
+/// The three popover sections: Needs you, In progress (waiting for an agent or being worked on), Ready.
 public nonisolated enum PopoverSection: String, Sendable, Hashable, CaseIterable, Identifiable {
-    case needsYou, waitingForAgent, aiWorking, ready
+    case needsYou, inProgress, ready
 
     public var id: String { rawValue }
 
     public var title: String {
         switch self {
         case .needsYou: "Needs you"
-        case .waitingForAgent: "Waiting for agent"
-        case .aiWorking: "AI working"
+        case .inProgress: "In progress"
         case .ready: "Ready"
         }
     }
@@ -24,8 +23,7 @@ public nonisolated enum PopoverSection: String, Sendable, Hashable, CaseIterable
     public var emptyTitle: String {
         switch self {
         case .needsYou: "You're all caught up"
-        case .waitingForAgent: "Nothing waiting for an agent"
-        case .aiWorking: "No agent work in progress"
+        case .inProgress: "Nothing in progress"
         case .ready: "Nothing ready for review yet"
         }
     }
@@ -33,8 +31,7 @@ public nonisolated enum PopoverSection: String, Sendable, Hashable, CaseIterable
     public var symbol: String {
         switch self {
         case .needsYou: "bell.badge"
-        case .waitingForAgent: "hourglass"
-        case .aiWorking: "sparkles"
+        case .inProgress: "progress.indicator"
         case .ready: "checkmark.seal"
         }
     }
@@ -42,8 +39,7 @@ public nonisolated enum PopoverSection: String, Sendable, Hashable, CaseIterable
     public var tone: Tone {
         switch self {
         case .needsYou: .attention
-        case .waitingForAgent: .neutral
-        case .aiWorking: .progress
+        case .inProgress: .progress
         case .ready: .success
         }
     }
@@ -53,7 +49,7 @@ nonisolated extension TaskType {
     /// Button title of the attention action that creates this task type.
     public var actionTitle: String {
         switch self {
-        case .fixReview: "Fix with AI"
+        case .fixReview: "Fix now"
         case .addressSuggestion: "Address with AI"
         case .draftReply: "Draft reply"
         case .investigateCI: "Investigate with AI"
@@ -83,7 +79,7 @@ nonisolated extension TaskType {
 
 /// The single primary action of a popover row.
 public nonisolated enum PrimaryAction: Sendable, Hashable {
-    /// "Fix with AI", "Investigate with AI", "Draft reply", "Address with AI".
+    /// "Fix now", "Investigate with AI", "Draft reply", "Address with AI".
     case createTask(attentionID: String, type: TaskType)
     /// Opens the item's detail ("Review", "Open").
     case openAttention(attentionID: String, title: String)
@@ -133,6 +129,8 @@ public nonisolated struct PopoverItem: Sendable, Hashable, Identifiable {
     public var priority: AttentionPriority
     public var isUnread: Bool
     public var primaryAction: PrimaryAction
+    /// A task an agent holds or the owner works on by hand (spinner); false for tasks waiting for an agent.
+    public var isRunning = false
 
     public var number: Int { changeRequest.number }
     /// "acme/payments-api #42" (GitLab: "!42").
@@ -149,22 +147,19 @@ public nonisolated struct PopoverItem: Sendable, Hashable, Identifiable {
 /// The derived popover content.
 public nonisolated struct PopoverSections: Sendable, Hashable {
     public var needsYou: [PopoverItem] = []
-    public var waitingForAgent: [PopoverItem] = []
-    public var aiWorking: [PopoverItem] = []
+    public var inProgress: [PopoverItem] = []
     public var ready: [PopoverItem] = []
 
-    public init(needsYou: [PopoverItem] = [], waitingForAgent: [PopoverItem] = [], aiWorking: [PopoverItem] = [], ready: [PopoverItem] = []) {
+    public init(needsYou: [PopoverItem] = [], inProgress: [PopoverItem] = [], ready: [PopoverItem] = []) {
         self.needsYou = needsYou
-        self.waitingForAgent = waitingForAgent
-        self.aiWorking = aiWorking
+        self.inProgress = inProgress
         self.ready = ready
     }
 
     public func items(_ section: PopoverSection) -> [PopoverItem] {
         switch section {
         case .needsYou: needsYou
-        case .waitingForAgent: waitingForAgent
-        case .aiWorking: aiWorking
+        case .inProgress: inProgress
         case .ready: ready
         }
     }
@@ -184,8 +179,10 @@ public nonisolated struct PopoverSections: Sendable, Hashable {
 ///
 /// - **Needs you**: actionable attention items (open, or snooze expired) without an active (non-terminal) task,
 ///   plus tasks that wait for a user decision (`blocked`, `failed`). Sorted by priority, then recency.
-/// - **Waiting for agent**: `waiting_for_agent` and `stale` tasks (an agent may re-claim a stale task).
-/// - **AI working**: only tasks with a real claim — state `working` with an agent lease.
+/// - **In progress**: every open task on its way: waiting for an agent (`waiting_for_agent`, `stale`) or being
+///   worked on (`working`: an agent holds it, or the owner set "In progress" by hand). Only the ones really being
+///   worked on show a spinner (`PopoverItem.isRunning`); a `working` task without a claim reads "Task ready to
+///   start".
 /// - **Ready**: `ready_for_review` tasks.
 public nonisolated enum PopoverDerivation {
     public static func derive(from state: AppState, now: Date) -> PopoverSections {
@@ -214,16 +211,14 @@ public nonisolated enum PopoverDerivation {
             let row = row(for: record, section: section, state: state, now: now)
             switch section {
             case .needsYou: sections.needsYou.append(row)
-            case .waitingForAgent: sections.waitingForAgent.append(row)
-            case .aiWorking: sections.aiWorking.append(row)
+            case .inProgress: sections.inProgress.append(row)
             case .ready: sections.ready.append(row)
             }
         }
         sections.needsYou.sort { lhs, rhs in
             lhs.priority != rhs.priority ? lhs.priority > rhs.priority : lhs.date > rhs.date
         }
-        sections.waitingForAgent.sort { $0.date > $1.date }
-        sections.aiWorking.sort { $0.date > $1.date }
+        sections.inProgress.sort { $0.date > $1.date }
         sections.ready.sort { $0.date > $1.date }
         return sections
     }
@@ -232,8 +227,7 @@ public nonisolated enum PopoverDerivation {
     public static func section(for record: TaskRecord) -> PopoverSection? {
         switch record.task.state {
         case .blocked, .failed: .needsYou
-        case .waitingForAgent, .stale: .waitingForAgent
-        case .working: record.hasRealClaim ? .aiWorking : .waitingForAgent
+        case .waitingForAgent, .stale, .working: .inProgress
         case .readyForReview: .ready
         case .approvedAction, .done, .cancelled, .dismissed: nil
         }
@@ -286,7 +280,8 @@ public nonisolated enum PopoverDerivation {
             date: task.state == .working ? (task.lease?.heartbeatAt ?? task.updatedAt) : task.updatedAt,
             priority: priority,
             isUnread: false,
-            primaryAction: action
+            primaryAction: action,
+            isRunning: record.hasRealClaim || record.isManuallyInProgress
         )
     }
 
@@ -302,6 +297,9 @@ public nonisolated enum PopoverDerivation {
             return ("No heartbeat from \(agent) for \(UIFormat.duration(from: since, to: now))", "exclamationmark.triangle.fill",
                     .attention, .retryTask(task.id), .normal)
         case .working:
+            if record.isManuallyInProgress {
+                return ("In progress, started by you", "hammer.fill", .progress, .openTask(task.id, title: "View"), .normal)
+            }
             guard record.hasRealClaim else {
                 return ("Task ready to start", "hourglass", .neutral, .copyCommand(task.id), .normal)
             }

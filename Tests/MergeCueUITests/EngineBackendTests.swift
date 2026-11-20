@@ -100,7 +100,7 @@ struct EngineBackendTests {
         state = await harness.state()
         #expect(state.attention.first { $0.id == item.id }?.isUnread == false)
 
-        // Fix with AI → a real task, only "ready to start" (no fake claim).
+        // Fix now → a real task, only "ready to start" (no fake claim).
         let created = try await backend.perform(.createTask(attentionID: item.id, type: .fixReview))
         let taskID = try #require(created.createdTaskID)
         state = await harness.state()

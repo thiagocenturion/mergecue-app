@@ -217,6 +217,8 @@ public final class AppModel {
     public var selectedAttentionID: String?
     public var selectedChangeRequestID: String?
     public var selectedTaskID: TaskID?
+    /// Tasks screen shows the finished tasks (done, cancelled, dismissed) instead of the open ones.
+    public var showsFinishedTasks = false
     public var selectedRuleID: String?
     public var settingsTab: SettingsTab = .accounts
     /// Keyboard selection in the popover (`PopoverItem.id`).
@@ -240,7 +242,7 @@ public final class AppModel {
     /// Presented as the connect-account sheet.
     public var connectSheetKind: ProviderKind?
     public var showCountInMenuBar = true
-    /// Agent picked in the handoff screen and the "Fix with AI" menu.
+    /// Agent picked in the handoff screen and the "Fix now" menu.
     public var selectedAgentKind: AgentKind?
     /// Tab of the change request panel next to the inbox list.
     public var changeRequestTab: ChangeRequestTab = .conversation
@@ -568,7 +570,7 @@ public final class AppModel {
         if let badge = mode.badgeText { parts[0] += " (\(badge.lowercased()))" }
         let needs = sections.count(.needsYou)
         let ready = sections.count(.ready)
-        let working = sections.count(.aiWorking)
+        let working = sections.count(.inProgress)
         if needs > 0 { parts.append("\(needs) need\(needs == 1 ? "s" : "") you") }
         if working > 0 { parts.append("\(working) in progress") }
         if ready > 0 { parts.append("\(ready) ready") }

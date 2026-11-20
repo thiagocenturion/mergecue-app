@@ -274,7 +274,7 @@ struct InboxFilterMenu: View {
     }
 }
 
-/// Needs you / AI working / Ready counters.
+/// Needs you / In progress / Ready counters.
 struct InboxSummaryCards: View {
     let model: AppModel
     @Environment(\.textScale) private var textScale
@@ -293,7 +293,7 @@ struct InboxSummaryCards: View {
             card(.needsYou, title: "Needs you", symbol: "exclamationmark", showsIcon: showsIcons) {
                 model.inboxFilter.status = .needsAction
             }
-            card(.aiWorking, title: "AI working", symbol: "sparkles", showsIcon: showsIcons) { model.showAll(.aiWorking) }
+            card(.inProgress, title: "In progress", symbol: "progress.indicator", showsIcon: showsIcons) { model.showAll(.inProgress) }
             card(.ready, title: "Ready", symbol: "checkmark", showsIcon: showsIcons) { model.showAll(.ready) }
         }
     }
@@ -306,14 +306,14 @@ struct InboxSummaryCards: View {
 
     private func card(_ section: PopoverSection, title: String, symbol: String, showsIcon: Bool, action: @escaping () -> Void) -> some View {
         let count = model.sections.count(section)
-        let color = section == .aiWorking ? Theme.violet : Theme.color(section)
+        let color = section == .inProgress ? Theme.violet : Theme.color(section)
         return CardView(style: tileStyle, action: action) {
             HStack(spacing: 14) {
                 if showsIcon {
                     Image(systemName: symbol)
                         .scaledFont(.system(size: 17, weight: .bold))
-                        .foregroundStyle(section == .aiWorking ? AnyShapeStyle(LinearGradient(colors: [Theme.violet, Theme.cyan], startPoint: .bottomLeading, endPoint: .topTrailing)) : AnyShapeStyle(color))
-                        .symbolEffect(.variableColor.iterative.reversing, options: .repeating, isActive: section == .aiWorking && count > 0)
+                        .foregroundStyle(section == .inProgress ? AnyShapeStyle(LinearGradient(colors: [Theme.violet, Theme.cyan], startPoint: .bottomLeading, endPoint: .topTrailing)) : AnyShapeStyle(color))
+                        .symbolEffect(.variableColor.iterative.reversing, options: .repeating, isActive: section == .inProgress && count > 0)
                         .symbolEffect(.bounce, value: count)
                         .frame(width: 44 * textScale, height: 44 * textScale)
                         .background(Circle().fill(color.opacity(0.16)))
@@ -544,7 +544,7 @@ struct TaskStateChip: View {
     }
 }
 
-/// Colour and label of a task state, honest about claims (only a real claim reads "AI working").
+/// Colour and label of a task state, honest about claims: "In progress" only with an agent claim or when you started it by hand.
 enum TaskStateStyle {
     static func color(_ record: TaskRecord) -> Color {
         switch record.task.state {
@@ -586,7 +586,7 @@ enum TaskStateStyle {
 
     static func label(_ record: TaskRecord) -> String {
         switch record.task.state {
-        case .working: record.hasRealClaim ? "AI working" : record.isManuallyInProgress ? "In progress" : "Waiting for agent"
+        case .working: record.hasRealClaim || record.isManuallyInProgress ? "In progress" : "Waiting for agent"
         case .readyForReview: "Ready"
         default: record.task.state.displayName
         }

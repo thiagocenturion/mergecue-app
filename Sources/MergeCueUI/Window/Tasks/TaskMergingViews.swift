@@ -4,7 +4,7 @@ import SwiftUI
 // UI for one task covering several inbox items of the same change request (D38): the suggestion shown on an item
 // whose change request already has an open task, and the "Covered items" card of a task.
 
-/// Above the "Fix with AI" bar: this change request already has an open task, so offer to add the item to it
+/// Above the "Fix now" bar: this change request already has an open task, so offer to add the item to it
 /// instead of starting another one.
 struct RelatedTaskBanner: View {
     let model: AppModel

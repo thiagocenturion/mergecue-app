@@ -578,7 +578,7 @@ struct GeneralSettings: View {
                         shortcut("⌘K", "Search the inbox")
                         shortcut("↑ ↓", "Move through the popover, the inbox, pull requests and rules")
                         shortcut("↩ or Space", "Open the selected item")
-                        shortcut("⌘↩", "Primary action of the selected item (Fix with AI, view task, edit rule)")
+                        shortcut("⌘↩", "Primary action of the selected item (Fix now, view task, edit rule)")
                         shortcut("Esc", "Close the popover or a sheet")
                     }
                 }

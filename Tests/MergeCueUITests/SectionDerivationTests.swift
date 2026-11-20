@@ -8,37 +8,58 @@ struct SectionDerivationTests {
     @Test func standardPreviewCounts() {
         let sections = PopoverDerivation.derive(from: previewState(), now: testNow)
         #expect(sections.count(.needsYou) == 7)
-        #expect(sections.count(.waitingForAgent) == 2)
-        #expect(sections.count(.aiWorking) == 1)
+        #expect(sections.count(.inProgress) == 3, "two waiting for an agent and one being worked on")
+        #expect(PopoverSection.allCases == [.needsYou, .inProgress, .ready], "no Waiting for agent section")
         #expect(sections.count(.ready) == 1)
         #expect(sections.hasUrgent)
     }
 
-    @Test func aiWorkingContainsOnlyTasksWithARealClaim() throws {
+    @Test func inProgressIncludesTasksStartedByHand() throws {
         var state = previewState()
         let claimed = try #require(state.task(in: .working))
-        // A task that says "working" without an agent lease must never show as AI working.
+        var manual = try #require(state.task(in: .waitingForAgent))
+        manual.task.state = .working
+        manual.task.lease = nil
+        manual.activities.append(TaskActivity(
+            id: "act_manual", taskID: manual.id, at: testNow, actor: .user, kind: .startedManually,
+            message: "Marked in progress by you", fromState: .waitingForAgent, toState: .working
+        ))
+        state.tasks.removeAll { $0.id == manual.id }
+        state.tasks.append(manual)
+
+        let sections = PopoverDerivation.derive(from: state, now: testNow)
+        let running = sections.inProgress.filter(\.isRunning).compactMap(\.taskID)
+        #expect(Set(running) == [claimed.id, manual.id], "agent claims and manual starts both run")
+        let row = try #require(sections.inProgress.first { $0.taskID == manual.id })
+        #expect(row.reason == "In progress, started by you")
+        #expect(PopoverSection.inProgress.title == "In progress")
+        #expect(Presentation.handoffStep(manual) == .working)
+    }
+
+    @Test func workingWithoutClaimOrManualStartIsNotRunning() throws {
+        var state = previewState()
+        let claimed = try #require(state.task(in: .working))
+        // "working" without an agent lease and not started by hand (an expired lease not yet swept).
         var unclaimed = claimed
         unclaimed.task.id = try #require(TaskID(rawValue: "mc_nolea5"))
         unclaimed.task.lease = nil
         state.tasks.append(unclaimed)
 
         let sections = PopoverDerivation.derive(from: state, now: testNow)
-        #expect(sections.aiWorking.map(\.taskID) == [claimed.id])
-        #expect(sections.aiWorking.allSatisfy { item in
-            state.tasks.first { $0.id == item.taskID }.map { $0.task.state == .working && $0.task.lease != nil } ?? false
-        })
-        let fallback = try #require(sections.waitingForAgent.first { $0.taskID == unclaimed.id })
+        #expect(sections.inProgress.filter(\.isRunning).map(\.taskID) == [claimed.id])
+        let fallback = try #require(sections.inProgress.first { $0.taskID == unclaimed.id })
+        #expect(!fallback.isRunning, "no spinner without a claim")
         #expect(fallback.reason == "Task ready to start")
     }
 
-    @Test func waitingTasksNeverShowAsWorking() {
+    @Test func waitingTasksAreInProgressButNeverShowAsRunning() {
         let state = previewState()
         let sections = PopoverDerivation.derive(from: state, now: testNow)
         let waitingIDs = Set(state.tasks.filter { $0.task.state == .waitingForAgent }.map(\.id))
         #expect(!waitingIDs.isEmpty)
-        #expect(sections.aiWorking.allSatisfy { !waitingIDs.contains($0.taskID ?? TaskID.generate()) })
-        #expect(sections.waitingForAgent.contains { waitingIDs.contains($0.taskID ?? TaskID.generate()) })
+        let waitingRows = sections.inProgress.filter { waitingIDs.contains($0.taskID ?? TaskID.generate()) }
+        #expect(waitingRows.count == waitingIDs.count)
+        #expect(waitingRows.allSatisfy { !$0.isRunning })
     }
 
     @Test func needsYouExcludesItemsWithActiveTasks() throws {
@@ -90,11 +111,11 @@ struct SectionDerivationTests {
             let item = try #require(state.attention(kind, number: number, reason: reason))
             return try #require(sections.needsYou.first { $0.attentionID == item.id }).primaryAction
         }
-        #expect(try action(.github, 42, .changesRequested).title == "Fix with AI")
+        #expect(try action(.github, 42, .changesRequested).title == "Fix now")
         #expect(try action(.gitlab, 42, .ciFailed).title == "Investigate with AI")
         #expect(try action(.bitbucketCloud, 42, .reviewerQuestion).title == "Draft reply")
         #expect(try action(.github, 318, .reviewRequested).title == "Review")
-        #expect(sections.waitingForAgent.first { $0.reason == "Awaiting agent connection" }?.primaryAction.title == "Copy command")
+        #expect(sections.inProgress.first { $0.reason == "Awaiting agent connection" }?.primaryAction.title == "Copy command")
         #expect(sections.ready.first?.primaryAction.title == "Review")
         #expect(PopoverDerivation.primaryAction(for: AttentionItem(
             dedupeKey: "x", changeRequest: try #require(state.attention.first).changeRequest, repoFullPath: "acme/x", title: "t",

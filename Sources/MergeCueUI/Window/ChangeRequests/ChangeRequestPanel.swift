@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The detail panel of a PR/MR (Inbox right column and the Pull requests screen): provider, repo #N, status pill,
 /// title, "Opened … • by … • N commits", Conversation / Files / Checks / Timeline tabs and, for an actionable inbox
-/// item, the large "Fix with AI" split button.
+/// item, the large "Fix now" split button.
 struct ChangeRequestPanel: View {
     @Bindable var model: AppModel
     let changeRequest: ChangeRequestKey
@@ -323,7 +323,7 @@ struct ItemActionsMenuContent: View {
     }
 }
 
-/// The large gradient "Fix with AI" split button (or the linked task when one is already active).
+/// The large gradient "Fix now" split button (or the linked task when one is already active).
 struct FocusActionBar: View {
     @Bindable var model: AppModel
     let item: AttentionItem
@@ -355,7 +355,7 @@ struct FocusActionBar: View {
     }
 }
 
-/// "✦ Fix with AI | ⌄": the main part creates the default task; the menu picks another task type or the agent.
+/// "✦ Fix now | ⌄": the main part creates the default task; the menu picks another task type or the agent.
 struct AITaskSplitButton: View {
     @Bindable var model: AppModel
     let attentionID: String
@@ -423,10 +423,10 @@ struct AITaskSplitButton: View {
 }
 
 extension TaskType {
-    /// Menu wording (Fix with AI / Address with AI / Draft reply / Investigate CI).
+    /// Menu wording (Fix now / Address with AI / Draft reply / Investigate CI).
     var menuTitle: String {
         switch self {
-        case .fixReview: "Fix with AI"
+        case .fixReview: "Fix now"
         case .addressSuggestion: "Address with AI"
         case .draftReply: "Draft reply"
         case .investigateCI: "Investigate CI"

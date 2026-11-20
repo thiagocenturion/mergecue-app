@@ -1,21 +1,43 @@
 import MergeCueCore
 import SwiftUI
 
-/// Tasks grouped by what they need: ready for review, a decision, active, finished. Selecting one opens its
+/// Open tasks grouped by what they need: ready for review, a decision, active. Finished tasks (done, cancelled,
+/// dismissed) are hidden here and listed on their own screen (`FinishedTaskList`). Selecting one opens its
 /// handoff / progress / review screen.
 struct TaskList: View {
     @Bindable var model: AppModel
 
     var body: some View {
-        let groups = TaskGroup.allCases.map { group in
+        if model.showsFinishedTasks {
+            FinishedTaskList(model: model)
+        } else {
+            openTasks
+        }
+    }
+
+    private var openTasks: some View {
+        let groups = TaskGroup.allCases.filter { $0 != .finished }.map { group in
             (group, model.state.tasks.filter { TaskGroup.group(for: $0.task.state) == group }.sorted { $0.task.updatedAt > $1.task.updatedAt })
         }
-        VStack(alignment: .leading, spacing: 0) {
+        let finishedCount = model.state.tasks.filter(FinishedTasks.isFinished).count
+        let hasOpenTasks = groups.contains { !$0.1.isEmpty }
+        return VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Tasks")
-                    .scaledFont(Theme.largeTitle)
-                    .foregroundStyle(Theme.textPrimary)
-                    .accessibilityAddTraits(.isHeader)
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Tasks")
+                        .scaledFont(Theme.largeTitle)
+                        .foregroundStyle(Theme.textPrimary)
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: 12)
+                    if finishedCount > 0 {
+                        Button {
+                            model.showsFinishedTasks = true
+                        } label: {
+                            Label("Finished  ·  \(finishedCount)", systemImage: "checkmark.circle")
+                        }
+                        .help("Show done, cancelled and dismissed tasks, grouped by pull request")
+                    }
+                }
                 Text("\(model.state.tasks.filter { !$0.task.isTerminal }.count) active · handed to your agent through MergeCue MCP")
                     .scaledFont(.system(size: 15))
                     .foregroundStyle(Theme.textSecondary)
@@ -24,7 +46,10 @@ struct TaskList: View {
             .padding(.top, MainWindowMetrics.contentTopInset)
             if model.state.tasks.isEmpty {
                 NothingSelected(title: "No tasks yet", symbol: "sparkles",
-                                message: "Use Fix with AI, Investigate, Draft reply or Address with AI on an inbox item to create one.")
+                                message: "Use Fix now, Investigate, Draft reply or Address with AI on an inbox item to create one.")
+            } else if !hasOpenTasks {
+                NothingSelected(title: "No open tasks", symbol: "checkmark.circle",
+                                message: "Everything is finished. Finished tasks are under Finished, at the top right.")
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {

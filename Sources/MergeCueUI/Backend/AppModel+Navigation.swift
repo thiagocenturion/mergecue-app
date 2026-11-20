@@ -28,7 +28,7 @@ extension AppModel {
         }
     }
 
-    /// "Fix with AI" in the window: creates the task (it starts as Waiting for agent) and opens its handoff screen.
+    /// "Fix now" in the window: creates the task (it starts as Waiting for agent) and opens its handoff screen.
     public func createTaskAndShow(attentionID: String, type: TaskType) async {
         guard let result = await send(.createTask(attentionID: attentionID, type: type)), let taskID = result.createdTaskID else { return }
         if handoffOffer?.taskID == taskID { handoffOffer = nil }
@@ -114,7 +114,7 @@ extension AppModel {
                 if case .attention(let id) = item.source { return id }
                 return nil
             }
-        case .waitingForAgent, .aiWorking, .ready:
+        case .inProgress, .ready:
             screen = .tasks
             selectedTaskID = sections.items(section).first.flatMap { item -> TaskID? in
                 if case .task(let id) = item.source { return id }

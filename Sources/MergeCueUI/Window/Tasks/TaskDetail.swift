@@ -109,7 +109,7 @@ struct TaskActionsMenu: View {
     }
 }
 
-/// Task created → Waiting for agent → AI working → Ready for review.
+/// Task created → Waiting for agent → In progress → Ready for review.
 struct HandoffTracker: View {
     let current: Presentation.HandoffStep
     /// Colour of the current step (amber when stalled or blocked, red when failed).

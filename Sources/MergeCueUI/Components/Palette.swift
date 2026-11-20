@@ -224,7 +224,7 @@ enum Palette {
     /// The icon's cyan → blue → violet, for decoration only (borders, underlines, icons): #38C8F5 → #3B82F6 → #8B5CF6.
     static let brandStops: [UInt32] = [0x38C8F5, 0x3B82F6, 0x8B5CF6]
     /// The same hues deepened until white text reaches 4.5:1 at every point: fills behind text (primary buttons,
-    /// the "Fix with AI" split button). White on the old stops was 1.95 / 3.68 / 4.23:1.
+    /// the "Fix now" split button). White on the old stops was 1.95 / 3.68 / 4.23:1.
     static let actionStops: [UInt32] = [0x087EA3, 0x1B6DF5, 0x8452F5]
     /// Selected filter chip fill (white text).
     static let selectedChipStops: [UInt32] = [0x2B6DF0, 0x2456C9]

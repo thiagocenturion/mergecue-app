@@ -945,7 +945,7 @@ Public API groups (UI contract, exact names chosen by the implementer and docume
   scratch folder `<root>/handoff/scratch/<task id>` (0700) — the agent is never started inside the user's checkout;
 - rules: CRUD, templates, activation (user only), evaluation on new events with per-(rule,event) idempotency,
   quiet hours, max fires/hour; `requestExecution` degrades to `createTask` + note unless an execution mode is
-  verified (`Task ready to start`, never `AI working` without a claim);
+  verified (`Task ready to start`, no working spinner without a claim or a manual start);
 - data: export database, reset, prune; scheduled housekeeping (`runMaintenanceIfDue()` from the stale-lease monitor,
   `EngineEnvironment.maintenanceInterval` 1 day, `historyRetention` 90 days → `pruneHistory` + WAL checkpoint, report in
   `engine.last_maintenance`); `worktreeCleanupCandidates()` lists isolated worktrees of finished tasks unchanged for
@@ -980,8 +980,8 @@ unique-constraint violations.
 - `MergeCueRuntime.makeLive()` / `makeDemo()` wires DB, Keychain, adapters (`ProviderFactory`), `SyncCoordinator`,
   `WorkspaceInspector`, engine, IPC server. Demo mode uses the real adapters over `StubTransport` fixture routes
   and advances fixture steps on refresh; UI shows a persistent **Demo data** badge.
-- UI: `NSStatusItem` + `NSPopover` (click-opened, keyboard accessible) with sections Needs you / Waiting for agent /
-  AI working / Ready (top 3 each + counts), main window (Inbox, PRs & MRs, Tasks, Rules, Settings), onboarding,
+- UI: `NSStatusItem` + `NSPopover` (click-opened, keyboard accessible) with sections Needs you / In progress
+  (waiting for an agent or being worked on) / Ready (top 3 each + counts), main window (Inbox, PRs & MRs, Tasks, Rules, Settings), onboarding,
   agent wizard, task detail, diff and CI excerpt viewers, action previews. See §4 of PLAN.
 - App bundle id `com.thiagocenturion.MergeCue` (helper `com.thiagocenturion.MergeCue.mcp`), signed with Apple Development
   (team `TTSKDZ455K`); not sandboxed; Hardened Runtime on; `mergecue-mcp` embedded in `Contents/MacOS/`.

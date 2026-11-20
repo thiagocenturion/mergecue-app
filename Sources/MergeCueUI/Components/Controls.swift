@@ -86,7 +86,7 @@ struct SecondaryButtonStyle: ButtonStyle {
     }
 }
 
-/// Gradient-text action ("✦ Fix with AI" in the popover): a glass capsule lightly tinted blue, no stroke.
+/// Gradient-text action ("✦ Fix now" in the popover): a glass capsule lightly tinted blue, no stroke.
 struct OutlinedGradientButtonStyle: ButtonStyle {
     var size: ButtonSize = .small
     @Environment(\.isEnabled) private var isEnabled
@@ -258,7 +258,7 @@ struct StatusGlyph: View {
     }
 }
 
-/// A thin circular progress ring (AI working). Spins in the app; static in snapshots and with Reduce Motion.
+/// A thin circular progress ring (In progress). Spins in the app; static in snapshots and with Reduce Motion.
 struct WorkingSpinner: View {
     var size: CGFloat = 26
     @State private var rotation: Double = 0

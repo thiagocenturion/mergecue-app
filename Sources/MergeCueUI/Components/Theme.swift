@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Design tokens of MergeCue (owner mockups in `Design/mockups/`): deep navy/graphite surfaces in dark mode, a
 /// cool off-white variant in light mode, the icon's cyan → blue → violet gradient for primary actions and one colour
-/// per status (Needs you, Waiting for agent, AI working, Ready). Every colour is appearance-aware; views never
+/// per status (Needs you, Waiting for agent, In progress, Ready). Every colour is appearance-aware; views never
 /// hard-code hex values.
 enum Theme {
     // MARK: Surfaces
@@ -56,7 +56,7 @@ enum Theme {
     static let needs = Palette.needs.color
     /// "Waiting for agent" (amber).
     static let waiting = Palette.waiting.color
-    /// "AI working" (violet → cyan).
+    /// "In progress" (violet → cyan).
     static let working = violet
     /// "Ready" / success (the icon's mint dot).
     static let mint = Palette.mint.color
@@ -92,7 +92,7 @@ enum Theme {
     static let brandGradientDiagonal = LinearGradient(colors: gradientStops, startPoint: .topLeading, endPoint: .bottomTrailing)
     /// Fill behind white text (primary buttons): the brand hues deepened to ≥ 4.5:1 with white at every point.
     static let actionGradient = LinearGradient(colors: Palette.actionStops.map { Color(hex: $0) }, startPoint: .leading, endPoint: .trailing)
-    /// Text or icon in the brand gradient on light surfaces ("✦ Fix with AI" outline button).
+    /// Text or icon in the brand gradient on light surfaces ("✦ Fix now" outline button).
     static let actionTextGradient = LinearGradient(colors: [cyanText, accentText], startPoint: .leading, endPoint: .trailing)
 
     static func color(_ tone: Tone) -> Color {
@@ -125,8 +125,7 @@ enum Theme {
     static func color(_ section: PopoverSection) -> Color {
         switch section {
         case .needsYou: needs
-        case .waitingForAgent: waiting
-        case .aiWorking: cyan
+        case .inProgress: cyan
         case .ready: mint
         }
     }
@@ -135,8 +134,7 @@ enum Theme {
     static func textColor(_ section: PopoverSection) -> Color {
         switch section {
         case .needsYou: needsText
-        case .waitingForAgent: waitingText
-        case .aiWorking: cyanText
+        case .inProgress: cyanText
         case .ready: mintText
         }
     }
@@ -145,8 +143,7 @@ enum Theme {
     static func symbol(_ section: PopoverSection) -> String {
         switch section {
         case .needsYou: "exclamationmark.circle.fill"
-        case .waitingForAgent: "clock.fill"
-        case .aiWorking: "sparkles"
+        case .inProgress: "progress.indicator"
         case .ready: "checkmark.circle.fill"
         }
     }

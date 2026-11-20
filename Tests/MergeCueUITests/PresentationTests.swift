@@ -52,7 +52,7 @@ struct PresentationTests {
 
     @Test func compactTitlesMatchTheCards() {
         #expect(Presentation.compactTitle(.createTask(attentionID: "a", type: .investigateCI)) == "Investigate")
-        #expect(Presentation.compactTitle(.createTask(attentionID: "a", type: .fixReview)) == "Fix with AI")
+        #expect(Presentation.compactTitle(.createTask(attentionID: "a", type: .fixReview)) == "Fix now")
         #expect(Presentation.compactTitle(.openTask(TaskID.generate(), title: "Review"), section: .ready) == "Review patch")
     }
 
@@ -97,7 +97,7 @@ struct PresentationTests {
         #expect(repository.detail.contains("GitButler"))
     }
 
-    @Test func trackerShowsAIWorkingOnlyWithAClaim() throws {
+    @Test func trackerShowsInProgressOnlyWithAClaim() throws {
         let state = previewState()
         let working = try #require(state.task(in: .working))
         #expect(Presentation.handoffStep(working) == .working)

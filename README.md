@@ -102,8 +102,10 @@ prints the same thing, and `mergecue-mcp --self-test` checks that the helper rea
 
 ### Handing a task to an agent
 
-**Fix with AI** / **Investigate with AI** / **Draft reply** creates a task that says **Task ready to start** /
-**Waiting for agent** until an agent really claims it through MCP — never "AI working" on a guess. **Open in Claude
+**Fix now** / **Investigate with AI** / **Draft reply** creates a task. It sits under **In progress** with
+**Waiting for agent** until an agent really claims it through MCP; only a claimed task (or one you set to "In
+progress" by hand) shows the working spinner. Finished tasks (done, cancelled, dismissed) leave the Tasks list and
+are kept under **Tasks ▸ Finished**, grouped by pull request with the day and time each finished. **Open in Claude
 Code / Codex** opens a new Terminal window running the agent in the task's worktree with the handoff prompt; **Copy
 command** copies the prompt (`Work on MergeCue task mc_…`). When the agent submits, the result review shows the diff,
 tests and proposed reply; **Apply reviewed patch**, **Post reply** and **Resolve thread** each show an exact preview
