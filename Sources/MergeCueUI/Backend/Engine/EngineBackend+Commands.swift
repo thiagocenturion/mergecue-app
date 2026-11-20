@@ -242,7 +242,8 @@ extension EngineBackend {
             if let problem = await options.sendTestNotification() {
                 return AppCommandResult(message: "The test notification wasn't shown. \(problem)", tone: .attention)
             }
-            return AppCommandResult(message: "Test notification sent. If no banner appeared, check Focus and System Settings › Notifications › MergeCue.",
+            return AppCommandResult(message: "Sent a macOS notification. Its banner comes from macOS at the top right of the screen. "
+                + "If none appeared, a Focus mode (such as Do Not Disturb) is on and the notification is waiting in Notification Center.",
                                     tone: .success)
         case .exportDatabase(let url):
             try await engine.exportDatabase(to: MergeCuePaths.fileSystemPath(url))

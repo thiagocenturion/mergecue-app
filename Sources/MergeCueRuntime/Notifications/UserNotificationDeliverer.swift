@@ -66,8 +66,9 @@ public final class UserNotificationDeliverer: NotificationDelivering {
         }
     }
 
-    /// Settings › Notifications › "Send Test Notification": delivers one notification now and returns why it could
-    /// not be shown (nil when macOS accepted it). Asks for permission first when macOS hasn't asked yet.
+    /// Settings › Notifications › "Send Test Notification": delivers one native macOS notification now and returns
+    /// why macOS won't show it as a banner (nil when it will, unless a Focus mode mutes it: apps cannot read Focus).
+    /// Asks for permission first when macOS hasn't asked yet.
     public func deliverTest() async -> String? {
         guard Self.isAvailable else { return "Notifications only work in the installed MergeCue app, not in this build." }
         let center = UNUserNotificationCenter.current()
@@ -81,8 +82,16 @@ public final class UserNotificationDeliverer: NotificationDelivering {
             return "macOS blocks MergeCue's notifications. Turn them on in System Settings › Notifications › MergeCue."
         case .notDetermined:
             return "macOS hasn't allowed notifications for MergeCue yet."
+        case .provisional:
+            return "macOS delivers MergeCue's notifications quietly (Notification Center only, no banner). "
+                + "Choose Banners or Alerts in System Settings › Notifications › MergeCue."
         default:
             break
+        }
+        let settings = await center.notificationSettings()
+        if settings.alertSetting == .disabled || settings.alertStyle == .none {
+            return "macOS shows MergeCue's notifications without a banner (alert style None). "
+                + "Choose Banners or Alerts in System Settings › Notifications › MergeCue."
         }
         let content = UNMutableNotificationContent()
         content.title = isDemo ? "Demo · MergeCue test" : "MergeCue test"
