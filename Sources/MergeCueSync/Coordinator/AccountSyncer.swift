@@ -2,14 +2,16 @@ import Foundation
 import MergeCueCore
 import MergeCueStore
 
-/// Independent polling loop of one account (DECISIONS D35, D36):
-/// - **lists** on start, every list interval (the account's `refreshInterval`, default 15 min), on manual refresh
-///   and on debounced events (return/focus, wake, network recovery); "Manually only" accounts list at start and on
-///   manual refresh only;
-/// - between lists, **detail** cycles hydrate the change requests whose progressive refresh is due
-///   (`ChangeRequestSchedule`);
-/// - account-level failures back off (exponential; rate limits wait for the provider's reset, else 5 → 15 → 60 min);
-///   `authExpired` stops the loop until the coordinator replaces the syncer after `accountsDidChange()`.
+/// Independent polling loop of one account (DECISIONS D35, D36 and the strict-interval rule):
+/// - one automatic **cycle** per list interval (the account's `refreshInterval`, default 15 min): the list plus the
+///   change requests that changed or are due (`ChangeRequestSchedule`). Nothing is requested between cycles;
+///   return/focus, wake and network recovery only run a cycle that is overdue. "Manually only" accounts sync at
+///   launch and on Refresh only;
+/// - while automatic sync is paused (menu bar pause or a schedule rule, `AutoSyncPause`) nothing runs on its own;
+///   the loop wakes when the pause ends. Refresh still works;
+/// - account-level failures back off (exponential, never sooner than the list interval; rate limits wait for the
+///   provider's reset, else 5 → 15 → 60 min); `authExpired` stops the loop until the coordinator replaces the
+///   syncer after `accountsDidChange()`.
 /// Scheduling uses the injected `MCClock`, so tests drive it with `TestClock`.
 actor AccountSyncer {
     /// What the next cycle does.
@@ -23,7 +25,6 @@ actor AccountSyncer {
         var isManual = false
 
         static let list = Work(mode: .full)
-        static let details = Work(mode: .details)
 
         func merged(with other: Work?) -> Work {
             guard let other else { return self }
@@ -59,10 +60,13 @@ actor AccountSyncer {
     /// Next list poll (nil = as soon as possible).
     private var nextListAt: Date?
     private var lastEventRefreshAt: Date?
-    /// End of the last successful list cycle (events within `eventRefreshDebounce` of it are skipped too).
+    /// End of the last successful list cycle.
     private var lastListedAt: Date?
     /// When a failing account retries (set once per failure, so re-evaluations never retry early).
     private var failureRetryAt: Date?
+    /// The user came back while no cycle was overdue: the next scheduled cycle retries change requests that failed
+    /// terminally a while ago (no extra request now).
+    private var retryOldTerminalFailuresNextCycle = false
 
     init(
         account: Account,
@@ -85,9 +89,10 @@ actor AccountSyncer {
 
     // MARK: Lifecycle
 
-    /// Starts polling immediately with a list cycle (no-op when already running). Without a credential the account
-    /// is `authExpired`.
-    func start() {
+    /// Starts polling (no-op when already running), with a list cycle right away unless `initialList` is false
+    /// (launch while automatic sync is paused: the first cycle runs when the pause ends). Without a credential the
+    /// account is `authExpired`.
+    func start(initialList: Bool = true) {
         guard !isRunning else { return }
         guard provider != nil else {
             setStatus { $0.state = .authExpired; $0.message = "No stored credential. Reconnect the account."; $0.nextRunAt = nil }
@@ -96,7 +101,7 @@ actor AccountSyncer {
         isRunning = true
         stoppedState = nil
         nextListAt = nil
-        startLoop(with: .list)
+        startLoop(with: initialList ? .list : nil)
     }
 
     /// Stops polling and cancels an in-flight cycle (nothing is written for a cancelled cycle).
@@ -151,25 +156,33 @@ actor AccountSyncer {
         SyncSchedule.listInterval(for: account, configuration: environment.current.configuration)
     }
 
-    /// Event-triggered refresh (return/focus, wake, network recovery), skipped within `eventRefreshDebounce` of the
-    /// previous event refresh or successful list.
+    /// Event-triggered refresh (return/focus, wake, network recovery): runs only when the account's last cycle (or
+    /// event refresh) is at least one list interval old, i.e. the scheduled cycle is overdue (after sleep or while
+    /// the timer was held up). Never while automatic sync is paused or for "Manually only" accounts.
     /// Returns whether a cycle ran.
     @discardableResult
     func eventRefresh(retryTerminalFailures: Bool) async -> Bool {
-        guard isRunning, canRunNow, listInterval != nil else { return false }
+        guard isRunning, canRunNow, let listInterval else { return false }
         let now = environment.clock.now
-        let debounce = environment.current.configuration.eventRefreshDebounce
-        let recent = [lastEventRefreshAt, lastListedAt].compactMap { $0 }.max()
-        if let recent, now.timeIntervalSince(recent) < debounce { return false }
+        guard environment.autoSyncPause(now: now) == nil else { return false }
+        if retryTerminalFailures { retryOldTerminalFailuresNextCycle = true }
+        guard !cycleInProgress else { return false }
+        let recent = [lastEventRefreshAt, lastListedAt, status.lastAttemptAt].compactMap { $0 }.max()
+        if let recent, now.timeIntervalSince(recent) < listInterval { return false }
+        if let retry = failureRetryAt, retry > now { return false }
         lastEventRefreshAt = now
         await request(Work(mode: .full, resetOldTerminalFailures: retryTerminalFailures))
         return true
     }
 
-    /// Re-evaluates when the loop wakes (hot change requests or budget changed) without running a cycle now.
+    /// Re-evaluates when the loop wakes (hot change requests, budget, automatic-sync pause or schedule changed)
+    /// without running a cycle now; a cycle that became due (pause lifted) runs right away.
     func reschedule() {
-        guard isRunning, !cycleInProgress, loopTask != nil, status.state == .ok else { return }
-        startLoop(with: nil)
+        guard isRunning, !cycleInProgress, loopTask != nil else { return }
+        switch status.state {
+        case .authExpired, .paused: return
+        default: startLoop(with: nil)
+        }
     }
 
     private func request(_ work: Work) async {
@@ -229,42 +242,46 @@ actor AccountSyncer {
         }
     }
 
-    /// The work that is due now, if any: a list when the account is failing (retry after backoff) or the list is
-    /// due; otherwise a detail cycle when a change request is due.
+    /// The work that is due now, if any: nothing while automatic sync is paused; a list when the account is failing
+    /// (retry after backoff) or the list interval elapsed. Details are only refreshed inside list cycles.
     private func plannedWork() -> Work? {
         let now = environment.clock.now
+        guard environment.autoSyncPause(now: now) == nil else { return nil }
         switch status.state {
         case .ok, .idle, .syncing:
-            break
+            guard listInterval != nil else { return nil }
+            return (nextListAt ?? .distantPast) <= now ? .list : nil
         case .authExpired, .paused:
             return nil
         case .rateLimited, .offline, .permissionDenied, .error:
-            return (failureRetryAt ?? .distantPast) <= now ? .list : nil
+            guard let failureRetryAt else { return nil }
+            return failureRetryAt <= now ? .list : nil
         }
-        if listInterval != nil, (nextListAt ?? .distantPast) <= now { return .list }
-        let configuration = environment.current.configuration
-        return schedule.dueKeys(hints: hints(now: now), configuration: configuration).isEmpty ? nil : .details
     }
 
-    /// Delay until the next wake-up, or nil when the loop must stop (`authExpired`, `paused`).
+    /// Delay until the next wake-up, or nil when the loop must stop (`authExpired`, `paused`, "Manually only", or
+    /// paused until the user resumes). While automatic sync is paused the loop wakes when the pause may end.
     private func nextDelay() -> TimeInterval? {
         let now = environment.clock.now
         let configuration = environment.current.configuration
+        let pause = environment.autoSyncPause(now: now)
+        if status.autoSyncPause != pause { setStatus { $0.autoSyncPause = pause } }
+        let wake: Date?
         switch status.state {
         case .authExpired, .paused:
             return nil
         case .ok, .idle, .syncing:
-            // "Manually only": no list timer; the loop ends until a manual refresh (or a due CR) restarts it.
-            var wake: Date? = listInterval == nil ? nil : (nextListAt ?? now)
-            if let due = schedule.earliestDue(hints: hints(now: now), configuration: configuration), due < (wake ?? .distantFuture) {
-                wake = due
-            }
-            guard let wake else { return nil }
-            return max(configuration.minimumDelay, wake.timeIntervalSince(now))
+            wake = listInterval == nil ? nil : (nextListAt ?? now)
         case .rateLimited, .offline, .permissionDenied, .error:
-            let retryAt = failureRetryAt ?? now
-            return max(configuration.minimumDelay, retryAt.timeIntervalSince(now))
+            wake = failureRetryAt
         }
+        guard var wake else { return nil }
+        if pause != nil {
+            // Wake when the pause may change (schedule boundary, end of a timed pause); never while it lasts.
+            guard let change = environment.nextAutoSyncChange(now: now) else { return nil }
+            wake = max(wake, change)
+        }
+        return max(configuration.minimumDelay, wake.timeIntervalSince(now))
     }
 
     private func hints(now: Date, manual: Bool = false) -> ScheduleHints {
@@ -295,9 +312,10 @@ actor AccountSyncer {
         let configuration = environment.current.configuration
         if work.resetFailures {
             schedule.resetFailures(now: startedAt)
-        } else if work.resetOldTerminalFailures {
+        } else if work.resetOldTerminalFailures || retryOldTerminalFailuresNextCycle {
             schedule.resetFailures(now: startedAt, terminalOlderThan: configuration.terminalRetryOnReturnAfter)
         }
+        retryOldTerminalFailuresNextCycle = false
         setStatus { $0.state = .syncing; $0.lastAttemptAt = startedAt; $0.nextRunAt = nil }
 
         let cycle = SyncCycle(account: account, watched: watched, provider: provider, environment: environment)
@@ -345,10 +363,18 @@ actor AccountSyncer {
             let provider = account.kind.displayName
             if let until, until > now {
                 message = "\(provider) rate limit reached for @\(account.username). MergeCue waits for the reset time \(provider) sent."
+                // A reset sooner than the account's interval still waits one interval (shown time = retry time).
+                if let listInterval, until.timeIntervalSince(now) < listInterval {
+                    state = .rateLimited(until: now.addingTimeInterval(listInterval))
+                }
             } else {
                 // No reset time (Bitbucket sends none for its rolling hour): wait until this account's own requests
                 // of the last hour are well under its soft budget, at least the fallback's first step.
-                var wait = SyncSchedule.rateLimitFallback(consecutiveFailures: failures, configuration: configuration)
+                // Never sooner than the account's own interval (shown time = actual retry time).
+                var wait = max(
+                    listInterval ?? 0,
+                    SyncSchedule.rateLimitFallback(consecutiveFailures: failures, configuration: configuration)
+                )
                 if let budget = configuration.requestBudget(for: account.kind) {
                     let calm = environment.requestLedger.date(account.id, whenCountBelow: budget / 2, now: now)
                     let first = SyncSchedule.rateLimitFallback(consecutiveFailures: 1, configuration: configuration)
@@ -360,8 +386,8 @@ actor AccountSyncer {
             }
         }
         failureRetryAt = SyncSchedule.failureDelay(
-            state: state, consecutiveFailures: failures, now: now, configuration: configuration,
-            jitterSample: environment.jitter()
+            state: state, consecutiveFailures: failures, now: now, listInterval: listInterval,
+            configuration: configuration, jitterSample: environment.jitter()
         ).map { now.addingTimeInterval($0) }
         setStatus {
             $0.state = state
@@ -375,7 +401,7 @@ actor AccountSyncer {
     private func publishDetails() {
         let now = environment.clock.now
         let configuration = environment.current.configuration
-        let errors = schedule.errors(configuration: configuration)
+        let errors = schedule.errors(listInterval: listInterval, configuration: configuration)
         let used = environment.requestLedger.count(account.id, now: now)
         let budget = configuration.requestBudget(for: account.kind)
         setStatus {
@@ -390,6 +416,7 @@ actor AccountSyncer {
         var current = status
         current.requestsLastHour = environment.requestLedger.count(account.id, now: environment.clock.now)
         current.requestBudget = environment.current.configuration.requestBudget(for: account.kind)
+        current.autoSyncPause = environment.autoSyncPause(now: environment.clock.now)
         return current
     }
 

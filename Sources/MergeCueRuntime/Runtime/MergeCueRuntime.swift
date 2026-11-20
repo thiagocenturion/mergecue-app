@@ -142,6 +142,7 @@ public final class MergeCueRuntime: Sendable {
             database: database, credentials: credentials, providers: providers, notifier: notifier, clock: options.clock,
             configuration: options.syncConfiguration ?? .default,
             requestLedger: providers.requestLedger,
+            holidaySource: options.holidaySource ?? (mode == .demo ? nil : EventKitHolidaySource()),
             onChange: { change in relay.forward(change) }
         )
         let workspace = GitWorkspaceInspector(

@@ -6,7 +6,7 @@ struct ScheduleHints: Sendable {
     var now: Date
     /// Change requests with an active agent task.
     var hotKeys: Set<ChangeRequestKey> = []
-    /// `SyncCoordinator.setHot(until:)` is in effect: every CR uses the fast tier.
+    /// `SyncCoordinator.setHot(until:)` is in effect: every CR refreshes every cycle.
     var allHot = false
     /// Budget slowdown factor (≥ 1) of the account.
     var slowdown: Double = 1
@@ -21,12 +21,12 @@ struct ScheduleHints: Sendable {
 
 /// Per-change-request polling state of one account (in memory; rebuilt from stored snapshots after a relaunch).
 ///
-/// - Detail refreshes are progressive by "time since the CR last changed" (new activity, head change, check
-///   state change) and scale with the account's list interval (`SyncSchedule.detailInterval`, D36): at 15 min,
-///   5 min while recent (< 10 min), 15 min up to 1 h, 30 min after; hot CRs and CRs with pending checks use the
-///   30 s tier. "Manually only" accounts have no automatic detail refreshes. A changed list version always
-///   hydrates immediately.
-/// - A failed hydration backs off (30 s → 5 min → 30 min). `not found` / `forbidden` are terminal: the CR is not
+/// - Details refresh only inside list cycles, so never faster than the account's list interval
+///   (`SyncSchedule.detailInterval`): every cycle while the CR changed within the last hour, has an active agent
+///   task or checks running for less than 2 h; every second cycle once idle. Checks still "running" after 2 h count
+///   as stuck. "Manually only" accounts have no automatic detail refreshes. A changed list version always hydrates
+///   in the cycle that sees it.
+/// - A failed hydration is retried 1 → 2 → 4 cycles later. `not found` / `forbidden` are terminal: the CR is not
 ///   retried until its list version changes, a manual refresh, or the user returns (`resetFailures`).
 struct ChangeRequestSchedule: Sendable {
     struct Tracker: Sendable {
@@ -35,6 +35,8 @@ struct ChangeRequestSchedule: Sendable {
         /// Last hydration attempt (success or failure).
         var lastAttemptAt: Date?
         var checksPending = false
+        /// When the pending checks started running (or were first seen pending); nil = no pending checks.
+        var pendingSince: Date?
         /// The stored snapshot is merged/closed: the next listing removes it, no detail polling meanwhile.
         var isFinished = false
         var failures = 0
@@ -61,6 +63,7 @@ struct ChangeRequestSchedule: Sendable {
                 lastChangedAt: min(Self.activityDate(snapshot), snapshot.fetchedAt),
                 lastAttemptAt: snapshot.fetchedAt,
                 checksPending: snapshot.aggregateCheckState == .pending,
+                pendingSince: Self.pendingSince(snapshot, previous: nil, now: snapshot.fetchedAt),
                 isFinished: snapshot.summary.state != .open,
                 fingerprint: ActivityFingerprint(snapshot)
             )
@@ -94,6 +97,7 @@ struct ChangeRequestSchedule: Sendable {
         }
         if !hasSnapshot && tracker.failures == 0 { return true }
         if hasSnapshot, storedListVersion != listVersion { return true }
+        // Refresh re-reads every CR whose state the listing cannot show, stuck checks included (the user asked).
         if hints.isManualRefresh, tracker.failures == 0, !tracker.isFinished,
            tracker.checksPending || hints.isHot(summary.key) {
             return true
@@ -102,7 +106,7 @@ struct ChangeRequestSchedule: Sendable {
         return due <= hints.now
     }
 
-    /// Keys due for a detail-only refresh.
+    /// Keys due for a detail refresh (manual detail-only cycles; automatic cycles always list first).
     func dueKeys(hints: ScheduleHints, configuration: SyncConfiguration) -> [ChangeRequestKey] {
         trackers.compactMap { key, tracker in
             guard let due = dueDate(tracker, hints: hints, configuration: configuration), due <= hints.now else { return nil }
@@ -123,17 +127,26 @@ struct ChangeRequestSchedule: Sendable {
         guard let last = tracker.lastAttemptAt else { return .distantPast }
         guard let listInterval = hints.listInterval else { return nil }
         if tracker.failures > 0 {
-            return last.addingTimeInterval(SyncSchedule.changeRequestBackoff(failures: tracker.failures, configuration: configuration))
+            return last.addingTimeInterval(
+                SyncSchedule.changeRequestBackoff(failures: tracker.failures, listInterval: listInterval, configuration: configuration)
+            )
         }
         let interval = SyncSchedule.detailInterval(
             sinceChange: max(0, last.timeIntervalSince(tracker.lastChangedAt)),
             isHot: hints.isHot(tracker.summary.key),
-            checksPending: tracker.checksPending,
+            checksPending: checksRunning(tracker, now: hints.now, configuration: configuration),
             slowdown: hints.slowdown,
             listInterval: listInterval,
             configuration: configuration
         )
         return last.addingTimeInterval(interval)
+    }
+
+    /// Pending checks that are not stuck: reported pending or running for less than `stuckCheckAfter`.
+    func checksRunning(_ tracker: Tracker, now: Date, configuration: SyncConfiguration) -> Bool {
+        guard tracker.checksPending else { return false }
+        guard let since = tracker.pendingSince else { return true }
+        return now.timeIntervalSince(since) < configuration.stuckCheckAfter
     }
 
     func summary(_ key: ChangeRequestKey) -> ChangeRequestSummary? { trackers[key]?.summary }
@@ -153,9 +166,12 @@ struct ChangeRequestSchedule: Sendable {
         } else {
             tracker.lastChangedAt = min(Self.activityDate(snapshot), now)
         }
+        // Checks of the same head that were already pending keep their start (a new push starts over).
+        let samePendingHead = tracker.checksPending && tracker.summary.headSHA == snapshot.summary.headSHA
         tracker.summary = snapshot.summary
         tracker.fingerprint = fingerprint
         tracker.lastAttemptAt = now
+        tracker.pendingSince = Self.pendingSince(snapshot, previous: samePendingHead ? tracker.pendingSince : nil, now: now)
         tracker.checksPending = snapshot.aggregateCheckState == .pending
         tracker.isFinished = snapshot.summary.state != .open
         tracker.failures = 0
@@ -209,13 +225,15 @@ struct ChangeRequestSchedule: Sendable {
         trackers[key] = nil
     }
 
-    /// Failures shown in the account status.
-    func errors(configuration: SyncConfiguration) -> [ChangeRequestSyncError] {
+    /// Failures shown in the account status (`listInterval` nil = "Manually only": no automatic retry).
+    func errors(listInterval: TimeInterval?, configuration: SyncConfiguration) -> [ChangeRequestSyncError] {
         trackers.values.compactMap { tracker -> ChangeRequestSyncError? in
             guard tracker.failures > 0, let error = tracker.lastError, let failedAt = tracker.failedAt else { return nil }
-            let retry: Date? = tracker.isTerminal
+            let retry: Date? = tracker.isTerminal || listInterval == nil
                 ? nil
-                : failedAt.addingTimeInterval(SyncSchedule.changeRequestBackoff(failures: tracker.failures, configuration: configuration))
+                : failedAt.addingTimeInterval(
+                    SyncSchedule.changeRequestBackoff(failures: tracker.failures, listInterval: listInterval, configuration: configuration)
+                )
             return ChangeRequestSyncError(
                 changeRequest: tracker.summary.key,
                 title: tracker.summary.title,
@@ -239,6 +257,15 @@ struct ChangeRequestSchedule: Sendable {
         case .notFound, .forbidden: true
         default: false
         }
+    }
+
+    /// When the snapshot's pending checks started: the earliest provider start time of a check that is not
+    /// finished, else `previous` (same head, already pending), else `now` (first seen pending). Nil when no check is
+    /// pending.
+    static func pendingSince(_ snapshot: ChangeRequestSnapshot, previous: Date?, now: Date) -> Date? {
+        guard snapshot.aggregateCheckState == .pending else { return nil }
+        let started = snapshot.checks.filter { !$0.status.isTerminal }.compactMap(\.startedAt).min()
+        return min(started ?? previous ?? now, now)
     }
 
     /// Latest activity of a snapshot (updated time, newest comment, newest check change), for seeding.

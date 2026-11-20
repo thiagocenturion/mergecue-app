@@ -101,9 +101,7 @@ struct WatchedScopeTests {
             snapshot.aggregateCheckState = .pending
             return snapshot
         }())
-        var configuration = SyncConfiguration.deterministic
-        configuration.fastDetailInterval = 600 // keep the pending CR from being due on its own
-        let coordinator = await h.makeCoordinator(configuration: configuration)
+        let coordinator = await h.makeCoordinator(configuration: .deterministic)
         await h.start(coordinator)
         await h.advance(60)
         await coordinator.refresh(account: F.github)

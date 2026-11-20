@@ -131,23 +131,28 @@ MergeCue polls each account on its own schedule, modelled on GitButler (DECISION
   it); add or remove repositories with **Add Repository…** / **Remove**. With nothing watched every repository is
   synced and the account card asks you to pick some. MergeCue never lists your repositories while syncing: the
   picker uses the repository list fetched when you open it (kept for 6 hours).
-- **Check for updates** (same card): every 5, 15 (default) or 30 minutes, every hour, or **Manually only**. Lists of
-  your PRs/MRs are fetched at launch, at that interval, when you press **Refresh**, and when you come back to
-  MergeCue (open the popover, focus the main window), after the Mac wakes and when the network returns, at most
-  once a minute for those automatic triggers. "Manually only" checks at launch and on Refresh, nothing else.
-- **Details** of each PR/MR refresh by how recently it changed, scaled to the interval (at 15 minutes: every 5 min for
-  10 minutes after a change, every 15 min up to an hour, then every 30 min). Only PRs/MRs with a task waiting for or
-  claimed by an agent, or with checks still running, refresh every 30 s (never with "Manually only"). A change in
-  the list is picked up at once. Refresh lists again and only re-reads what changed (plus failed PRs/MRs and PRs/MRs
-  with checks still running).
+- **Check for updates** (same card): every 5, 15 (default) or 30 minutes, every hour, or **Manually only**.
+  MergeCue never asks a provider for anything on its own more often than that, whatever happens: once per interval
+  it lists your PRs/MRs and re-reads the ones that changed or are due. Coming back to MergeCue, waking the Mac or
+  getting the network back only runs a check that is overdue. **Refresh** always checks right away. "Manually only"
+  checks at launch and on Refresh, nothing else.
+- **Details** of each PR/MR are re-read inside those checks only: every check while it changed in the last hour,
+  has an agent task, or has CI running; every second check once it has been quiet for an hour. CI still "in
+  progress" after 2 hours counts as stuck and stops being re-read every check. A change in the list is picked up at
+  the next check. Refresh re-reads what changed, failed PRs/MRs and PRs/MRs with CI still running.
+- **Pause Auto-Sync** (menu bar menu, or Settings ▸ Accounts ▸ your account ▸ Automatic sync): pause for an hour,
+  until tomorrow 9:00, until Monday 9:00 or until you resume. Rules can pause it on their own and resume it when
+  they stop applying: weekends, outside your working hours, and holidays or days off (all-day events of the
+  calendars you pick, the macOS Holidays calendar by default; needs Calendar access, read on your Mac only).
+  "Sync Anyway" lifts a scheduled pause until it would have ended. Refresh works while paused.
 - **Only what changed is fetched again.** Each provider's change indicators decide: Bitbucket `comment_count`,
   `task_count`, `updated_on`, source/destination commits and commit statuses; GitLab `user_notes_count`,
   `updated_at`, head/base commits and the head pipeline; GitHub's one GraphQL query per PR only runs when the PR's
   list entry changed (updated time, head, check rollup). Identity (`/user`, workspaces) is fetched once per session.
   At most three requests per account (two for Bitbucket) are in flight at once, and identical concurrent requests
   are shared.
-- **A PR/MR that fails to load** is retried after 30 s, 5 min, then every 30 min. "Not found" and "no access" stop
-  retrying until the PR/MR changes, you press Refresh, or you come back a while later; the account shows
+- **A PR/MR that fails to load** is retried at the next check, two checks later, then every four checks. "Not found" and "no access" stop
+  retrying until the PR/MR changes, you press Refresh, or you come back a while later (retried at the next check); the account shows
   "1 PR couldn't be loaded: not found (tap to retry)" and the row says why, so an account never looks empty when its
   PRs failed.
 

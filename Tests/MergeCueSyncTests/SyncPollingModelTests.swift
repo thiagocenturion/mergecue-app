@@ -4,8 +4,9 @@ import MergeCueStore
 import Testing
 @testable import MergeCueSync
 
-/// The GitButler-style polling model (DECISIONS D35) end to end: list cadence and events, progressive detail tiers,
-/// hot change requests, per-CR backoff, rate limits, request accounting. `TestClock` only — nothing really sleeps.
+/// The polling model end to end (DECISIONS D35, D36, strict interval): one cycle per interval and nothing in
+/// between, detail tiers inside cycles, stuck checks, hot change requests, per-CR retries, rate limits, request
+/// accounting. `TestClock` only: nothing really sleeps.
 @Suite("Sync polling model")
 struct SyncPollingModelTests {
     typealias F = SyncFixture
@@ -43,7 +44,7 @@ struct SyncPollingModelTests {
         await coordinator.stop()
     }
 
-    @Test func returnWakeAndNetworkRecoveryTriggerDebouncedLists() async throws {
+    @Test func returnWakeAndNetworkRecoveryNeverAddRequestsBetweenCycles() async throws {
         let h = try await SyncHarness()
         let remote = h.remote()
         remote.put(F.snapshot(F.crKey(), updatedAt: Self.quiet))
@@ -52,38 +53,31 @@ struct SyncPollingModelTests {
         #expect(remote.listCalls == 2)
 
         await coordinator.userDidReturn()
-        #expect(remote.listCalls == 2, "within 60 s of the launch list")
         await h.advance(61)
         await coordinator.userDidReturn()
-        #expect(remote.listCalls == 4, "popover open / window focus lists again")
-        #expect(try await status(coordinator).nextRunAt == F.at(61 + 900), "the list timer restarts")
         await coordinator.handleSystemWake()
-        #expect(remote.listCalls == 4, "debounced: another event within 60 s")
+        #expect(remote.listCalls == 2, "popover, focus and wake within the interval: nothing requested")
+        #expect(try await status(coordinator).nextRunAt == F.at(900), "the 15-minute timer stays put")
         await coordinator.refresh(account: F.github)
-        #expect(remote.listCalls == 6, "manual refresh is never debounced")
-        await h.advance(30)
-        await coordinator.handleSystemWake()
-        #expect(remote.listCalls == 6, "a manual list 30 s ago also debounces events")
-        await h.advance(40)
-        await coordinator.handleSystemWake()
-        #expect(remote.listCalls == 8, "wake lists again after the debounce")
+        #expect(remote.listCalls == 4, "Refresh always checks now")
+        #expect(try await status(coordinator).nextRunAt == F.at(61 + 900), "and restarts the timer")
 
         let (stream, continuation) = AsyncStream<Bool>.makeStream()
         await coordinator.observeNetwork(stream)
-        await h.advance(61)
+        await h.advance(120)
         continuation.yield(false)
         continuation.yield(true)
-        var recovered = false
-        for _ in 0..<20_000 where !recovered {
-            recovered = remote.listCalls == 10
-            await Task.yield()
-        }
-        #expect(recovered, "network recovery lists again")
+        for _ in 0..<2_000 { await Task.yield() }
+        #expect(remote.listCalls == 4, "network recovery within the interval: nothing requested")
+        await h.advance(900 - 120)
+        #expect(remote.listCalls == 6, "the next cycle comes on time")
+        await coordinator.handleSystemWake()
+        #expect(remote.listCalls == 6)
         continuation.finish()
         await coordinator.stop()
     }
 
-    // MARK: Progressive detail tiers
+    // MARK: Detail tiers (never faster than the interval)
 
     @Test func detailRefreshSlowsDownAsTheChangeRequestStaysQuiet() async throws {
         let h = try await SyncHarness()
@@ -94,10 +88,13 @@ struct SyncPollingModelTests {
         await h.start(coordinator)
 
         var gaps: [TimeInterval] = []
+        var wakeGaps: [TimeInterval] = []
         var lastHydrate = h.clock.now
         var calls = remote.hydrateCalls(key)
         while h.clock.now < F.at(2 * 3600) {
+            let before = h.clock.now
             try await advanceToNextRun(h, coordinator)
+            wakeGaps.append(h.clock.now.timeIntervalSince(before))
             if remote.hydrateCalls(key) > calls {
                 calls = remote.hydrateCalls(key)
                 gaps.append(h.clock.now.timeIntervalSince(lastHydrate))
@@ -105,15 +102,13 @@ struct SyncPollingModelTests {
             }
         }
         await coordinator.stop()
-        // D36 at the default 15-minute interval: recent 5 min, quiet = the interval, idle 30 min; 30 s only for
-        // pending checks / active tasks.
-        #expect(gaps.prefix(2).allSatisfy { $0 == 300 }, "recent tier for the first 10 minutes: \(gaps)")
-        #expect(gaps.contains(900), "never faster than the list interval while quiet: \(gaps)")
-        #expect(gaps.last == 1_800, "idle tier after an hour")
-        #expect(calls < 12, "about 2 + 3 + 2 detail refreshes in 2 h instead of 80 polls at 90 s (\(calls))")
+        #expect(wakeGaps.allSatisfy { $0 == 900 }, "the loop only ever wakes for the 15-minute cycle: \(wakeGaps)")
+        #expect(gaps.prefix(4).allSatisfy { $0 == 900 }, "every cycle during the first hour: \(gaps)")
+        #expect(gaps.last == 1_800, "every second cycle once idle: \(gaps)")
+        #expect(calls <= 8, "\(calls) detail refreshes in 2 h")
     }
 
-    @Test func newActivityReturnsTheChangeRequestToTheFastTier() async throws {
+    @Test func newActivityAndRunningChecksRefreshAtTheNextCycleOnly() async throws {
         let h = try await SyncHarness()
         let remote = h.remote()
         let key = F.crKey()
@@ -122,27 +117,84 @@ struct SyncPollingModelTests {
         await h.start(coordinator)
         #expect(try await status(coordinator).nextRunAt == F.at(900), "quiet: next is the list")
 
-        // A new comment bumps the listing: the list cycle hydrates it at once, then the CR is fast again.
+        // A new comment bumps the listing: the next cycle hydrates it.
         let thread = F.threadKey(key)
         remote.update(key) { $0 = $0.touched(500); $0.threads = [F.thread(thread, comments: [F.comment("c1", at: 500)])] }
         await h.advance(900)
         #expect(remote.hydrateCalls(key) == 2)
         #expect(h.notifier.delivered.count == 1)
-        #expect(try await status(coordinator).nextRunAt == F.at(930))
+        #expect(try await status(coordinator).nextRunAt == F.at(1_800))
 
-        // CI starts (no listing change): pending checks keep the fast tier.
+        // CI starts (no listing change): nothing until the next cycle, then every cycle while it runs.
         remote.update(key) { [key] in
             $0.checks = [F.check(key, id: "1", status: .inProgress, at: 920)]
             $0.aggregateCheckState = .pending
         }
         await h.advance(30)
+        #expect(remote.hydrateCalls(key) == 2, "no 30 s tier")
+        await h.advance(870)
         #expect(remote.hydrateCalls(key) == 3)
-        await h.advance(3_600)
-        #expect(try await status(coordinator).nextRunAt == h.clock.now.addingTimeInterval(30), "pending checks stay fast")
+        for cycle in 1...3 {
+            await h.advance(900)
+            #expect(remote.hydrateCalls(key) == 3 + cycle, "running checks: re-read every cycle")
+            #expect(try await status(coordinator).nextRunAt == h.clock.now.addingTimeInterval(900), "never faster than 15 min")
+        }
         await coordinator.stop()
     }
 
-    @Test func activeTasksAndSetHotUseTheFastTier() async throws {
+    @Test func checksRunningForOverTwoHoursCountAsStuck() async throws {
+        let h = try await SyncHarness()
+        let remote = h.remote()
+        let key = F.crKey()
+        // A build status stuck at "in progress" since 10 min before launch.
+        var snapshot = F.snapshot(key, updatedAt: Self.quiet)
+        snapshot.checks = [F.check(key, id: "1", status: .inProgress, at: -600)]
+        snapshot.aggregateCheckState = .pending
+        remote.put(snapshot)
+        let coordinator = await h.makeCoordinator()
+        await h.start(coordinator)
+
+        var hydratedAt: [TimeInterval] = []
+        var calls = remote.hydrateCalls(key)
+        while h.clock.now < F.at(5 * 3_600) {
+            await h.advance(900)
+            if remote.hydrateCalls(key) > calls {
+                calls = remote.hydrateCalls(key)
+                hydratedAt.append(h.clock.now.timeIntervalSince(F.at(0)))
+            }
+        }
+        await coordinator.stop()
+        let early = hydratedAt.filter { $0 < 6_600 }
+        let late = hydratedAt.filter { $0 > 7_200 + 3_600 }
+        #expect(early == stride(from: 900.0, to: 6_600, by: 900).map { $0 }, "every cycle while it may still be running: \(hydratedAt)")
+        #expect(zip(late, late.dropFirst()).allSatisfy { $1 - $0 == 1_800 }, "stuck and quiet: every second cycle: \(hydratedAt)")
+        #expect(!late.isEmpty)
+    }
+
+    @Test func pendingChecksForAnHourCostAFractionOfTheOldModel() async throws {
+        // Owner report: 341 Bitbucket requests in one hour from a PR whose CI stayed "in progress" (30 s tier).
+        let h = try await SyncHarness(accounts: [F.bitbucket])
+        let remote = h.remote(F.bitbucket)
+        let key = F.crKey(F.bitbucket)
+        var snapshot = F.snapshot(key, updatedAt: Self.quiet)
+        snapshot.checks = [F.check(key, id: "1", status: .inProgress, at: 0)]
+        snapshot.aggregateCheckState = .pending
+        remote.put(snapshot)
+        let coordinator = await h.makeCoordinator()
+        await coordinator.setTrackingPreferences(.authoredOnly)
+        await h.start(coordinator)
+        for _ in 0..<60 {
+            await h.advance(60)
+            await coordinator.userDidReturn()
+        }
+        let calls = remote.listCalls + remote.totalHydrateCalls
+        #expect(remote.listCalls == 5, "lists at 0, 15, 30, 45 and 60 min only")
+        #expect(remote.totalHydrateCalls == 5, "one detail refresh per cycle")
+        #expect(calls == 10, "was 120+ hydrations per hour with the 30 s tier")
+        await coordinator.stop()
+    }
+
+    @Test func activeTasksAndSetHotNeverMakeRefreshesSooner() async throws {
         let h = try await SyncHarness()
         let remote = h.remote()
         let key = F.crKey()
@@ -154,24 +206,21 @@ struct SyncPollingModelTests {
         await coordinator.setActiveChangeRequests([key])
         await h.clock.waitForSleepers(count: 1)
         #expect(await coordinator.activeChangeRequests() == [key])
-        #expect(try await status(coordinator).nextRunAt == F.at(30), "an agent task makes its CR hot at once")
-        await h.advance(30)
-        #expect(remote.hydrateCalls(key) == 2)
+        #expect(try await status(coordinator).nextRunAt == F.at(900), "an agent task never adds a wake-up")
+        await h.advance(900)
+        #expect(remote.hydrateCalls(key) == 2, "but its CR is re-read every cycle")
 
         await coordinator.setActiveChangeRequests([])
-        await h.clock.waitForSleepers(count: 1)
-        #expect(try await status(coordinator).nextRunAt == F.at(900))
-
         await coordinator.setHot(until: F.at(10_000))
         await h.clock.waitForSleepers(count: 1)
-        #expect(try await status(coordinator).nextRunAt == F.at(60))
+        #expect(try await status(coordinator).nextRunAt == F.at(1_800))
         await coordinator.stop()
         #expect(try await status(coordinator).nextRunAt == nil)
     }
 
     // MARK: Per-CR errors
 
-    @Test func failingChangeRequestBacksOffWithoutFailingTheAccount() async throws {
+    @Test func failingChangeRequestRetriesAtLaterCyclesWithoutFailingTheAccount() async throws {
         let h = try await SyncHarness()
         let remote = h.remote()
         let broken = F.crKey(number: 1)
@@ -182,21 +231,23 @@ struct SyncPollingModelTests {
         var current = try await status(coordinator)
         #expect(current.state == .ok)
         #expect(current.changeRequestErrors.map(\.code) == ["server_error"])
-        #expect(current.changeRequestErrors.first?.nextRetryAt == F.at(30))
-        #expect(current.nextRunAt == F.at(30))
+        #expect(current.changeRequestErrors.first?.nextRetryAt == F.at(900), "the next cycle")
+        #expect(current.nextRunAt == F.at(900))
 
-        await h.advance(30)
+        await h.advance(900)
         #expect(remote.hydrateCalls(broken) == 2)
         current = try await status(coordinator)
-        #expect(current.changeRequestErrors.first?.nextRetryAt == F.at(330), "30 s → 5 min")
-        await h.advance(300)
+        #expect(current.changeRequestErrors.first?.nextRetryAt == F.at(900 + 1_800), "then two cycles later")
+        await h.advance(900)
+        #expect(remote.hydrateCalls(broken) == 2)
+        await h.advance(900)
         #expect(remote.hydrateCalls(broken) == 3)
-        #expect(try await status(coordinator).changeRequestErrors.first?.nextRetryAt == F.at(330 + 1_800), "→ 30 min cap")
+        #expect(try await status(coordinator).changeRequestErrors.first?.nextRetryAt == F.at(2_700 + 3_600), "→ four cycles")
 
         remote.setHydrateError(nil, for: broken)
-        await h.advance(900) // list at 900: not due yet (backoff until 2130)
+        for _ in 0..<3 { await h.advance(900) }
         #expect(remote.hydrateCalls(broken) == 3)
-        await h.advance(1_800)
+        await h.advance(900)
         #expect(remote.hydrateCalls(broken) == 4)
         current = try await status(coordinator)
         #expect(current.changeRequestErrors.isEmpty)
@@ -229,13 +280,14 @@ struct SyncPollingModelTests {
         await coordinator.refresh(account: F.github)
         #expect(remote.hydrateCalls(gone) == 3)
 
-        // Return/focus → retried only once the failure is 15 min old.
+        // Return/focus → retried at the next cycle (no request on return itself), once the failure is 15 min old.
         await h.advance(120)
         await coordinator.userDidReturn()
-        #expect(remote.hydrateCalls(gone) == 3)
-        await h.advance(840)
-        await coordinator.userDidReturn()
-        #expect(remote.hydrateCalls(gone) == 4)
+        #expect(remote.hydrateCalls(gone) == 3, "no request on return itself")
+        await h.advance(780)
+        #expect(remote.hydrateCalls(gone) == 4, "the next cycle retries it (the failure is 15 min old by then)")
+        await h.advance(900)
+        #expect(remote.hydrateCalls(gone) == 4, "once per return")
 
         remote.setHydrateError(nil, for: gone)
         await coordinator.refresh(account: F.github)
@@ -246,30 +298,29 @@ struct SyncPollingModelTests {
 
     // MARK: Rate limits
 
-    @Test func rateLimitWithoutResetBacksOffFiveFifteenSixtyMinutes() async throws {
+    @Test func rateLimitWithoutResetBacksOffNeverSoonerThanTheInterval() async throws {
         let h = try await SyncHarness()
         let remote = h.remote()
         remote.listError = .rateLimited(resetAt: nil, retryAfter: nil)
         let coordinator = await h.makeCoordinator()
         await h.start(coordinator)
         var current = try await status(coordinator)
-        #expect(current.state == .rateLimited(until: F.at(300)))
-        #expect(current.nextRunAt == F.at(300))
+        #expect(current.state == .rateLimited(until: F.at(900)))
+        #expect(current.nextRunAt == F.at(900))
         #expect(current.message?.contains("GitHub rate limit reached for @mona-dev") == true)
         #expect(current.message?.contains("no reset time") == true)
-        #expect(current.state.displayText.hasPrefix("Rate limited — retrying at "))
-        #expect(!(current.message ?? "").contains("hour"))
+        #expect(current.state.displayText.hasPrefix("Rate limited. Retrying at "))
 
         await coordinator.refresh(account: F.github)
         await coordinator.userDidReturn()
         #expect(remote.listCalls == 2, "no manual or event refresh before the retry time")
 
-        await h.advance(300)
-        #expect(try await status(coordinator).state == .rateLimited(until: F.at(300 + 900)))
         await h.advance(900)
-        #expect(try await status(coordinator).state == .rateLimited(until: F.at(1_200 + 3_600)))
+        #expect(try await status(coordinator).state == .rateLimited(until: F.at(900 + 900)))
+        await h.advance(900)
+        #expect(try await status(coordinator).state == .rateLimited(until: F.at(1_800 + 3_600)))
         await h.advance(3_600)
-        #expect(try await status(coordinator).state == .rateLimited(until: F.at(4_800 + 3_600)), "capped at 1 h")
+        #expect(try await status(coordinator).state == .rateLimited(until: F.at(5_400 + 3_600)), "capped at 1 h")
 
         remote.listError = nil
         await h.advance(3_600)
@@ -295,13 +346,13 @@ struct SyncPollingModelTests {
         #expect(github.nextRunAt == F.at(2_345))
         #expect(github.message?.contains("waits for the reset time GitHub sent") == true)
 
-        for _ in 0..<10 { await h.advance(30) }
+        for _ in 0..<2 { await h.advance(900, sleepers: 2) }
         #expect(limited.listCalls == 2, "one attempt (two listings), then it waits")
-        #expect(healthy.hydrateCalls(key) == 11, "GitLab keeps refreshing its fresh CR every 30 s")
+        #expect(healthy.hydrateCalls(key) == 3, "GitLab keeps its own 15-minute cycles")
         #expect(try await status(coordinator, F.gitlab).state == .ok)
 
         limited.listError = nil
-        await h.advance(2_345 - 300)
+        await h.advance(2_345 - 1_800, sleepers: 2)
         #expect(try await status(coordinator, F.github).state == .ok)
         await coordinator.stop()
     }
@@ -310,7 +361,8 @@ struct SyncPollingModelTests {
 
     @Test func requestsAreCountedPerAccountAndTheBudgetSlowsDetails() async throws {
         let h = try await SyncHarness(accounts: [F.github, F.gitlab])
-        h.remote(F.github).put(F.snapshot(F.crKey(F.github)))
+        let key = F.crKey(F.github)
+        h.remote(F.github).put(F.snapshot(key))
         h.remote(F.gitlab).put(F.snapshot(F.crKey(F.gitlab), updatedAt: Self.quiet))
         var configuration = SyncHarness.fastRecentTier
         configuration.requestBudgets[.github] = 10
@@ -321,18 +373,23 @@ struct SyncPollingModelTests {
         #expect(github.requestBudget == 10)
         #expect(try await status(coordinator, F.gitlab).requestBudget == 1_000)
 
-        var gaps: [TimeInterval] = []
-        while (try await status(coordinator, F.github).requestsLastHour ?? 0) < 10 {
-            let before = h.clock.now
-            let next = try #require(try await status(coordinator, F.github).nextRunAt)
-            await h.advance(next.timeIntervalSince(before), sleepers: 2)
-            gaps.append(h.clock.now.timeIntervalSince(before))
+        var hydrateGaps: [TimeInterval] = []
+        var lastHydrate = h.clock.now
+        var calls = h.remote(F.github).hydrateCalls(key)
+        for _ in 0..<12 {
+            await h.advance(30, sleepers: 2)
+            if h.remote(F.github).hydrateCalls(key) > calls {
+                calls = h.remote(F.github).hydrateCalls(key)
+                hydrateGaps.append(h.clock.now.timeIntervalSince(lastHydrate))
+                lastHydrate = h.clock.now
+            }
         }
         github = try await status(coordinator, F.github)
         #expect(github.isOverRequestBudget)
-        #expect(gaps.contains(30) && gaps.contains(60), "full speed, then ×2 above 75 % of the budget: \(gaps)")
-        #expect(github.nextRunAt == h.clock.now.addingTimeInterval(120), "×4 at the budget")
-        #expect(try await status(coordinator, F.gitlab).requestsLastHour == 3, "counted per account")
+        #expect(hydrateGaps.first == 30, "every cycle under the budget: \(hydrateGaps)")
+        #expect(hydrateGaps.last.map { $0 >= 120 } == true, "×4 at the budget: \(hydrateGaps)")
+        let gitlab = h.remote(F.gitlab)
+        #expect(try await status(coordinator, F.gitlab).requestsLastHour == gitlab.listCalls + gitlab.totalHydrateCalls, "counted per account")
         await coordinator.stop()
     }
 

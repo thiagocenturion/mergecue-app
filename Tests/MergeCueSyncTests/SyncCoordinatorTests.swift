@@ -15,7 +15,7 @@ struct SyncCoordinatorTests {
         let h = try await SyncHarness()
         let remote = h.remote()
         remote.put(F.snapshot(cr))
-        let first = await h.makeCoordinator()
+        let first = await h.makeCoordinator(configuration: SyncHarness.fastRecentTier)
         await h.start(first)
         #expect(try await h.database.hasCompletedInitialSync(account: F.github))
         #expect(h.notifier.delivered.isEmpty)
@@ -29,7 +29,7 @@ struct SyncCoordinatorTests {
         await first.stop()
 
         // Relaunch: a new coordinator over the same database.
-        let second = await h.makeCoordinator()
+        let second = await h.makeCoordinator(configuration: SyncHarness.fastRecentTier)
         await h.start(second)
         await h.advance(90)
         await second.stop()
@@ -50,7 +50,7 @@ struct SyncCoordinatorTests {
         let h = try await SyncHarness()
         let remote = h.remote()
         remote.put(F.snapshot(cr, threads: [F.thread(t1, comments: [F.comment("c1")])]))
-        let coordinator = await h.makeCoordinator()
+        let coordinator = await h.makeCoordinator(configuration: SyncHarness.fastRecentTier)
         await h.start(coordinator)
         let baseline = try #require(try await h.items().first)
         #expect(baseline.thread == t1)
@@ -90,7 +90,7 @@ struct SyncCoordinatorTests {
         let accounts = [F.github, F.gitlab, F.bitbucket]
         let h = try await SyncHarness(accounts: accounts)
         for account in accounts { h.remote(account).put(F.snapshot(F.crKey(account))) }
-        let coordinator = await h.makeCoordinator()
+        let coordinator = await h.makeCoordinator(configuration: SyncHarness.fastRecentTier)
         await h.start(coordinator)
         for account in accounts {
             let key = F.crKey(account)
@@ -119,7 +119,7 @@ struct SyncCoordinatorTests {
         let h = try await SyncHarness()
         let remote = h.remote()
         remote.put(F.snapshot(cr, threads: [F.thread(t1, comments: [F.comment("c1")])], checks: [F.check(cr, id: "1", status: .success)]))
-        let coordinator = await h.makeCoordinator()
+        let coordinator = await h.makeCoordinator(configuration: SyncHarness.fastRecentTier)
         await h.start(coordinator)
         let before = try #require(try await h.items().first)
 
@@ -144,7 +144,7 @@ struct SyncCoordinatorTests {
         let h = try await SyncHarness()
         let remote = h.remote()
         remote.put(F.snapshot(cr, checks: [F.check(cr, id: "1", status: .success)]))
-        let coordinator = await h.makeCoordinator()
+        let coordinator = await h.makeCoordinator(configuration: SyncHarness.fastRecentTier)
         await h.start(coordinator)
 
         remote.update(cr) { [cr] in $0 = $0.touched(60); $0.checks = [F.check(cr, id: "2", status: .failure, at: 60, required: true)] }
@@ -176,7 +176,7 @@ struct SyncCoordinatorTests {
         let h = try await SyncHarness()
         let remote = h.remote()
         remote.put(F.snapshot(cr, headSHA: "aaaa1111", threads: [F.thread(t1, comments: [F.comment("c1")])]))
-        let coordinator = await h.makeCoordinator()
+        let coordinator = await h.makeCoordinator(configuration: SyncHarness.fastRecentTier)
         await h.start(coordinator)
         let before = try #require(try await h.items().first)
 
@@ -210,7 +210,7 @@ struct SyncCoordinatorTests {
         remote.put(F.snapshot(merged, threads: [F.thread(F.threadKey(merged), comments: [F.comment("c1")])]))
         remote.put(F.snapshot(closed, checks: [F.check(closed, id: "1", status: .failure)]))
         remote.put(F.snapshot(deleted, author: F.alice, involvement: [.reviewRequested]))
-        let coordinator = await h.makeCoordinator()
+        let coordinator = await h.makeCoordinator(configuration: SyncHarness.fastRecentTier)
         await h.start(coordinator)
         #expect(try await h.activeItems().count == 3)
 
@@ -250,7 +250,7 @@ struct SyncCoordinatorTests {
             checks: [F.check(cr, id: "1", status: .failure), F.check(cr, id: "2", name: "lint", status: .success)]
         ))
         remote.put(F.snapshot(reviewing, author: F.alice, involvement: [.reviewRequested]))
-        let coordinator = await h.makeCoordinator()
+        let coordinator = await h.makeCoordinator(configuration: SyncHarness.fastRecentTier)
         await h.start(coordinator)
         await h.advance(90)
         await coordinator.stop()
@@ -271,7 +271,7 @@ struct SyncCoordinatorTests {
         let other = F.crKey(number: 7)
         remote.put(F.snapshot(cr))
         remote.put(F.snapshot(other))
-        let coordinator = await h.makeCoordinator()
+        let coordinator = await h.makeCoordinator(configuration: SyncHarness.fastRecentTier)
         await h.start(coordinator)
         let thread = t1
         remote.update(cr) { [cr] in
@@ -329,7 +329,7 @@ struct SyncCoordinatorTests {
         let h = try await SyncHarness()
         let remote = h.remote()
         remote.put(F.snapshot(cr))
-        let coordinator = await h.makeCoordinator()
+        let coordinator = await h.makeCoordinator(configuration: SyncHarness.fastRecentTier)
         await h.start(coordinator)
         await coordinator.setNotificationPreferences(NotificationPreferences(disabled: [.reviewComments, .reviewerQuestions]))
         #expect(await coordinator.notificationPreferences().disabled == [.reviewComments, .reviewerQuestions])
@@ -360,7 +360,7 @@ struct SyncCoordinatorTests {
     @Test func changeSignalsAreEmitted() async throws {
         let h = try await SyncHarness()
         h.remote().put(F.snapshot(cr, checks: [F.check(cr, id: "1", status: .failure)]))
-        let coordinator = await h.makeCoordinator()
+        let coordinator = await h.makeCoordinator(configuration: SyncHarness.fastRecentTier)
         await h.start(coordinator)
         await coordinator.stop()
         let signals = Set(h.changes.values)

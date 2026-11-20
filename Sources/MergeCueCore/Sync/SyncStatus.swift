@@ -44,7 +44,7 @@ public enum AccountSyncState: Codable, Sendable, Hashable {
         case .offline: "Offline"
         case .authExpired: "Sign-in expired"
         case .rateLimited(let until):
-            if let until { "Rate limited — retrying at \(until.formatted(date: .omitted, time: .shortened))" } else { "Rate limited" }
+            if let until { "Rate limited. Retrying at \(until.formatted(date: .omitted, time: .shortened))" } else { "Rate limited" }
         case .permissionDenied(let message): "Permission denied: \(message)"
         case .error(let message): "Error: \(message)"
         case .paused: "Paused"
@@ -120,6 +120,8 @@ public struct AccountSyncStatus: Codable, Sendable, Hashable {
     public var requestsLastHour: Int?
     /// The soft hourly request budget of the account's provider; above it Sync slows detail refreshes.
     public var requestBudget: Int?
+    /// Automatic sync is paused (manual pause or a schedule rule); nil = it runs. Refresh still works.
+    public var autoSyncPause: AutoSyncPause?
 
     public init(
         account: AccountKey,
@@ -131,7 +133,8 @@ public struct AccountSyncStatus: Codable, Sendable, Hashable {
         message: String? = nil,
         changeRequestErrors: [ChangeRequestSyncError] = [],
         requestsLastHour: Int? = nil,
-        requestBudget: Int? = nil
+        requestBudget: Int? = nil,
+        autoSyncPause: AutoSyncPause? = nil
     ) {
         self.account = account
         self.state = state
@@ -143,6 +146,7 @@ public struct AccountSyncStatus: Codable, Sendable, Hashable {
         self.changeRequestErrors = changeRequestErrors
         self.requestsLastHour = requestsLastHour
         self.requestBudget = requestBudget
+        self.autoSyncPause = autoSyncPause
     }
 
     /// Whether the rolling request count reached the soft budget (Sync is slowing detail refreshes down).
@@ -153,7 +157,7 @@ public struct AccountSyncStatus: Codable, Sendable, Hashable {
 
     private enum CodingKeys: String, CodingKey {
         case account, state, lastAttemptAt, lastSuccessAt, nextRunAt, consecutiveFailures, message
-        case changeRequestErrors, requestsLastHour, requestBudget
+        case changeRequestErrors, requestsLastHour, requestBudget, autoSyncPause
     }
 
     /// Tolerates payloads written before the per-CR errors and request accounting existed.
@@ -169,6 +173,7 @@ public struct AccountSyncStatus: Codable, Sendable, Hashable {
         changeRequestErrors = try c.decodeIfPresent([ChangeRequestSyncError].self, forKey: .changeRequestErrors) ?? []
         requestsLastHour = try c.decodeIfPresent(Int.self, forKey: .requestsLastHour)
         requestBudget = try c.decodeIfPresent(Int.self, forKey: .requestBudget)
+        autoSyncPause = try c.decodeIfPresent(AutoSyncPause.self, forKey: .autoSyncPause)
     }
 }
 
@@ -184,7 +189,7 @@ public struct ChangeRequestSyncError: Codable, Sendable, Hashable, Identifiable 
     /// Redacted, user-facing description.
     public var message: String
     /// `not found` / `forbidden`: not retried automatically until the CR's listing changes, a manual Refresh or the
-    /// user returns to MergeCue. Other failures back off (30 s → 5 min → 30 min).
+    /// user returns to MergeCue. Other failures are retried at the account's next checks (15 → 30 → 60 min at 15 min).
     public var isTerminal: Bool
     public var consecutiveFailures: Int
     public var failedAt: Date

@@ -4,13 +4,15 @@ import MergeCueStore
 
 /// The sync service (`SyncControlling`): one independent `AccountSyncer` per connected account.
 ///
-/// Each account polls on its own schedule (DECISIONS D35, GitButler-style): lists immediately at start, every 15 min,
-/// on manual refresh and on debounced events (return/focus, wake, network recovery); between lists each change
-/// request's details refresh progressively by how recently it changed (30 s → 5 min → 30 min; hot/pending-checks CRs
-/// stay fast); failed CRs back off (terminal for not found/forbidden); account failures back off exponentially with
-/// jitter (cap 15 min), rate limits wait for the provider's reset (else 5 → 15 → 60 min), expired credentials stop
-/// the account until `accountsDidChange()`. One account never blocks another. Every cycle persists its batch
-/// atomically before notifications and the event handler run.
+/// Each account polls on its own schedule and never more often than its refresh interval (default 15 min): one
+/// cycle per interval lists and refreshes the change requests that changed or are due (every cycle, every second
+/// cycle once idle; checks running for over 2 h count as stuck). Return/focus, wake and network recovery only catch
+/// up on an overdue cycle. Failed CRs retry at later cycles (terminal for not found/forbidden); account failures
+/// back off exponentially, never sooner than the interval; rate limits wait for the provider's reset; expired
+/// credentials stop the account until `accountsDidChange()`. Automatic sync pauses while the user paused it or a
+/// schedule rule applies (weekends, outside working hours, holidays) and resumes on its own; Refresh always works.
+/// One account never blocks another. Every cycle persists its batch atomically before notifications and the event
+/// handler run.
 public actor SyncCoordinator: SyncControlling {
     private let database: MergeCueDatabase
     private let credentials: any CredentialStoring
@@ -19,6 +21,10 @@ public actor SyncCoordinator: SyncControlling {
     private var syncers: [AccountKey: AccountSyncer] = [:]
     private var isStarted = false
     private var networkTask: Task<Void, Never>?
+    private let holidaySource: (any HolidaySource)?
+    private var holidayTask: Task<Void, Never>?
+    /// Holiday calendars the current holidays were loaded for (nil = not loaded).
+    private var loadedHolidayCalendars: [String]?
 
     public init(
         database: MergeCueDatabase,
@@ -28,8 +34,10 @@ public actor SyncCoordinator: SyncControlling {
         clock: any MCClock,
         configuration: SyncConfiguration = .default,
         requestLedger: ProviderRequestLedger? = nil,
+        holidaySource: (any HolidaySource)? = nil,
         onChange: @escaping @Sendable (EngineChange) -> Void = { _ in }
     ) {
+        self.holidaySource = holidaySource
         self.database = database
         self.credentials = credentials
         self.providers = providers
@@ -49,7 +57,8 @@ public actor SyncCoordinator: SyncControlling {
     public func start() async {
         guard !isStarted else { return }
         isStarted = true
-        await reloadAccounts()
+        await updateHolidays()
+        await reloadAccounts(launch: true)
     }
 
     /// Stops every loop and cancels in-flight cycles (a cancelled cycle writes nothing).
@@ -57,6 +66,9 @@ public actor SyncCoordinator: SyncControlling {
         isStarted = false
         networkTask?.cancel()
         networkTask = nil
+        holidayTask?.cancel()
+        holidayTask = nil
+        loadedHolidayCalendars = nil
         for syncer in syncers.values {
             await syncer.stop()
         }
@@ -117,8 +129,89 @@ public actor SyncCoordinator: SyncControlling {
 
     /// Which PRs/MRs are tracked besides the user's own. Excluded scopes stop being listed; their change requests
     /// leave the lists and are cleaned up like any other that disappears (hydrated once, items resolved, removed).
+    /// The automatic-sync fields (manual pause, schedule, "sync anyway") take effect right away: paused accounts
+    /// stop scheduling, resumed ones run the cycle that became due.
     public func setTrackingPreferences(_ preferences: TrackingPreferences) async {
+        let before = environment.current.tracking
         environment.update { $0.tracking = preferences }
+        if before.autoSyncSchedule != preferences.autoSyncSchedule || preferences.autoSyncSchedule.pauseOnHolidays {
+            await updateHolidays()
+        }
+        if before.autoSyncPausedUntil != preferences.autoSyncPausedUntil
+            || before.autoSyncSchedule != preferences.autoSyncSchedule
+            || before.autoSyncScheduleOverrideUntil != preferences.autoSyncScheduleOverrideUntil {
+            await rescheduleAll()
+            environment.onChange(.syncStatus)
+        }
+    }
+
+    /// Replaces the days off used by "Pause on holidays" (tests; the runtime's `HolidaySource` keeps them current).
+    public func setHolidays(_ holidays: [String: String]) async {
+        guard environment.current.holidays != holidays else { return }
+        environment.update { $0.holidays = holidays }
+        await rescheduleAll()
+        environment.onChange(.syncStatus)
+    }
+
+    /// Calendar the schedule rules are evaluated in (tests pin a time zone).
+    public func setCalendar(_ calendar: Calendar) async {
+        environment.update { $0.calendar = calendar }
+        await rescheduleAll()
+    }
+
+    /// The automatic-sync pause in effect now (nil = automatic sync runs).
+    public func autoSyncPause() -> AutoSyncPause? {
+        environment.autoSyncPause(now: environment.clock.now)
+    }
+
+    /// Loads the next 60 days off from the holiday source while "Pause on holidays" is on, and keeps them current
+    /// (calendar changes, every 6 h, whenever the preferences are set again). Switched off: forgets them and stops
+    /// watching.
+    private func updateHolidays() async {
+        let schedule = environment.current.tracking.autoSyncSchedule
+        guard schedule.pauseOnHolidays else {
+            holidayTask?.cancel()
+            holidayTask = nil
+            loadedHolidayCalendars = nil
+            if !environment.current.holidays.isEmpty { environment.update { $0.holidays = [:] } }
+            return
+        }
+        // Without a source (tests, demo) the days off come from `setHolidays`.
+        guard let holidaySource else { return }
+        // Always re-read (cheap, local): calendar access may have been granted since.
+        await loadHolidays(from: holidaySource)
+        guard loadedHolidayCalendars != schedule.holidayCalendarIDs || holidayTask == nil else { return }
+        loadedHolidayCalendars = schedule.holidayCalendarIDs
+        holidayTask?.cancel()
+        let clock = environment.clock
+        holidayTask = Task { [weak self] in
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    for await _ in holidaySource.changes() {
+                        if Task.isCancelled { return }
+                        await self?.loadHolidays(from: holidaySource)
+                    }
+                }
+                group.addTask {
+                    while !Task.isCancelled {
+                        do { try await clock.sleep(for: 6 * 3_600) } catch { return }
+                        await self?.loadHolidays(from: holidaySource)
+                    }
+                }
+            }
+        }
+    }
+
+    private func loadHolidays(from source: any HolidaySource) async {
+        let settings = environment.current
+        let ids = settings.tracking.autoSyncSchedule.holidayCalendarIDs
+        let now = environment.clock.now
+        let start = settings.calendar.startOfDay(for: now)
+        let days = await source.daysOff(
+            calendarIDs: ids, from: start, to: start.addingTimeInterval(60 * 86_400), calendar: settings.calendar
+        )
+        guard !Task.isCancelled, environment.current.tracking.autoSyncSchedule.pauseOnHolidays else { return }
+        await setHolidays(days)
     }
 
     public func trackingPreferences() -> TrackingPreferences {
@@ -156,13 +249,13 @@ public actor SyncCoordinator: SyncControlling {
         await reloadAccounts()
     }
 
-    /// Marks every change request hot until `until`: details refresh at the fast tier.
+    /// Marks every change request hot until `until`: details refresh every cycle (never faster than the interval).
     public func setHot(until: Date?) async {
         environment.update { $0.hotUntil = until }
         await rescheduleAll()
     }
 
-    /// Change requests with an active agent task refresh their details at the fast tier.
+    /// Change requests with an active agent task refresh their details every cycle.
     public func setActiveChangeRequests(_ keys: Set<ChangeRequestKey>) async {
         let changed = environment.current.hotChangeRequests != keys
         environment.update { $0.hotChangeRequests = keys }
@@ -173,13 +266,14 @@ public actor SyncCoordinator: SyncControlling {
         environment.current.hotChangeRequests
     }
 
-    /// The user came back (popover opened, main window became key): every account lists again unless it did so for
-    /// an event less than `eventRefreshDebounce` ago, and CRs that failed terminally a while ago are retried.
+    /// The user came back (popover opened, main window became key): an account whose cycle is overdue (last one at
+    /// least one interval ago) runs it now, retrying CRs that failed terminally a while ago. Never while automatic
+    /// sync is paused.
     public func userDidReturn() async {
         await eventRefreshAll(retryTerminalFailures: true)
     }
 
-    /// Call after the Mac wakes from sleep: every account lists again (debounced like other events).
+    /// Call after the Mac wakes from sleep: accounts whose cycle is overdue run it now.
     public func handleSystemWake() async {
         await eventRefreshAll(retryTerminalFailures: false)
     }
@@ -199,8 +293,8 @@ public actor SyncCoordinator: SyncControlling {
         }
     }
 
-    /// Consumes connectivity updates (`true` = network reachable); every offline → online transition triggers a
-    /// (debounced) event refresh of every account. Replaces a previous observation.
+    /// Consumes connectivity updates (`true` = network reachable); every offline → online transition runs the
+    /// overdue cycles. Replaces a previous observation.
     public func observeNetwork(_ updates: AsyncStream<Bool>) {
         networkTask?.cancel()
         networkTask = Task { [weak self] in
@@ -221,7 +315,9 @@ public actor SyncCoordinator: SyncControlling {
 
     // MARK: Accounts
 
-    private func reloadAccounts() async {
+    /// `launch`: the coordinator is starting (app launch); accounts then skip their first list while automatic sync
+    /// is paused. Accounts added or reconnected later always list once.
+    private func reloadAccounts(launch: Bool = false) async {
         let accounts: [Account]
         let mappings: [RepoMapping]
         do {
@@ -276,7 +372,8 @@ public actor SyncCoordinator: SyncControlling {
             if isDisabled {
                 await syncer.stop(state: .paused)
             } else if isStarted {
-                await syncer.start()
+                let paused = environment.autoSyncPause(now: environment.clock.now) != nil
+                await syncer.start(initialList: !(launch && paused))
             }
         }
         environment.onChange(.syncStatus)

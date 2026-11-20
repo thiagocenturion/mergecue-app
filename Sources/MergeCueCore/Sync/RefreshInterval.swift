@@ -2,10 +2,10 @@ import Foundation
 
 /// How often MergeCue checks one account for updates (Settings ▸ Accounts ▸ "Check for updates"; DECISIONS D36).
 ///
-/// It is the account's list cadence. Per-change-request detail refreshes scale with it (quiet PRs/MRs are never
-/// refreshed faster than this interval); the 30 s tier only applies to change requests with an active agent task or
-/// pending checks. `manual` lists only at launch and on a manual Refresh: no timer, no refresh on return/focus,
-/// wake or network recovery, and no automatic detail refreshes.
+/// It is the account's cadence, and nothing is requested automatically more often: one cycle per interval lists the
+/// account and refreshes the PRs/MRs that changed or are due (every cycle, or every second one once idle; running
+/// checks and active agent tasks never make it faster). `manual` lists only at launch and on a manual Refresh: no
+/// timer, no refresh on return/focus, wake or network recovery, and no automatic detail refreshes.
 public enum RefreshInterval: String, Codable, Sendable, Hashable, CaseIterable, Identifiable {
     case fiveMinutes = "5m"
     case fifteenMinutes = "15m"

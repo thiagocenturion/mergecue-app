@@ -45,6 +45,8 @@ public struct RuntimeOptions: Sendable {
     /// Folders scanned for checkout mapping suggestions.
     public var mappingSearchRoots: [String]
     public var ids: IDGenerator
+    /// Days off for "Pause on holidays". nil = the macOS calendars (EventKit) in live mode, none in demo mode.
+    public var holidaySource: (any HolidaySource)?
 
     public init(
         clock: any MCClock = SystemClock(),
@@ -59,7 +61,8 @@ public struct RuntimeOptions: Sendable {
         mcpHelperOverride: URL? = nil,
         gitEnvironmentOverrides: [String: String] = [:],
         mappingSearchRoots: [String] = RuntimeOptions.defaultMappingSearchRoots,
-        ids: IDGenerator = .system
+        ids: IDGenerator = .system,
+        holidaySource: (any HolidaySource)? = nil
     ) {
         self.clock = clock
         self.syncConfiguration = syncConfiguration
@@ -74,6 +77,7 @@ public struct RuntimeOptions: Sendable {
         self.gitEnvironmentOverrides = gitEnvironmentOverrides
         self.mappingSearchRoots = mappingSearchRoots
         self.ids = ids
+        self.holidaySource = holidaySource
     }
 
     /// `~/Developer`, `~/Projects`, `~/Code`, `~/src`, `~/Documents/GitHub`, `~/Documents` — the default

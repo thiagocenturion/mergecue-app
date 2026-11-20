@@ -18,8 +18,12 @@ final class SyncEnvironment: Sendable {
         /// choice, so a sync that starts before the engine never lists review requests across every repository.
         var tracking: TrackingPreferences = .authoredOnly
         var hotUntil: Date?
-        /// Change requests with an active agent task (fast detail tier).
+        /// Change requests with an active agent task (details refresh every cycle).
         var hotChangeRequests: Set<ChangeRequestKey> = []
+        /// Days off from the chosen calendars (`DayKey` → event title), for `AutoSyncSchedule.pauseOnHolidays`.
+        var holidays: [String: String] = [:]
+        /// Calendar the schedule rules are evaluated in (the user's current calendar and time zone).
+        var calendar: Calendar = .autoupdatingCurrent
         var eventHandler: EventHandler?
     }
 
@@ -64,6 +68,18 @@ final class SyncEnvironment: Sendable {
     func recordProviderCall(_ account: AccountKey) {
         guard countsProviderCalls else { return }
         requestLedger.record(account, at: clock.now)
+    }
+
+    /// The automatic-sync pause in effect at `now` (manual pause or schedule rule), nil = automatic sync runs.
+    func autoSyncPause(now: Date) -> AutoSyncPause? {
+        let current = current
+        return current.tracking.autoSyncPause(at: now, calendar: current.calendar, holidays: current.holidays)
+    }
+
+    /// When the automatic-sync pause may change next (nil = only when the preferences change).
+    func nextAutoSyncChange(now: Date) -> Date? {
+        let current = current
+        return current.tracking.nextAutoSyncChange(after: now, calendar: current.calendar, holidays: current.holidays)
     }
 
     var notificationPolicy: NotificationPolicy {

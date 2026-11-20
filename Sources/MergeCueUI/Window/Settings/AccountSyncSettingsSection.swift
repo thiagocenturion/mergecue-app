@@ -23,12 +23,21 @@ extension AppModel {
     }
 }
 
-/// Settings ▸ Accounts ▸ account: "Check for updates" (the account's refresh interval).
+/// Settings ▸ Accounts ▸ account: "Check for updates" (the account's refresh interval), followed by the global
+/// "Automatic sync" pause and schedule.
 struct AccountRefreshIntervalRow: View {
     let model: AppModel
     let account: AccountState
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            intervalRow
+            Divider()
+            AutoSyncScheduleSection(model: model)
+        }
+    }
+
+    private var intervalRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Check for updates")
@@ -56,7 +65,7 @@ struct AccountRefreshIntervalRow: View {
         if account.account.effectiveRefreshInterval.isManual {
             return "Only at launch and when you click Refresh. Nothing is checked in the background."
         }
-        return "Also when you open MergeCue. PRs with a running agent task or pending checks are checked more often."
+        return "Never more often than this, even when you open MergeCue or CI is running. Click Refresh to check right away."
     }
 }
 
