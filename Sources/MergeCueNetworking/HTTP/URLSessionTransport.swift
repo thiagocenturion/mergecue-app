@@ -116,7 +116,21 @@ public enum RedirectPolicy {
         if source.scheme?.lowercased() == "https", scheme == "http" {
             return nil
         }
-        return Origin(source) == Origin(target) ? proposed : stripCredentials(proposed)
+        guard Origin(source) == Origin(target) else { return stripCredentials(proposed) }
+        // URLSession drops `Authorization` from the proposed request even for a same-origin redirect (Bitbucket's
+        // PR diffstat/commits redirect within api.bitbucket.org), so carry the original credentials over.
+        return restoringCredentials(from: original, into: proposed)
+    }
+
+    private static func restoringCredentials(from original: URLRequest?, into proposed: URLRequest) -> URLRequest {
+        guard let original else { return proposed }
+        var copy = proposed
+        for name in credentialHeaders {
+            if let value = original.value(forHTTPHeaderField: name), copy.value(forHTTPHeaderField: name) == nil {
+                copy.setValue(value, forHTTPHeaderField: name)
+            }
+        }
+        return copy
     }
 
     private static func stripCredentials(_ request: URLRequest) -> URLRequest {

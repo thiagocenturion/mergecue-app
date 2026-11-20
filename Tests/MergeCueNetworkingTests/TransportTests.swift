@@ -76,6 +76,26 @@ struct TransportTests {
         #expect(followed.value(forHTTPHeaderField: "Authorization") == "Bearer secret")
     }
 
+    /// URLSession hands the delegate a proposed request WITHOUT `Authorization`, even for a same-origin redirect
+    /// (verified on macOS 26). Bitbucket's PR diffstat/commits redirect within api.bitbucket.org; without the
+    /// credentials restored the private repository answers 404 "You may not have access to this repository".
+    @Test func sameOriginRedirectsRestoreCredentialsURLSessionDropped() throws {
+        let followed = try #require(RedirectPolicy.followRequest(
+            original: request("https://api.bitbucket.org/2.0/repositories/acme/app/pullrequests/7/diffstat"),
+            proposed: request("https://api.bitbucket.org/2.0/repositories/acme/app/diffstat/acme/app:abc%0Ddef", auth: false)
+        ))
+        #expect(followed.value(forHTTPHeaderField: "Authorization") == "Bearer secret")
+        #expect(followed.value(forHTTPHeaderField: "PRIVATE-TOKEN") == "glpat-x")
+        #expect(followed.url?.path().hasSuffix("/diffstat/acme/app:abc%0Ddef") == true)
+
+        // Still never restored across origins.
+        let crossOrigin = try #require(RedirectPolicy.followRequest(
+            original: request("https://api.bitbucket.org/2.0/x"),
+            proposed: request("https://bbuseruploads.s3.amazonaws.com/log", auth: false)
+        ))
+        #expect(crossOrigin.value(forHTTPHeaderField: "Authorization") == nil)
+    }
+
     @Test func crossOriginRedirectsDropCredentials() throws {
         let followed = try #require(RedirectPolicy.followRequest(
             original: request("https://api.github.com/repos/a/b/actions/jobs/1/logs"),
