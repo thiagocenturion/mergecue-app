@@ -291,10 +291,13 @@ struct ChangeRequestRow: View {
                 if summary.state != .open { Chip(text: summary.state == .merged ? "Merged" : "Closed", tone: summary.state == .merged ? .success : .neutral) }
                 Spacer(minLength: 4)
                 ChecksBadge(state: snapshot.aggregateCheckState)
-                if let required = snapshot.approvals.requiredCount {
-                    Label("\(snapshot.approvals.approvedBy.count)/\(required)", systemImage: "hand.thumbsup")
-                        .foregroundStyle(snapshot.approvals.isSatisfied == true ? Theme.mintText : Theme.textSecondary)
-                        .accessibilityLabel("\(snapshot.approvals.approvedBy.count) of \(required) approvals")
+                if let approval = model.approvalSummary(summary.key) {
+                    ApprovalChip(text: snapshot.approvals.requiredCount.map { "\(ApprovalDerivation.approvers(snapshot).people.count)/\($0)" } ?? approval.text,
+                                 isNew: approval.isNew, compact: true)
+                } else if let required = snapshot.approvals.requiredCount {
+                    Label("0/\(required)", systemImage: "hand.thumbsup")
+                        .foregroundStyle(Theme.textSecondary)
+                        .accessibilityLabel("0 of \(required) approvals")
                 }
                 if snapshot.unresolvedThreadCount > 0 {
                     Label("\(snapshot.unresolvedThreadCount)", systemImage: "bubble.left")

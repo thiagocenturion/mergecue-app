@@ -36,10 +36,11 @@ extension AppModel {
 
     // MARK: Inbox
 
-    /// Inbox items in the order the list shows them (day groups, current filters).
+    /// Inbox items in the order the list shows them (change request groups, current filters); items of collapsed
+    /// groups are skipped.
     public var inboxKeyboardOrder: [String] {
         let result = InboxQuery.run(state: state, filter: inboxFilter, now: now, showRead: showReadInInbox)
-        return InboxDayGroup.make(result.visibleItems, now: now).flatMap { $0.items.map(\.id) }
+        return result.prGroups(now: now).filter { !collapsedInboxGroups.contains($0.changeRequest.id) }.flatMap { $0.items.map(\.id) }
     }
 
     public func moveInboxSelection(by delta: Int) {

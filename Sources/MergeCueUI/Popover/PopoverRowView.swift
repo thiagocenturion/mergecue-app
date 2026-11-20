@@ -9,6 +9,8 @@ struct PopoverRowView: View {
     let item: PopoverItem
     /// Moves VoiceOver to this row when the keyboard selects it.
     var voiceOverFocus: AccessibilityFocusState<String?>.Binding?
+    /// Inside a change request group: the header shows the provider, repository and number.
+    var inGroup = false
     @State private var isHovering = false
 
     private var isSelected: Bool { model.popoverSelection == item.id }
@@ -17,19 +19,27 @@ struct PopoverRowView: View {
         let content = PopoverRowContent.make(item, model: model)
         let shape = SmoothRect()
         HStack(spacing: 12) {
-            ProviderBadge(kind: item.providerKind, size: 42, style: .tile)
-                .overlay(alignment: .topLeading) {
-                    if item.isUnread {
-                        Circle()
-                            .fill(Theme.accent)
-                            .frame(width: 9, height: 9)
-                            .overlay(Circle().strokeBorder(Theme.popoverBackground, lineWidth: 1.5))
-                            .offset(x: -3, y: -3)
-                            .accessibilityHidden(true)
-                    }
+            if inGroup {
+                if item.isUnread {
+                    Circle().fill(Theme.accent).frame(width: 8, height: 8).accessibilityHidden(true)
                 }
+            } else {
+                ProviderBadge(kind: item.providerKind, size: 42, style: .tile)
+                    .overlay(alignment: .topLeading) {
+                        if item.isUnread {
+                            Circle()
+                                .fill(Theme.accent)
+                                .frame(width: 9, height: 9)
+                                .overlay(Circle().strokeBorder(Theme.popoverBackground, lineWidth: 1.5))
+                                .offset(x: -3, y: -3)
+                                .accessibilityHidden(true)
+                        }
+                    }
+            }
             VStack(alignment: .leading, spacing: 4) {
-                Text("\(item.providerKind.shortName) · \(item.repoFullPath.split(separator: "/").last.map(String.init) ?? item.repoFullPath) \(item.providerKind.formattedNumber(item.number)) · \(UIFormat.compactAge(from: item.date, now: model.now))")
+                Text(inGroup
+                    ? "\(item.reason) · \(UIFormat.compactAge(from: item.date, now: model.now))"
+                    : "\(item.providerKind.shortName) · \(item.repoFullPath.split(separator: "/").last.map(String.init) ?? item.repoFullPath) \(item.providerKind.formattedNumber(item.number)) · \(UIFormat.compactAge(from: item.date, now: model.now))")
                     .scaledFont(.system(size: 12))
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(1)

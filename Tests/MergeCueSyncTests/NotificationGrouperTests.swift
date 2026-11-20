@@ -71,6 +71,8 @@ struct NotificationGrouperTests {
         let approved = F.snapshot(cr, reviews: [F.review("r1", .approved)])
         let approvalCycle = cycle([(F.snapshot(cr), approved)])
         #expect(group(approvalCycle).count == 1)
+        // Approval-only notifications lead with the good news (D47).
+        #expect(group(approvalCycle).first?.title.hasPrefix("Approved · ") == true)
         #expect(group(approvalCycle, preferences: NotificationPreferences(disabled: [.approvals])).isEmpty)
         #expect(group(approvalCycle, preferences: NotificationPreferences(disabled: [.reviewRequests, .ciFailures])).count == 1)
     }

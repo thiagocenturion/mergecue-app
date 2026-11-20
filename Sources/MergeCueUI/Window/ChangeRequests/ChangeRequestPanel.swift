@@ -35,6 +35,12 @@ struct ChangeRequestPanel: View {
                     // Code context for line comments whose provider sends no hunk (read once per head).
                     if let snapshot { await model.loadDiffIfNeeded(snapshot) }
                 }
+                .task(id: "approvals|\(changeRequest.id)|\(snapshot?.approvals.approvedBy.count ?? 0)") {
+                    // Approvals count as seen once the change request has been on screen for a moment.
+                    try? await Task.sleep(for: .seconds(1.5))
+                    guard !Task.isCancelled else { return }
+                    model.markApprovalsSeen(changeRequest)
+                }
             }
             if let focus {
                 RelatedTaskBanner(model: model, item: focus)

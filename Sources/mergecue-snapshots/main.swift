@@ -115,6 +115,15 @@ func showCITask(_ model: AppModel) {
     model.selectedTaskID = ci.flatMap { model.activeTask(for: $0)?.id }
 }
 
+/// Marks one approved pull request's approvals unseen, so its highlight shows.
+func forgetOneApproval(_ model: AppModel) {
+    if let approved = model.state.changeRequests.first(where: {
+        $0.summary.state == .open && $0.summary.involvement.contains(.authored) && !ApprovalDerivation.approvers($0).people.isEmpty
+    }) {
+        model.seenApprovals[approved.key.id] = []
+    }
+}
+
 func showTask(_ state: TaskState) -> (AppModel) -> Void {
     { model in
         model.screen = .tasks
@@ -152,6 +161,23 @@ let scenes: [Scene] = [
     Scene(name: "popover-empty", variant: .allCaughtUp, kind: popover),
     Scene(name: "popover-error", variant: .authExpired, kind: popover),
     Scene(name: "popover-onboarding", variant: .noAccounts, kind: popover),
+    // A new approval on one of your PRs (D47), in the Inbox and the popover.
+    Scene(name: "window-inbox-approval", size: windowSize, configure: { model in
+        model.screen = .inbox
+        forgetOneApproval(model)
+    }, kind: window),
+    Scene(name: "popover-approval", configure: forgetOneApproval, kind: popover),
+    // PR groups (D46): one collapsed in the Inbox and one in the popover.
+    Scene(name: "window-inbox-group-collapsed", size: windowSize, configure: { model in
+        model.screen = .inbox
+        if let item = model.state.attention.first(where: { $0.providerKind == .github && $0.number == 42 && $0.reason == .changesRequested }) {
+            model.toggleInboxGroup(item.changeRequest)
+        }
+        model.selectedAttentionID = model.state.attention.first { $0.providerKind == .bitbucketCloud && $0.reason == .reviewerQuestion }?.id
+    }, kind: window),
+    Scene(name: "popover-group-collapsed", configure: { model in
+        if let group = model.popoverGroups(.needsYou).first { model.togglePopoverGroup(group) }
+    }, kind: popover),
     Scene(name: "window-inbox-ci", size: windowSize, configure: { model in
         model.screen = .inbox
         model.selectedAttentionID = model.state.attention.first { $0.providerKind == .gitlab && $0.reason == .ciFailed }?.id

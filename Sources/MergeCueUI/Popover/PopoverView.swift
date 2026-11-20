@@ -113,6 +113,7 @@ public struct PopoverView: View {
         ScrollViewReader { proxy in
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 18) {
+                    ApprovalHighlights(model: model, compact: true)
                     ForEach(PopoverSection.allCases) { section in
                         PopoverSectionView(model: model, section: section, voiceOverFocus: $voiceOverFocus)
                     }
@@ -432,10 +433,10 @@ struct PopoverSectionView: View {
                 if items.isEmpty {
                     EmptySectionRow(section: section)
                 } else {
-                    VStack(spacing: 8) {
-                        ForEach(items.prefix(AppModel.popoverRowLimit)) { item in
-                            PopoverRowView(model: model, item: item, voiceOverFocus: voiceOverFocus)
-                                .id(item.id)
+                    // Rows grouped by pull/merge request under collapsible headers (D46), expanded by default.
+                    VStack(spacing: 10) {
+                        ForEach(model.popoverGroups(section)) { group in
+                            PopoverPRGroupView(model: model, group: group, voiceOverFocus: voiceOverFocus)
                                 .transition(Motion.listTransition)
                         }
                     }
@@ -564,5 +565,39 @@ struct OnboardingPrompt: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity)
+    }
+}
+
+/// One change request's rows in a popover section under a compact collapsible header (D46).
+struct PopoverPRGroupView: View {
+    let model: AppModel
+    let group: PopoverPRGroup
+    var voiceOverFocus: AccessibilityFocusState<String?>.Binding?
+
+    var body: some View {
+        let first = group.first
+        PRGroupView(
+            providerKind: group.changeRequest.kind, repoFullPath: first?.repoFullPath ?? "", number: group.changeRequest.number,
+            title: model.snapshot(group.changeRequest)?.summary.title ?? first?.title ?? "", count: group.items.count,
+            unreadCount: group.items.filter(\.isUnread).count, marks: marks, latest: group.items.map(\.date).max(), now: model.now,
+            isCollapsed: model.isPopoverGroupCollapsed(group), approval: model.approvalSummary(group.changeRequest), compact: true,
+            toggle: { model.togglePopoverGroup(group) }
+        ) {
+            VStack(spacing: 8) {
+                ForEach(group.items) { item in
+                    PopoverRowView(model: model, item: item, voiceOverFocus: voiceOverFocus, inGroup: true)
+                        .id(item.id)
+                        .transition(Motion.listTransition)
+                }
+            }
+        }
+    }
+
+    private var marks: [PRGroupMark] {
+        var seen: Set<String> = []
+        return group.items.compactMap { item in
+            guard seen.insert(item.reasonSymbol).inserted else { return nil }
+            return PRGroupMark(symbol: item.reasonSymbol, color: Theme.color(item.tone))
+        }
     }
 }

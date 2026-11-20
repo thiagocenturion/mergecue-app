@@ -252,6 +252,22 @@ public final class AppModel {
     public var reviewSelectedFile: String?
     /// Collapsed popover sections.
     public var collapsedPopoverSections: Set<PopoverSection> = []
+    /// Approvals the owner has seen, per change request id (persisted; D47).
+    public var seenApprovals: [String: Set<String>] = [:] {
+        didSet {
+            let encoded = (try? JSONEncoder().encode(seenApprovals)).flatMap { String(data: $0, encoding: .utf8) }
+            environment.preferences.save(UIPreferenceKeys.seenApprovals, encoded)
+        }
+    }
+    /// True once existing approvals were recorded as seen (stored with them, so a fresh install starts quiet).
+    var approvalsBaselined: Bool {
+        get { environment.preferences.load(UIPreferenceKeys.seenApprovals) != nil }
+        set { if newValue, environment.preferences.load(UIPreferenceKeys.seenApprovals) == nil { environment.preferences.save(UIPreferenceKeys.seenApprovals, "{}") } }
+    }
+    /// Collapsed change request groups in the Inbox (change request ids; expanded by default).
+    public var collapsedInboxGroups: Set<String> = []
+    /// Collapsed change request groups in the popover (`PopoverPRGroup.id`; expanded by default).
+    public var collapsedPopoverGroups: Set<String> = []
     /// Presents the setup assistant (first live launch without accounts, or Settings › General).
     public var showsOnboarding = false
     /// Settings › General › Text size (persisted; applied at the window and popover roots).
@@ -319,6 +335,10 @@ public final class AppModel {
         DarkStyle.current = darkStyle
         environment.applyAppearance(appearance)
         self.handoffCollapsed = environment.preferences.load(UIPreferenceKeys.handoffCollapsed) == "1"
+        if let stored = environment.preferences.load(UIPreferenceKeys.seenApprovals)?.data(using: .utf8),
+           let decoded = try? JSONDecoder().decode([String: Set<String>].self, from: stored) {
+            self.seenApprovals = decoded
+        }
     }
 
     // MARK: Lifecycle
@@ -381,6 +401,7 @@ public final class AppModel {
         indexes = Indexes(newState)
         sections = PopoverDerivation.derive(from: newState, now: now)
         isLoaded = true
+        baselineApprovalsIfNeeded()
         if let selection = popoverSelection, !popoverRows.contains(where: { $0.id == selection }) {
             popoverSelection = nil
         }
@@ -590,7 +611,9 @@ public final class AppModel {
 
     /// Rows visible in the popover (top 3 per section), in keyboard order.
     public var popoverRows: [PopoverItem] {
-        PopoverSection.allCases.filter { !collapsedPopoverSections.contains($0) }.flatMap { sections.items($0).prefix(Self.popoverRowLimit) }
+        PopoverSection.allCases.filter { !collapsedPopoverSections.contains($0) }.flatMap { section in
+            popoverGroups(section).filter { !collapsedPopoverGroups.contains($0.id) }.flatMap(\.items)
+        }
     }
 
     public static let popoverRowLimit = 3

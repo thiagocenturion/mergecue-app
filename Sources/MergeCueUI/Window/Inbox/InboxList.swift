@@ -40,6 +40,9 @@ struct InboxColumn: View {
             .padding(.top, 22)
             InboxSummaryCards(model: model)
                 .padding(.top, 18)
+            // New approvals on your pull/merge requests (D47).
+            ApprovalHighlights(model: model)
+                .padding(.top, 14)
             if !model.isLoaded {
                 // First load: shimmering placeholders instead of an empty column.
                 VStack(spacing: 12) {
@@ -56,20 +59,11 @@ struct InboxColumn: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 12) {
-                            ForEach(InboxDayGroup.make(result.visibleItems, now: model.now)) { group in
-                                Text(group.title)
-                                    .scaledFont(.system(size: 14, weight: .medium))
-                                    .foregroundStyle(Theme.textSecondary)
-                                    .padding(.top, 10)
-                                    .padding(.leading, 2)
-                                    .accessibilityAddTraits(.isHeader)
-                                ForEach(Array(group.items.enumerated()), id: \.element.id) { index, item in
-                                    InboxItemCard(model: model, item: item, isSelected: model.selectedAttentionID == item.id,
-                                                  showsKeyboardFocus: listFocused) { listFocused = true }
-                                        .id(item.id)
-                                        .transition(Motion.listTransition)
-                                        .appearStaggered(index)
-                                }
+                            // One collapsible group per pull/merge request (D46), expanded by default.
+                            ForEach(Array(result.prGroups(now: model.now).enumerated()), id: \.element.id) { index, group in
+                                InboxPRGroupView(model: model, group: group, listFocused: $listFocused)
+                                    .transition(Motion.listTransition)
+                                    .appearStaggered(index)
                             }
                             readToggle(result)
                         }
@@ -388,6 +382,8 @@ struct InboxItemCard: View {
     var showsKeyboardFocus = false
     /// Called when the card is clicked (the list takes keyboard focus).
     var onSelect: () -> Void = {}
+    /// Inside a change request group: the group header already shows the provider, repository and number.
+    var inGroup = false
     @State private var isHovering = false
 
     /// Unread or actionable items are set in a heavier weight (read, settled items used to be dimmed to 72 %).
@@ -401,15 +397,17 @@ struct InboxItemCard: View {
         let text = Presentation.attentionText(item, snapshot: snapshot)
         let commentCount = model.conversationThread(for: item)?.comments.count ?? text.commentCount
         HStack(alignment: .top, spacing: 16) {
-            ProviderBadge(kind: item.providerKind, size: 42, style: .circle)
-                .padding(.top, 2)
+            if !inGroup {
+                ProviderBadge(kind: item.providerKind, size: 42, style: .circle)
+                    .padding(.top, 2)
+            }
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 6) {
                     if isUnread {
                         Circle().fill(Theme.accent).frame(width: 7, height: 7)
                             .accessibilityHidden(true)
                     }
-                    Text("\(item.providerKind.shortName)  •  \(item.repoFullPath)  \(item.providerKind.formattedNumber(item.number))")
+                    Text(inGroup ? item.reason.displayName : "\(item.providerKind.shortName)  •  \(item.repoFullPath)  \(item.providerKind.formattedNumber(item.number))")
                         .scaledFont(.system(size: 13))
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
@@ -589,6 +587,44 @@ enum TaskStateStyle {
         case .working: record.hasRealClaim || record.isManuallyInProgress ? "In progress" : "Waiting for agent"
         case .readyForReview: "Ready"
         default: record.task.state.displayName
+        }
+    }
+}
+
+/// One change request's cards in the Inbox under a collapsible header (D46).
+struct InboxPRGroupView: View {
+    let model: AppModel
+    let group: InboxGroup
+    var listFocused: FocusState<Bool>.Binding
+
+    var body: some View {
+        let unread = group.items.filter { model.conversationIsUnread($0) }.count
+        PRGroupView(
+            providerKind: group.changeRequest.kind, repoFullPath: group.repoFullPath, number: group.changeRequest.number,
+            title: model.snapshot(group.changeRequest)?.summary.title ?? group.title, count: group.items.count,
+            unreadCount: unread, marks: marks, latest: group.items.map(\.updatedAt).max(), now: model.now,
+            isCollapsed: model.isInboxGroupCollapsed(group.changeRequest),
+            approval: model.approvalSummary(group.changeRequest),
+            toggle: { model.toggleInboxGroup(group.changeRequest) }
+        ) {
+            VStack(spacing: 10) {
+                ForEach(group.items) { item in
+                    InboxItemCard(model: model, item: item, isSelected: model.selectedAttentionID == item.id,
+                                  showsKeyboardFocus: listFocused.wrappedValue, onSelect: { listFocused.wrappedValue = true }, inGroup: true)
+                        .id(item.id)
+                        .transition(Motion.listTransition)
+                }
+            }
+        }
+    }
+
+    /// One mark per distinct reason, most urgent first.
+    private var marks: [PRGroupMark] {
+        var seen: Set<AttentionReason> = []
+        return group.items.sorted { $0.priority > $1.priority }.compactMap { item in
+            guard seen.insert(item.reason).inserted else { return nil }
+            return PRGroupMark(symbol: Presentation.attentionText(item, snapshot: model.snapshot(item.changeRequest)).symbol,
+                               color: Theme.reasonColor(item.reason))
         }
     }
 }

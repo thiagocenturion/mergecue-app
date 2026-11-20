@@ -49,6 +49,8 @@ extension AppModel {
         }
         // An item folded into a conversation is shown through the card that represents it.
         if let card = result.containingCard(of: id) { selectedAttentionID = card }
+        // Its change request group opens so the selection is visible.
+        if let item = attentionItem(id) { collapsedInboxGroups.remove(item.changeRequest.id) }
         if let item = attentionItem(id), conversationIsUnread(item) {
             Task { await markConversation(item, read: true) }
         }
