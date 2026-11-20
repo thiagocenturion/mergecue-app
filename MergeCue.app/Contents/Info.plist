@@ -54,6 +54,8 @@
 	<true/>
 	<key>NSAccentColorName</key>
 	<string>AccentColor</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>MergeCue reads the all-day events of the calendars you choose, such as Holidays, to pause automatic sync on your days off. Nothing leaves your Mac.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Thiago R. Centurion. All rights reserved.</string>
 	<key>NSPrincipalClass</key>
