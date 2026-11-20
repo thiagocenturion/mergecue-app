@@ -250,6 +250,9 @@ public struct MCTask: Codable, Sendable, Hashable, Identifiable {
     /// Secret the agent must present to `claim_task` (from the handoff prompt only; never exposed over MCP reads).
     /// nil for tasks created before handoff codes existed (claims then need no code).
     public var handoffCode: String?
+    /// Inbox items added after creation ("Add to Task" / merged tasks); same change request as `origin`.
+    /// Missing in tasks stored before D38 (decodes as empty).
+    public var attachments: [TaskAttachment]
 
     public init(
         id: TaskID,
@@ -270,7 +273,8 @@ public struct MCTask: Codable, Sendable, Hashable, Identifiable {
         resultSummary: String? = nil,
         proposedReply: String? = nil,
         knownRisks: [String] = [],
-        handoffCode: String? = nil
+        handoffCode: String? = nil,
+        attachments: [TaskAttachment] = []
     ) {
         self.id = id
         self.type = type
@@ -291,7 +295,37 @@ public struct MCTask: Codable, Sendable, Hashable, Identifiable {
         self.proposedReply = proposedReply
         self.knownRisks = knownRisks
         self.handoffCode = handoffCode
+        self.attachments = attachments
     }
 
     public var isTerminal: Bool { state.isTerminal }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, type, state, version, createdAt, updatedAt, origin, trigger, checkout, lease, agentLabel, agentSessionID
+        case artifactIDs, approvals, lastError, resultSummary, proposedReply, knownRisks, handoffCode, attachments
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(TaskID.self, forKey: .id)
+        type = try c.decode(TaskType.self, forKey: .type)
+        state = try c.decode(TaskState.self, forKey: .state)
+        version = try c.decode(Int.self, forKey: .version)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+        origin = try c.decode(TaskOrigin.self, forKey: .origin)
+        trigger = try c.decode(TaskTriggerSnapshot.self, forKey: .trigger)
+        checkout = try c.decodeIfPresent(TaskCheckout.self, forKey: .checkout)
+        lease = try c.decodeIfPresent(AgentLease.self, forKey: .lease)
+        agentLabel = try c.decodeIfPresent(String.self, forKey: .agentLabel)
+        agentSessionID = try c.decodeIfPresent(String.self, forKey: .agentSessionID)
+        artifactIDs = try c.decode([String].self, forKey: .artifactIDs)
+        approvals = try c.decode([ApprovalRecord].self, forKey: .approvals)
+        lastError = try c.decodeIfPresent(TaskErrorInfo.self, forKey: .lastError)
+        resultSummary = try c.decodeIfPresent(String.self, forKey: .resultSummary)
+        proposedReply = try c.decodeIfPresent(String.self, forKey: .proposedReply)
+        knownRisks = try c.decode([String].self, forKey: .knownRisks)
+        handoffCode = try c.decodeIfPresent(String.self, forKey: .handoffCode)
+        attachments = try c.decodeIfPresent([TaskAttachment].self, forKey: .attachments) ?? []
+    }
 }

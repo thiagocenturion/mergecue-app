@@ -28,7 +28,7 @@ extension AppModel {
         }
     }
 
-    /// "Fix with AI" in the window: creates the task (it starts as Waiting for agent) and opens its handoff screen.
+    /// "Fix now" in the window: creates the task (it starts as Waiting for agent) and opens its handoff screen.
     public func createTaskAndShow(attentionID: String, type: TaskType) async {
         guard let result = await send(.createTask(attentionID: attentionID, type: type)), let taskID = result.createdTaskID else { return }
         if handoffOffer?.taskID == taskID { handoffOffer = nil }
@@ -41,13 +41,18 @@ extension AppModel {
     public func showAttention(_ id: String) {
         screen = .inbox
         selectedAttentionID = id
-        let visible = InboxQuery.run(state: state, filter: inboxFilter, now: now, showRead: showReadInInbox).visibleItems
-        if !visible.contains(where: { $0.id == id }) {
+        var result = InboxQuery.run(state: state, filter: inboxFilter, now: now, showRead: showReadInInbox)
+        if !result.visibleItems.contains(where: { $0.id == id }) && result.containingCard(of: id) == nil {
             inboxFilter = InboxFilter(collapseRead: inboxFilter.collapseRead)
             showReadInInbox = true
+            result = InboxQuery.run(state: state, filter: inboxFilter, now: now, showRead: showReadInInbox)
         }
-        if let item = attentionItem(id), item.isUnread {
-            Task { await send(.markRead(attentionID: id, read: true)) }
+        // An item folded into a conversation is shown through the card that represents it.
+        if let card = result.containingCard(of: id) { selectedAttentionID = card }
+        // Its change request group opens so the selection is visible.
+        if let item = attentionItem(id) { collapsedInboxGroups.remove(item.changeRequest.id) }
+        if let item = attentionItem(id), conversationIsUnread(item) {
+            Task { await markConversation(item, read: true) }
         }
         openMainWindow()
     }
@@ -111,7 +116,7 @@ extension AppModel {
                 if case .attention(let id) = item.source { return id }
                 return nil
             }
-        case .waitingForAgent, .aiWorking, .ready:
+        case .inProgress, .ready:
             screen = .tasks
             selectedTaskID = sections.items(section).first.flatMap { item -> TaskID? in
                 if case .task(let id) = item.source { return id }
@@ -157,9 +162,17 @@ extension AppModel {
         state.rules.filter { $0.origin == .agentProposal && !$0.isActive }
     }
 
-    /// Accounts with a sync problem (offline, auth expired, rate limited, …).
+    /// Accounts with a sync problem (offline, auth expired, rate limited, …) or change requests that could not be
+    /// loaded.
     public var accountsWithProblems: [AccountState] {
-        state.accounts.filter { $0.status.state.isProblem }
+        state.accounts.filter { $0.status.state.isProblem || !$0.status.changeRequestErrors.isEmpty }
+    }
+
+    /// The user came back to MergeCue (popover opened, main window became key): the backend refreshes lists
+    /// (debounced per account; manual Refresh stays undebounced).
+    public func userDidReturn() {
+        let backend = backend
+        Task { await backend.userDidReturn() }
     }
 
     /// Short, user-facing account name: "GitHub · mona-dev".

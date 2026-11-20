@@ -72,9 +72,9 @@ struct AccessibilityFeedbackTests {
     /// `scaledFont` really renders larger text and taller buttons (macOS ignores `dynamicTypeSize` for plain fonts).
     @Test func scaledFontAndButtonsGrow() {
         func size(_ preference: TextSizePreference) -> (text: NSSize, button: NSSize) {
-            let text = NSHostingView(rootView: Text("Fix with AI").scaledFont(Theme.body).fixedSize()
+            let text = NSHostingView(rootView: Text("Fix now").scaledFont(Theme.body).fixedSize()
                 .dynamicTypeSize(preference.dynamicTypeSize)).fittingSize
-            let button = NSHostingView(rootView: Button("Fix with AI") {}.buttonStyle(GradientButtonStyle(size: .regular)).fixedSize()
+            let button = NSHostingView(rootView: Button("Fix now") {}.buttonStyle(GradientButtonStyle(size: .regular)).fixedSize()
                 .dynamicTypeSize(preference.dynamicTypeSize)).fittingSize
             return (text, button)
         }

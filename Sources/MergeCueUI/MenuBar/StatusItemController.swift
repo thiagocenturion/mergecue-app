@@ -155,7 +155,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     private func makeMenu() -> NSMenu {
         let menu = NSMenu()
         if let badge = model.mode.badgeText {
-            let item = NSMenuItem(title: "\(badge) — not live", action: nil, keyEquivalent: "")
+            let item = NSMenuItem(title: "\(badge) (not live)", action: nil, keyEquivalent: "")
             item.isEnabled = false
             menu.addItem(item)
             menu.addItem(.separator())
@@ -178,6 +178,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         submenu.autoenablesItems = false
         pause.submenu = submenu
         menu.addItem(pause)
+        menu.addItem(makeAutoSyncItem())
 
         menu.addItem(.separator())
         menu.addItem(MenuItemFactory.item(title: "Settings…", key: ",") { [actions] in actions.openSettings() })
@@ -185,6 +186,51 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         menu.addItem(MenuItemFactory.item(title: "Quit MergeCue", key: "q") { [actions] in actions.quit() })
         menu.autoenablesItems = false
         return menu
+    }
+
+    /// "Pause Auto-Sync" (or "Auto-Sync Paused" while paused): timed pauses, resume, "sync anyway" during a
+    /// scheduled pause, and the way to the schedule rules.
+    private func makeAutoSyncItem() -> NSMenuItem {
+        let now = model.now
+        let pauseState = model.autoSyncPause
+        let item = NSMenuItem(title: pauseState == nil ? "Pause Auto-Sync" : "Auto-Sync Paused", action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        if let pauseState {
+            let status = NSMenuItem(title: AutoSyncText.status(pauseState, now: now), action: nil, keyEquivalent: "")
+            status.isEnabled = false
+            submenu.addItem(status)
+            if pauseState.reason == .manual {
+                submenu.addItem(MenuItemFactory.item(title: "Resume Auto-Sync") { [model] in
+                    Task { await model.pauseAutoSync(until: nil) }
+                })
+            } else {
+                let title = pauseState.until.map { "Sync Anyway Until \(AutoSyncText.moment($0, now: now))" } ?? "Sync Anyway"
+                submenu.addItem(MenuItemFactory.item(title: title) { [model] in
+                    Task { await model.syncAnywayUntil(pauseState.until) }
+                })
+            }
+            submenu.addItem(.separator())
+        }
+        submenu.addItem(MenuItemFactory.item(title: "For 1 Hour") { [model] in
+            Task { await model.pauseAutoSync(until: model.now.addingTimeInterval(3_600)) }
+        })
+        submenu.addItem(MenuItemFactory.item(title: "Until Tomorrow 9:00") { [model] in
+            Task { await model.pauseAutoSync(until: AutoSyncText.tomorrowMorning(after: model.now)) }
+        })
+        submenu.addItem(MenuItemFactory.item(title: "Until Monday 9:00") { [model] in
+            Task { await model.pauseAutoSync(until: AutoSyncText.nextMondayMorning(after: model.now)) }
+        })
+        submenu.addItem(MenuItemFactory.item(title: "Until I Resume") { [model] in
+            Task { await model.pauseAutoSync(until: .distantFuture) }
+        })
+        submenu.addItem(.separator())
+        submenu.addItem(MenuItemFactory.item(title: "Pause Schedule…") { [actions] in actions.openSettings() })
+        let hint = NSMenuItem(title: "Refresh always checks now", action: nil, keyEquivalent: "")
+        hint.isEnabled = false
+        submenu.addItem(hint)
+        submenu.autoenablesItems = false
+        item.submenu = submenu
+        return item
     }
 }
 

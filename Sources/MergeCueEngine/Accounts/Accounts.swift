@@ -24,7 +24,8 @@ extension MergeCueEngine {
 
     /// Validates the credential with the provider (`currentUser()`), stores it in the credential store, then
     /// stores the account (remote writes disabled for a new account) and tells Sync to pick it up.
-    /// Reconnecting an existing account keeps its label, namespaces and writes setting.
+    /// Reconnecting an existing account keeps its label, namespaces, writes setting, watched repositories and
+    /// refresh interval.
     @discardableResult
     public func connectAccount(_ request: AccountConnectionRequest) async throws(EngineError) -> Account {
         try await uiCall {
@@ -60,7 +61,9 @@ extension MergeCueEngine {
                 label: (label?.isEmpty ?? true) ? existing?.label : label,
                 selectedNamespaces: request.selectedNamespaces.isEmpty ? (existing?.selectedNamespaces ?? []) : request.selectedNamespaces,
                 connectedAt: existing?.connectedAt ?? now,
-                isDemo: env.isDemo
+                isDemo: env.isDemo,
+                watchedRepositories: existing?.watchedRepositories,
+                refreshInterval: existing?.refreshInterval
             )
             do {
                 try await database.upsertAccount(account)

@@ -14,7 +14,7 @@ struct ApprovalSheet: View {
                     .scaledFont(.system(size: 20, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 44, height: 44)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.brandGradientDiagonal))
+                    .background(SmoothRect().fill(Theme.brandGradientDiagonal))
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(preview.title)
@@ -73,7 +73,7 @@ struct ApprovalSheet: View {
                     }
                 }
                 .padding(12)
-                .cardBackground(Theme.critical.opacity(0.08), radius: 10, border: Theme.critical.opacity(0.35))
+                .glassCard(tint: Theme.critical)
             }
             HStack(spacing: 10) {
                 Text("Fingerprint \(String(preview.fingerprint.prefix(12)))…")

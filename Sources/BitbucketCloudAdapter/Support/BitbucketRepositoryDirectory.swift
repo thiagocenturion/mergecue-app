@@ -74,12 +74,76 @@ public final class BitbucketRepositoryDirectory: Sendable {
     }
 }
 
-/// Per-provider mutable caches (current user).
+/// Per-provider mutable caches: the current user (for the provider's lifetime, which is the account's credential
+/// lifetime in Sync), the user's workspaces and the reviewer-listing fallback repositories (both bounded by
+/// `ttl`). Sync keeps one provider per account, so a cycle does not ask for any of them again (DECISIONS D36).
 final class BitbucketSessionState: Sendable {
-    private let user = Mutex<ProviderUser?>(nil)
+    /// How long workspaces and fallback repositories are reused (6 h, like the engine's repository list).
+    static let ttl: TimeInterval = 6 * 3_600
 
-    func cachedUser() -> ProviderUser? { user.withLock { $0 } }
-    func store(_ value: ProviderUser) { user.withLock { $0 = value } }
+    private struct Cached<Value: Sendable>: Sendable {
+        var value: Value
+        var at: Date
+    }
+
+    private struct State: Sendable {
+        var user: ProviderUser?
+        var workspaces: Cached<[Namespace]>?
+        var fallbackRepositories: [String: Cached<[Repository]>] = [:]
+        /// Pull request objects of the latest listings, by change request id (stand in for detail requests).
+        var listedPullRequests: [String: Cached<BBPullRequest>] = [:]
+    }
+
+    /// Bound on remembered listed pull requests (the map is cleared when full).
+    static let maxListedPullRequests = 1_000
+
+    private let state = Mutex(State())
+
+    func cachedUser() -> ProviderUser? { state.withLock { $0.user } }
+    func store(_ value: ProviderUser) { state.withLock { $0.user = value } }
+
+    func cachedWorkspaces(now: Date) -> [Namespace]? {
+        state.withLock { state in
+            guard let cached = state.workspaces, now.timeIntervalSince(cached.at) < Self.ttl, cached.at <= now else { return nil }
+            return cached.value
+        }
+    }
+
+    func storeWorkspaces(_ value: [Namespace], at now: Date) {
+        state.withLock { $0.workspaces = Cached(value: value, at: now) }
+    }
+
+    func cachedFallbackRepositories(_ key: String, now: Date) -> [Repository]? {
+        state.withLock { state in
+            guard let cached = state.fallbackRepositories[key], now.timeIntervalSince(cached.at) < Self.ttl, cached.at <= now else {
+                return nil
+            }
+            return cached.value
+        }
+    }
+
+    func storeListedPullRequest(_ pr: BBPullRequest, id: String, at now: Date) {
+        state.withLock { state in
+            if state.listedPullRequests.count >= Self.maxListedPullRequests, state.listedPullRequests[id] == nil {
+                state.listedPullRequests.removeAll()
+            }
+            state.listedPullRequests[id] = Cached(value: pr, at: now)
+        }
+    }
+
+    /// The pull request object listed for `id` at most `maxAge` before `now`.
+    func listedPullRequest(_ id: String, now: Date, maxAge: TimeInterval) -> BBPullRequest? {
+        state.withLock { state in
+            guard let cached = state.listedPullRequests[id], cached.at <= now, now.timeIntervalSince(cached.at) <= maxAge else {
+                return nil
+            }
+            return cached.value
+        }
+    }
+
+    func storeFallbackRepositories(_ value: [Repository], key: String, at now: Date) {
+        state.withLock { $0.fallbackRepositories[key] = Cached(value: value, at: now) }
+    }
 }
 
 extension BitbucketRepositoryDirectory {

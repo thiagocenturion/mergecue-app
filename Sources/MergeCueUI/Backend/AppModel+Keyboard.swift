@@ -24,6 +24,7 @@ extension AppModel {
     public func popoverWillShow(fromKeyboard: Bool) {
         popoverPresentationCount += 1
         popoverSelection = nil
+        userDidReturn()
         if fromKeyboard { movePopoverSelection(by: 1) }
     }
 
@@ -35,10 +36,11 @@ extension AppModel {
 
     // MARK: Inbox
 
-    /// Inbox items in the order the list shows them (day groups, current filters).
+    /// Inbox items in the order the list shows them (change request groups, current filters); items of collapsed
+    /// groups are skipped.
     public var inboxKeyboardOrder: [String] {
         let result = InboxQuery.run(state: state, filter: inboxFilter, now: now, showRead: showReadInInbox)
-        return InboxDayGroup.make(result.visibleItems, now: now).flatMap { $0.items.map(\.id) }
+        return result.prGroups(now: now).filter { !collapsedInboxGroups.contains($0.changeRequest.id) }.flatMap { $0.items.map(\.id) }
     }
 
     public func moveInboxSelection(by delta: Int) {
@@ -51,8 +53,8 @@ extension AppModel {
     public func openInboxItem(_ id: String) {
         selectedAttentionID = id
         changeRequestTab = .conversation
-        if let item = attentionItem(id), item.isUnread {
-            Task { await send(.markRead(attentionID: id, read: true)) }
+        if let item = attentionItem(id), conversationIsUnread(item) {
+            Task { await markConversation(item, read: true) }
         }
     }
 
@@ -60,10 +62,10 @@ extension AppModel {
         if let id = selectedAttentionID { openInboxItem(id) }
     }
 
-    /// ⌘↩: the selected item's primary action — its active task, else "Fix with AI" (or the item's other task type).
+    /// ⌘↩: the selected item's primary action — its active task, else "Fix now" (or the item's other task type).
     public func performInboxPrimaryAction() async {
         guard let item = attentionItem(selectedAttentionID) else { return }
-        if let task = activeTask(for: item) {
+        if let task = activeConversationTask(for: item) {
             showTask(task.id)
             return
         }

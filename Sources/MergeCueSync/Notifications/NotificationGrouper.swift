@@ -94,7 +94,9 @@ public enum NotificationGrouper {
     ) -> GroupedNotification {
         let sample = events[0]
         let kind = key.kind
-        let title = "\(sample.repoFullPath) \(kind.formattedNumber(key.number))"
+        // Only approvals: lead with the good news (D47).
+        let onlyApprovals = items.isEmpty && !informational.isEmpty && informational.allSatisfy { $0.type == .approval }
+        let title = (onlyApprovals ? "Approved · " : "") + "\(sample.repoFullPath) \(kind.formattedNumber(key.number))"
         let crTitle = snapshot?.summary.title ?? sample.title
         let subtitle = "\(kind.displayName) · \(crTitle)"
 

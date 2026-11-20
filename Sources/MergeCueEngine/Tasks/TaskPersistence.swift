@@ -29,6 +29,7 @@ extension MergeCueEngine {
         case .retry: .retried
         case .reopen: .reopened
         case .unblock: .unblocked
+        case .startManually: .startedManually
         }
     }
 

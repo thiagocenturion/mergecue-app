@@ -21,6 +21,9 @@ final class FakeRemote: Sendable {
         var involvedError: ProviderError?
         var involvedQueries: [ChangeRequestQuery] = []
         var listedScopes: [ChangeRequestScope] = []
+        var queries: [ChangeRequestQuery] = []
+        /// Whether each hydration received the stored snapshot (incremental hydration).
+        var hydratedWithPrevious: [ChangeRequestKey: [Bool]] = [:]
     }
 
     private let state = OSAllocatedUnfairLock(initialState: State())
@@ -69,6 +72,11 @@ final class FakeRemote: Sendable {
     }
 
     var involvedQueries: [ChangeRequestQuery] { state.withLock { $0.involvedQueries } }
+    var queries: [ChangeRequestQuery] { state.withLock { $0.queries } }
+    func hydratedWithPrevious(_ key: ChangeRequestKey) -> [Bool] { state.withLock { $0.hydratedWithPrevious[key] ?? [] } }
+    fileprivate func recordPrevious(_ key: ChangeRequestKey, _ hasPrevious: Bool) {
+        state.withLock { $0.hydratedWithPrevious[key, default: []].append(hasPrevious) }
+    }
     var listedScopes: [ChangeRequestScope] { state.withLock { $0.listedScopes } }
 
     var listCalls: Int { state.withLock { $0.listCalls } }
@@ -80,6 +88,7 @@ final class FakeRemote: Sendable {
         try state.withLock { state in
             state.listCalls += 1
             state.listedScopes.append(query.scope)
+            state.queries.append(query)
             if let error = state.listError { throw error }
             if query.scope == .involved {
                 state.involvedQueries.append(query)
@@ -87,6 +96,7 @@ final class FakeRemote: Sendable {
             }
             let items = state.order.compactMap { state.changeRequests[$0] }
                 .filter { $0.summary.state == .open && $0.summary.involvement.contains(query.scope.involvement) }
+                .filter { query.includes($0.key.repo) }
                 .map(\.summary)
             return ChangeRequestPage(items: items)
         }
@@ -123,6 +133,10 @@ struct FakeProvider: ReviewProvider {
     func listChangeRequests(_ query: ChangeRequestQuery) async throws -> ChangeRequestPage {
         await Task.yield()
         return try remote.list(query)
+    }
+    func hydrate(_ summary: ChangeRequestSummary, previous: ChangeRequestSnapshot?) async throws -> ChangeRequestSnapshot {
+        remote.recordPrevious(summary.key, previous != nil)
+        return try await hydrate(summary)
     }
     func hydrate(_ summary: ChangeRequestSummary) async throws -> ChangeRequestSnapshot {
         let snapshot = try remote.beginHydrate(summary.key)

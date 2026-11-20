@@ -41,6 +41,36 @@ public struct PreferenceStore: Sendable {
 public nonisolated enum UIPreferenceKeys {
     public static let textSize = "MergeCueTextSize"
     public static let globalHotKey = "MergeCueGlobalHotKey"
+    public static let appearance = "MergeCueAppearance"
+    public static let darkStyle = "MergeCueDarkStyle"
+    public static let handoffCollapsed = "MergeCueHandoffCollapsed"
+    /// JSON `{changeRequestID: [approverRemoteID]}` of approvals already seen (D47).
+    public static let seenApprovals = "MergeCueSeenApprovals"
+}
+
+/// Settings › General › Appearance.
+public nonisolated enum AppearancePreference: String, Sendable, Hashable, CaseIterable, Identifiable {
+    case system, light, dark
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .system: "Match System"
+        case .light: "Light"
+        case .dark: "Dark"
+        }
+    }
+
+    /// nil follows macOS.
+    @MainActor
+    public var nsAppearance: NSAppearance? {
+        switch self {
+        case .system: nil
+        case .light: NSAppearance(named: .aqua)
+        case .dark: NSAppearance(named: .darkAqua)
+        }
+    }
 }
 
 /// The global shortcut that shows the popover from any app (Settings › General › Keyboard). Registered as a Carbon

@@ -2,7 +2,7 @@ import MergeCueCore
 import SwiftUI
 
 /// The menu bar popover: header (app tile, "Your PRs at a glance", sync state), account problems, the sections
-/// Needs you / Waiting for agent (only when non-empty) / AI working / Ready (top 3 each, collapsible) and the footer
+/// Needs you / In progress (waiting for an agent or being worked on) / Ready (top 3 each, collapsible) and the footer
 /// (Open MergeCue, Refresh, Pause notifications, Settings).
 /// Keyboard: ↑/↓ select, Return or Space open the selected row's details, ⌘↩ runs its primary action, ⌘R refreshes,
 /// ⌘, opens Settings, ⌘O opens the window, Esc closes. The global shortcut (Settings › General) opens it from any app.
@@ -56,14 +56,22 @@ public struct PopoverView: View {
             } else {
                 sectionsScroll
             }
-            VStack(spacing: 0) {
-                ThemeDivider().padding(.horizontal, 20)
-                PopoverFooter(model: model)
-            }
+            // A floating glass footer bar, like the window's floating sidebar (D43).
+            PopoverFooter(model: model)
+                .glassShape(Capsule(), interactive: false, fallback: Theme.surface)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
+                .padding(.top, 4)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bottomHeight = $0 }
         }
         .frame(width: width)
-        .background(Theme.popoverBackground.ignoresSafeArea())
+        .background(alignment: .top) {
+            ZStack(alignment: .top) {
+                Theme.popoverBackground
+                AuroraGlow(opacity: 0.55).frame(height: 260)
+            }
+            .ignoresSafeArea()
+        }
         // The container takes keyboard focus for ↑/↓/Return; the selected row shows it (a 2 pt focus ring)
         // instead of a system ring around the whole popover.
         .focusable()
@@ -97,16 +105,17 @@ public struct PopoverView: View {
         .dynamicTypeSize(model.textSize.dynamicTypeSize)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("MergeCue")
+        .defaultGlassButtons()
+        .id(model.darkStyle)
     }
 
     private var sectionsScroll: some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 18) {
+                    ApprovalHighlights(model: model, compact: true)
                     ForEach(PopoverSection.allCases) { section in
-                        if section != .waitingForAgent || !model.sections.items(section).isEmpty {
-                            PopoverSectionView(model: model, section: section, voiceOverFocus: $voiceOverFocus)
-                        }
+                        PopoverSectionView(model: model, section: section, voiceOverFocus: $voiceOverFocus)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -219,7 +228,9 @@ struct AccountStatusLine: View {
     let account: AccountState
 
     var body: some View {
-        let tone = UIFormat.tone(of: account.status.state)
+        let failures = account.status.state.isProblem ? nil : UIFormat.changeRequestFailureText(account.status, kind: account.kind)
+        let tone = failures == nil ? UIFormat.tone(of: account.status.state) : .attention
+        let text = failures ?? UIFormat.syncText(account.status, now: model.now)
         HStack(spacing: 8) {
             ProviderGlyph(kind: account.kind, size: 14)
                 .frame(width: 18)
@@ -232,10 +243,17 @@ struct AccountStatusLine: View {
                 .scaledFont(.system(size: 10.5))
                 .foregroundStyle(Theme.color(tone))
                 .accessibilityHidden(true)
-            Text(UIFormat.syncText(account.status, now: model.now))
+            Text(text)
                 .scaledFont(.system(size: 12))
                 .foregroundStyle(Theme.textColor(tone))
                 .lineLimit(1)
+            if failures != nil {
+                Button("Retry") { Task { await model.send(.refresh(account: account.id)) } }
+                    .buttonStyle(PlainRowButtonStyle())
+                    .scaledFont(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.accentText)
+                    .accessibilityLabel("Retry loading \(account.kind.displayName) account \(account.account.displayLabel)")
+            }
             if account.status.state == .authExpired {
                 Button("Reconnect") {
                     model.connectSheetKind = account.kind
@@ -249,7 +267,7 @@ struct AccountStatusLine: View {
         }
         .help(account.status.message.map { SecretRedactorHelp.safe($0) } ?? account.status.state.displayText)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(account.kind.displayName) account \(account.account.displayLabel): \(UIFormat.syncText(account.status, now: model.now))")
+        .accessibilityLabel("\(account.kind.displayName) account \(account.account.displayLabel): \(text)")
     }
 
     private var symbol: String {
@@ -329,8 +347,8 @@ struct PopoverFooter: View {
                     .accessibilityHidden(true)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
     }
 }
 
@@ -415,10 +433,11 @@ struct PopoverSectionView: View {
                 if items.isEmpty {
                     EmptySectionRow(section: section)
                 } else {
-                    VStack(spacing: 8) {
-                        ForEach(items.prefix(AppModel.popoverRowLimit)) { item in
-                            PopoverRowView(model: model, item: item, voiceOverFocus: voiceOverFocus)
-                                .id(item.id)
+                    // Rows grouped by pull/merge request under collapsible headers (D46), expanded by default.
+                    VStack(spacing: 10) {
+                        ForEach(model.popoverGroups(section)) { group in
+                            PopoverPRGroupView(model: model, group: group, voiceOverFocus: voiceOverFocus)
+                                .transition(Motion.listTransition)
                         }
                     }
                     if items.count > AppModel.popoverRowLimit {
@@ -463,7 +482,7 @@ struct EmptySectionRow: View {
     }
 }
 
-/// Shown right after "Fix with AI" in the popover: hand the new task to an agent.
+/// Shown right after "Fix now" in the popover: hand the new task to an agent.
 struct HandoffCallout: View {
     let model: AppModel
     let offer: HandoffOffer
@@ -514,7 +533,7 @@ struct HandoffCallout: View {
             }
         }
         .padding(12)
-        .cardBackground(Theme.waiting.opacity(0.07), radius: 12, border: Theme.waiting.opacity(0.35))
+        .glassCard(tint: Theme.waiting)
     }
 }
 
@@ -546,5 +565,39 @@ struct OnboardingPrompt: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity)
+    }
+}
+
+/// One change request's rows in a popover section under a compact collapsible header (D46).
+struct PopoverPRGroupView: View {
+    let model: AppModel
+    let group: PopoverPRGroup
+    var voiceOverFocus: AccessibilityFocusState<String?>.Binding?
+
+    var body: some View {
+        let first = group.first
+        PRGroupView(
+            providerKind: group.changeRequest.kind, repoFullPath: first?.repoFullPath ?? "", number: group.changeRequest.number,
+            title: model.snapshot(group.changeRequest)?.summary.title ?? first?.title ?? "", count: group.items.count,
+            unreadCount: group.items.filter(\.isUnread).count, marks: marks, latest: group.items.map(\.date).max(), now: model.now,
+            isCollapsed: model.isPopoverGroupCollapsed(group), approval: model.approvalSummary(group.changeRequest), compact: true,
+            toggle: { model.togglePopoverGroup(group) }
+        ) {
+            VStack(spacing: 8) {
+                ForEach(group.items) { item in
+                    PopoverRowView(model: model, item: item, voiceOverFocus: voiceOverFocus, inGroup: true)
+                        .id(item.id)
+                        .transition(Motion.listTransition)
+                }
+            }
+        }
+    }
+
+    private var marks: [PRGroupMark] {
+        var seen: Set<String> = []
+        return group.items.compactMap { item in
+            guard seen.insert(item.reasonSymbol).inserted else { return nil }
+            return PRGroupMark(symbol: item.reasonSymbol, color: Theme.color(item.tone))
+        }
     }
 }

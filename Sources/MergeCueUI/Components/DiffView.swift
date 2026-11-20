@@ -131,9 +131,8 @@ struct DiffView: View {
                     .scrollIndicators(.automatic)
                     .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0 }
                 }
-                .background(Color(nsColor: .textBackgroundColor))
-                .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous).strokeBorder(Color(nsColor: .separatorColor)))
+                .clipShape(SmoothRect())
+                .cardBackground(Theme.surfaceSunken)
             }
         }
     }
@@ -243,9 +242,8 @@ struct LogExcerptView: View {
                 .textSelection(.enabled)
             }
             .frame(maxHeight: maxHeight)
-            .background(Color(nsColor: .textBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous).strokeBorder(Color(nsColor: .separatorColor)))
+            .clipShape(SmoothRect())
+            .cardBackground(Theme.surfaceSunken)
             .accessibilityLabel("CI log excerpt")
         }
     }

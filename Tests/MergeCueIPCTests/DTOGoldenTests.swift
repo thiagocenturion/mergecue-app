@@ -194,6 +194,7 @@ struct DTOGoldenTests {
             "untrusted_fields": [
                 "source.title", "checkout.source_branch", "checkout.target_branch", "checkout.blocked_reason",
                 "trigger.anchor.path", "trigger.untrusted_content", "artifacts[].title",
+                "attached_items[].anchor.path", "attached_items[].untrusted_content",
             ],
         ]
         #expect(try json(dto) == expected)

@@ -32,7 +32,7 @@ struct KeyboardNavigationTests {
         #expect(model.selectedAttentionID == first.attentionID)
         #expect(model.handoffOffer == nil)
 
-        // ⌘↩: the primary action ("Fix with AI").
+        // ⌘↩: the primary action ("Fix now").
         await model.activatePopoverSelection()
         #expect(model.handoffOffer != nil)
     }

@@ -38,6 +38,15 @@ extension PreviewBackend {
                 if task.checkout?.policy == .blocked { task.checkout?.policy = .readOnly }
             }
             return AppCommandResult(message: "Task \(id) unblocked")
+        case .attachToTask(let id, let attentionIDs):
+            return try attach(attentionIDs, to: id)
+        case .detachFromTask(let id, let attentionID):
+            return try detach(attentionID, from: id)
+        case .mergeTask(let source, let target):
+            return try merge(source, into: target)
+        case .startTaskManually(let id):
+            try transition(id, .startManually, .startedManually, "Marked in progress by you") { $0.lastError = nil }
+            return AppCommandResult(message: "Task \(id) is in progress")
         case .markTaskDone(let id):
             try transition(id, .markDone, .completed, "Marked done by you (no remote action)")
             resolveAttention(forTask: id)
@@ -115,11 +124,33 @@ extension PreviewBackend {
                 ? "Remote writes on for \(name). Every reply or resolve still needs your approval."
                 : "Remote writes off for \(name)")
 
+        case .setWatchedRepositories(let key, let repos):
+            guard let index = state.accounts.firstIndex(where: { $0.id == key }) else { throw AppBackendError.notFound("The account") }
+            state.accounts[index].account.watchedRepositories = repos
+            return AppCommandResult(message: "Preview data: watched repositories updated, nothing was synced.")
+        case .setRefreshInterval(let key, let interval):
+            guard let index = state.accounts.firstIndex(where: { $0.id == key }) else { throw AppBackendError.notFound("The account") }
+            state.accounts[index].account.refreshInterval = interval
+            return AppCommandResult(message: "Preview data: \(interval.displayName.lowercased()).")
+
         case .addMapping(let repo, let path, let checkoutPath):
             state.mappings.removeAll { $0.repo == repo && $0.checkoutPath == checkoutPath }
             state.mappings.append(RepoMapping(id: IDGenerator.mappingID(), repo: repo, repoFullPath: path, checkoutPath: checkoutPath,
                                               confidence: .probable, confirmedAt: now, createdAt: now))
             return AppCommandResult(message: "Mapped \(path) to \(checkoutPath). Preview: the checkout's remotes were not inspected.")
+        case .mapCheckoutFolder(let repo, let path, let checkoutPath, _):
+            state.mappings.removeAll { $0.repo == repo && $0.checkoutPath == checkoutPath }
+            let mapping = RepoMapping(id: IDGenerator.mappingID(), repo: repo, repoFullPath: path, checkoutPath: checkoutPath,
+                                      confidence: .probable, createdAt: now)
+            state.mappings.append(mapping)
+            return AppCommandResult(message: "Mapped \(path) to \(checkoutPath). Preview: the checkout's remotes were not inspected.",
+                                    savedMapping: mapping)
+        case .cancelCheckoutScan:
+            state.checkoutScan.isRunning = false
+            return .none
+        case .setCheckoutSearchFolders(let folders):
+            state.checkoutSearchFolders = folders ?? []
+            return AppCommandResult(message: "Preview data: search folders are not stored.")
         case .confirmMapping(let id):
             guard let index = state.mappings.firstIndex(where: { $0.id == id }) else { throw AppBackendError.notFound("The mapping") }
             state.mappings[index].confirmedAt = now
@@ -144,6 +175,9 @@ extension PreviewBackend {
         case .loadCheckLog(let check):
             let excerpt = logs[check.id] ?? LogExcerpt(text: "No log excerpt for this check in the preview data.", truncated: false)
             return AppCommandResult(logExcerpt: excerpt)
+        case .loadDiff:
+            // Preview threads carry their own hunks; there is no provider diff to read.
+            return AppCommandResult(diff: DiffPayload(unifiedDiff: "", files: [], truncated: false))
         case .openURL(let url):
             if Self.isSynthetic(url) {
                 return AppCommandResult(message: "Preview data — \(url.host() ?? "this link") has no such repository, so the link wasn't opened.")
@@ -191,6 +225,8 @@ extension PreviewBackend {
             return AppCommandResult(message: "Preview data: the login item was not changed.")
         case .requestNotificationPermission:
             return AppCommandResult(message: "Preview data: macOS was not asked for notification permission.")
+        case .sendTestNotification:
+            return AppCommandResult(message: "Preview data: no notification was sent.")
         case .exportDatabase, .resetAllData:
             throw AppBackendError.unsupported("Preview data: nothing is stored, so there is nothing to export or reset.")
         }

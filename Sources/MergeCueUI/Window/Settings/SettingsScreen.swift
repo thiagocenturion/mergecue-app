@@ -33,8 +33,7 @@ struct SettingsList: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
                     .frame(minHeight: 36)
-                    .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(isSelected ? Theme.surfaceSelected : .clear))
-                    .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(isSelected ? Theme.accent.opacity(0.35) : .clear, lineWidth: 1))
+                    .selectableGlass(isSelected: isSelected, idle: false)
                 }
                 .buttonStyle(PlainRowButtonStyle())
                 .accessibilityAddTraits(isSelected ? [.isSelected] : [])
@@ -43,7 +42,6 @@ struct SettingsList: View {
         }
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Theme.contentBackground)
     }
 
     private var selection: Binding<SettingsTab?> {
@@ -91,7 +89,6 @@ struct SettingsDetail: View {
             .frame(maxWidth: 820, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Theme.windowBackground)
     }
 }
 
@@ -102,7 +99,7 @@ struct AccountsSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("MergeCue reads each provider's API directly with a token stored in your Keychain. Accounts sync independently — a problem with one never blocks the others.")
+            Text("MergeCue reads each provider's API directly with a token stored in your Keychain. Accounts sync independently: a problem with one never blocks the others.")
                 .scaledFont(.callout)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -172,6 +169,22 @@ struct AccountCard: View {
                                 .scaledFont(.caption)
                                 .foregroundStyle(Theme.textSecondary)
                         }
+                        if let failures = UIFormat.changeRequestFailureText(status, kind: account.kind) {
+                            Button {
+                                Task { await model.send(.refresh(account: account.id)) }
+                            } label: {
+                                Label("\(failures) (tap to retry)", systemImage: "exclamationmark.circle")
+                                    .scaledFont(.caption)
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Theme.textColor(.attention))
+                            .help(UIFormat.changeRequestRetryText(status) ?? "")
+                        }
+                        if let usage = UIFormat.requestUsageText(status) {
+                            Text(usage)
+                                .scaledFont(.caption)
+                                .foregroundStyle(status.isOverRequestBudget ? Theme.textColor(.attention) : Theme.textSecondary)
+                        }
                     }
                 }
                 if !account.account.grantedScopes.isEmpty {
@@ -182,7 +195,7 @@ struct AccountCard: View {
                                 .scaledFont(.caption.monospaced())
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1)
-                                .background(RoundedRectangle(cornerRadius: 4).fill(Theme.textSecondary.opacity(0.12)))
+                                .background(SmoothRect().fill(Theme.textSecondary.opacity(0.12)))
                         }
                     }
                 }
@@ -202,6 +215,11 @@ struct AccountCard: View {
                     }
                 }
                 .toggleStyle(.switch)
+                Divider()
+                AccountRefreshIntervalRow(model: model, account: account)
+                Divider()
+                WatchedRepositoriesSection(model: model, account: account)
+                Divider()
                 CapabilitySummary(manifest: account.capabilities)
                 HStack {
                     Button("Refresh") { Task { await model.send(.refresh(account: account.id)) } }

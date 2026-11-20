@@ -361,7 +361,7 @@ public nonisolated enum Presentation {
 
     // MARK: Handoff progress
 
-    /// The 4-step tracker: Task created → Waiting for agent → AI working → Ready for review.
+    /// The 4-step tracker: Task created → Waiting for agent → In progress → Ready for review.
     public enum HandoffStep: Int, Sendable, CaseIterable, Comparable {
         case created, waiting, working, ready
 
@@ -369,7 +369,7 @@ public nonisolated enum Presentation {
             switch self {
             case .created: "Task created"
             case .waiting: "Waiting for agent"
-            case .working: "AI working"
+            case .working: "In progress"
             case .ready: "Ready for review"
             }
         }
@@ -377,11 +377,11 @@ public nonisolated enum Presentation {
         public static func < (lhs: HandoffStep, rhs: HandoffStep) -> Bool { lhs.rawValue < rhs.rawValue }
     }
 
-    /// The active step. `working` only with a real claim (a lease), never on a guess.
+    /// The active step. `working` only with a real claim (a lease) or a task the owner started by hand, never on a guess.
     public static func handoffStep(_ record: TaskRecord) -> HandoffStep {
         switch record.task.state {
         case .waitingForAgent, .blocked: .waiting
-        case .working: record.hasRealClaim ? .working : .waiting
+        case .working: record.hasRealClaim || record.isManuallyInProgress ? .working : .waiting
         case .stale, .failed: .working
         case .readyForReview, .approvedAction, .done: .ready
         case .cancelled, .dismissed: .created

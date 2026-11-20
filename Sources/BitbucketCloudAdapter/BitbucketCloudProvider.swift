@@ -10,10 +10,12 @@ import MergeCueNetworking
 ///
 /// Endpoints (all relative to the API base):
 /// - `GET /user`, `GET /user/workspaces`, `GET /repositories/{workspace}?role=member`
-/// - authored: `GET /workspaces/{workspace}/pullrequests/{user uuid}?state=OPEN`
+/// - authored: `GET /workspaces/{workspace}/pullrequests/{user uuid}?state=OPEN`; with watched repositories
+///   `GET /repositories/{workspace}/{repo}/pullrequests?q=author.uuid="{uuid}" AND state="OPEN"` per repository
 /// - review requested: `GET /repositories/{workspace}/{repo}/pullrequests?q=reviewers.uuid="{uuid}" AND state="OPEN"`
 /// - hydrate: `…/pullrequests/{id}`, `/comments`, `/tasks`, `/statuses`, `/commits`, `/diffstat`,
-///   `GET /repositories/{workspace}/{repo}/pipelines?target.commit.hash=…` + `/pipelines/{uuid}/steps`
+///   `GET /repositories/{workspace}/{repo}/pipelines?target.commit.hash=…` + `/pipelines/{uuid}/steps`; parts whose
+///   change indicators did not move are reused from the previous snapshot (`hydrate(_:previous:)`)
 /// - logs: `…/pipelines/{uuid}/steps/{step uuid}/log`; diff: `…/pullrequests/{id}/diff`
 /// - writes: `POST …/comments` (reply), `POST|DELETE …/comments/{id}/resolve`, `POST …/request-changes`,
 ///   `POST …/merge`
@@ -58,9 +60,13 @@ public struct BitbucketCloudProvider: ReviewProvider {
             baseURL: instance.apiURL,
             credential: credential,
             transport: transport,
-            rateLimitParser: GenericRateLimitParser(),
-            etagCache: nil,
-            clock: clock
+            rateLimitParser: BitbucketRateLimitParser(),
+            // Conditional GETs (DECISIONS D35): Bitbucket Cloud's REST 2.0 CORS policy exposes `ETag` and allows
+            // `If-None-Match`. The client only sends `If-None-Match` after a response carried an ETag, so resources
+            // without one are unaffected; a 304 returns the cached body and is not counted as a request.
+            etagCache: ETagCache(),
+            clock: clock,
+            maxConcurrentRequests: limits.maxConcurrentRequests
         )
     }
 
@@ -100,12 +106,14 @@ public struct BitbucketCloudProvider: ReviewProvider {
     }
 
     /// Workspaces of the current user (`GET /user/workspaces`; the older `/workspaces` and
-    /// `/user/permissions/workspaces` listings are deprecated).
+    /// `/user/permissions/workspaces` listings are deprecated). Cached per provider for
+    /// `BitbucketSessionState.ttl`.
     public func listNamespaces() async throws -> [Namespace] {
+        if let cached = session.cachedWorkspaces(now: clock.now) { return cached }
         let access: [BBWorkspaceAccess] = try await collect(
             "/user/workspaces", query: [URLQueryItem(name: "pagelen", value: "100")], limit: limits.maxWorkspaces
         )
-        return access.map { entry in
+        let namespaces = access.map { entry in
             Namespace(
                 id: BitbucketIdentifiers.normalizedUUID(entry.workspace.uuid) ?? entry.workspace.slug,
                 path: entry.workspace.slug,
@@ -113,6 +121,8 @@ public struct BitbucketCloudProvider: ReviewProvider {
                 kind: .workspace
             )
         }
+        session.storeWorkspaces(namespaces, at: clock.now)
+        return namespaces
     }
 
     /// Repositories the user is a member of, in one workspace or (nil) across all of the user's workspaces.
@@ -127,7 +137,7 @@ public struct BitbucketCloudProvider: ReviewProvider {
 
     func repositories(inWorkspace workspace: String, limit: Int, recentFirst: Bool = false) async throws -> [Repository] {
         let mapper = try await mapper()
-        var query = [URLQueryItem(name: "role", value: "member"), URLQueryItem(name: "pagelen", value: "100")]
+        var query = [URLQueryItem(name: "role", value: "member"), URLQueryItem(name: "pagelen", value: String(min(max(limit, 1), 100)))]
         if recentFirst { query.append(URLQueryItem(name: "sort", value: "-updated_on")) }
         let repos: [BBRepository] = try await collect(
             "/repositories/\(BitbucketIdentifiers.segment(workspace))", query: query, limit: limit
@@ -144,7 +154,7 @@ public struct BitbucketCloudProvider: ReviewProvider {
     /// Follows Bitbucket `next` links until `limit` values are collected (or the collection ends).
     func collect<Value: Decodable>(_ path: String, query: [URLQueryItem] = [], limit: Int) async throws -> [Value] {
         var values: [Value] = []
-        var page: BBPage<Value> = try await client.getJSON(BBPage<Value>.self, path, query: query)
+        var page: BBPage<Value> = try await client.getJSON(BBPage<Value>.self, path, query: query, useETag: true)
         var seen: Set<String> = []
         var pages = 1
         while true {
@@ -154,7 +164,7 @@ public struct BitbucketCloudProvider: ReviewProvider {
             else { break }
             seen.insert(next)
             pages += 1
-            let response = try await client.getAbsolute(url)
+            let response = try await client.getAbsolute(url, useETag: true)
             page = try APIClient.decode(BBPage<Value>.self, from: response)
         }
         return Array(values.prefix(limit))
@@ -196,7 +206,7 @@ public struct BitbucketCloudProvider: ReviewProvider {
 
     func fetchPullRequest(_ key: ChangeRequestKey) async throws -> (BitbucketRepoPath, BBPullRequest) {
         let path = try await repoPath(for: key.repo)
-        let pr = try await client.getJSON(BBPullRequest.self, path.pullRequestPath(try pullRequestID(key)))
+        let pr = try await client.getJSON(BBPullRequest.self, path.pullRequestPath(try pullRequestID(key)), useETag: true)
         recordRepositories(of: pr)
         return (path, pr)
     }
@@ -277,12 +287,17 @@ public struct BitbucketLimits: Sendable, Hashable {
     public var maxFiles: Int
     /// Bytes requested from the end of a step log (`Range: bytes=-N`).
     public var maxLogFetchBytes: Int
+    /// Requests in flight at once per provider (2: Atlassian asks integrations to make requests sequentially; a
+    /// hydration reads up to five sub-resources).
+    public var maxConcurrentRequests: Int
 
     public init(
         maxPages: Int = 20, maxWorkspaces: Int = 50, maxRepositoriesPerWorkspace: Int = 500,
         maxReviewerRepositories: Int = 30, maxPullRequestsPerListing: Int = 500, maxComments: Int = 1_000,
-        maxCommits: Int = 250, maxFiles: Int = 1_000, maxLogFetchBytes: Int = 2 * 1_024 * 1_024
+        maxCommits: Int = 250, maxFiles: Int = 1_000, maxLogFetchBytes: Int = 2 * 1_024 * 1_024,
+        maxConcurrentRequests: Int = 2
     ) {
+        self.maxConcurrentRequests = maxConcurrentRequests
         self.maxPages = maxPages
         self.maxWorkspaces = maxWorkspaces
         self.maxRepositoriesPerWorkspace = maxRepositoriesPerWorkspace

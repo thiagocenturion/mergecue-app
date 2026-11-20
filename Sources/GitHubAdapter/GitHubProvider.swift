@@ -101,7 +101,8 @@ public struct GitHubProvider: ReviewProvider {
             extraHeaders: [
                 "Accept": "application/vnd.github+json",
                 "X-GitHub-Api-Version": "2022-11-28",
-            ]
+            ],
+            maxConcurrentRequests: 3
         )
         self.client = client
         self.graphQL = GitHubGraphQLClient(client: client, endpoint: GitHubGraphQLClient.endpoint(forAPIURL: instance.apiURL))
@@ -130,7 +131,9 @@ public struct GitHubProvider: ReviewProvider {
         if let known = links.repositoryPath(host: instance.host, remoteRepoID: repo.remoteRepoID) {
             return known
         }
-        let fetched = try await client.getJSON(RESTRepository.self, "/repositories/\(Self.segment(repo.remoteRepoID))")
+        let fetched = try await client.getJSON(
+            RESTRepository.self, "/repositories/\(Self.segment(repo.remoteRepoID))", useETag: true
+        )
         links.registerRepository(host: instance.host, remoteRepoID: fetched.id.value, fullPath: fetched.fullName)
         return fetched.fullName
     }

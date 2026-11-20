@@ -50,6 +50,15 @@ enum TaskContextBuilder {
         case .investigateCI:
             lines.append("Investigate the failing check (get_ci_failure with the task's check_id). Fix it in the worktree when possible, then report_changes, report_tests and submit_result — or submit_result with no_changes_reason.")
         }
+        if !task.attachments.isEmpty {
+            let count = task.attachments.count
+            lines.append(
+                "This task also covers \(count) more item\(count == 1 ? "" : "s") from the same \(kind.changeRequestAbbreviation), listed in "
+                    + "attached_items (use their thread_id with get_thread and check_id with get_ci_failure). Address them together with "
+                    + "the main item in one result. A proposed reply is posted to the main thread only. If a version_conflict "
+                    + "shows new attached_items, include them too."
+            )
+        }
         lines.append(
             "After claim_task, send heartbeat (or update_task) at least every \(heartbeatInterval) seconds; the lease expires "
                 + "\(Int(leaseDuration)) seconds after the last one and the task becomes stale."

@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import MergeCueCore
 import Observation
+import SwiftUI
 
 /// Main window screens (⌘1–⌘5).
 public nonisolated enum MainScreen: String, Sendable, Hashable, CaseIterable, Identifiable {
@@ -133,6 +134,10 @@ public struct AppEnvironment {
     public var notificationPermission: (() async -> NotificationPermission)?
     /// Opens System Settings › Notifications › MergeCue.
     public var openNotificationSettings: (() -> Void)?
+    /// Animates state changes (off in tests and snapshots, which render a single frame).
+    public var animatesChanges = false
+    /// Applies Settings › General › Appearance to the whole app (`NSApp.appearance`). Inert in tests and snapshots.
+    public var applyAppearance: (AppearancePreference) -> Void = { _ in }
 
     public init(now: @escaping () -> Date, copyToPasteboard: @escaping (String) -> Void, openURL: @escaping (URL) -> Void,
                 autoDismissBanners: Bool, tickInterval: Duration?, userFullName: String? = nil) {
@@ -157,6 +162,7 @@ public struct AppEnvironment {
             tickInterval: .seconds(30),
             userFullName: NSFullUserName()
         )
+        .animating()
     }
 
     /// Frozen clock, no side effects (tests, snapshots).
@@ -167,12 +173,20 @@ public struct AppEnvironment {
 }
 
 extension AppEnvironment {
+    /// The same environment with animated state changes.
+    func animating() -> AppEnvironment {
+        var copy = self
+        copy.animatesChanges = true
+        return copy
+    }
+
     /// `.system` plus the services only the installed app uses: persisted preferences, VoiceOver announcements and
     /// the real notification permission.
     public static func withSystemServices() -> AppEnvironment {
         var environment = AppEnvironment.system
         environment.preferences = .userDefaults
         environment.announce = { message, tone in AccessibilityAnnouncer.announce(message, tone: tone) }
+        environment.applyAppearance = { preference in NSApp?.appearance = preference.nsAppearance }
         environment.notificationPermission = { await NotificationPermission.current() }
         environment.openNotificationSettings = { NotificationPermission.openSystemSettings() }
         return environment
@@ -193,6 +207,9 @@ public final class AppModel {
     public private(set) var isRefreshing = false
     public private(set) var logExcerpts: [String: LogExcerpt] = [:]
     public private(set) var loadingLogIDs: Set<String> = []
+    /// Parsed change request diffs by `ChangeRequestKey.id` (code context for comments without a provider hunk).
+    var changeRequestDiffs: [String: LoadedDiff] = [:]
+    var loadingDiffIDs: Set<String> = []
     private(set) var indexes: Indexes
 
     // MARK: Navigation and selection
@@ -200,6 +217,8 @@ public final class AppModel {
     public var selectedAttentionID: String?
     public var selectedChangeRequestID: String?
     public var selectedTaskID: TaskID?
+    /// Tasks screen shows the finished tasks (done, cancelled, dismissed) instead of the open ones.
+    public var showsFinishedTasks = false
     public var selectedRuleID: String?
     public var settingsTab: SettingsTab = .accounts
     /// Keyboard selection in the popover (`PopoverItem.id`).
@@ -212,6 +231,8 @@ public final class AppModel {
 
     // MARK: Presentation
     public var banners: [Banner] = []
+    /// The error message of the most recent failed `send` (also shown as a banner), for inline error states.
+    public private(set) var lastCommandError: String?
     /// Presented as the approval sheet.
     public var pendingPreview: ActionPreview?
     public var handoffOffer: HandoffOffer?
@@ -221,7 +242,7 @@ public final class AppModel {
     /// Presented as the connect-account sheet.
     public var connectSheetKind: ProviderKind?
     public var showCountInMenuBar = true
-    /// Agent picked in the handoff screen and the "Fix with AI" menu.
+    /// Agent picked in the handoff screen and the "Fix now" menu.
     public var selectedAgentKind: AgentKind?
     /// Tab of the change request panel next to the inbox list.
     public var changeRequestTab: ChangeRequestTab = .conversation
@@ -231,11 +252,45 @@ public final class AppModel {
     public var reviewSelectedFile: String?
     /// Collapsed popover sections.
     public var collapsedPopoverSections: Set<PopoverSection> = []
+    /// Approvals the owner has seen, per change request id (persisted; D47).
+    public var seenApprovals: [String: Set<String>] = [:] {
+        didSet {
+            let encoded = (try? JSONEncoder().encode(seenApprovals)).flatMap { String(data: $0, encoding: .utf8) }
+            environment.preferences.save(UIPreferenceKeys.seenApprovals, encoded)
+        }
+    }
+    /// True once existing approvals were recorded as seen (stored with them, so a fresh install starts quiet).
+    var approvalsBaselined: Bool {
+        get { environment.preferences.load(UIPreferenceKeys.seenApprovals) != nil }
+        set { if newValue, environment.preferences.load(UIPreferenceKeys.seenApprovals) == nil { environment.preferences.save(UIPreferenceKeys.seenApprovals, "{}") } }
+    }
+    /// Collapsed change request groups in the Inbox (change request ids; expanded by default).
+    public var collapsedInboxGroups: Set<String> = []
+    /// Collapsed change request groups in the popover (`PopoverPRGroup.id`; expanded by default).
+    public var collapsedPopoverGroups: Set<String> = []
     /// Presents the setup assistant (first live launch without accounts, or Settings › General).
     public var showsOnboarding = false
     /// Settings › General › Text size (persisted; applied at the window and popover roots).
     public var textSize: TextSizePreference = .standard {
         didSet { environment.preferences.save(UIPreferenceKeys.textSize, textSize.rawValue) }
+    }
+    /// Settings › General › Appearance: follow macOS, or always light / dark (persisted).
+    public var appearance: AppearancePreference = .system {
+        didSet {
+            environment.preferences.save(UIPreferenceKeys.appearance, appearance.rawValue)
+            environment.applyAppearance(appearance)
+        }
+    }
+    /// Settings › General › Dark mode style (persisted). Root views re-render with `.id(darkStyle)` when it changes.
+    public var darkStyle: DarkStyle = .graphite {
+        didSet {
+            DarkStyle.current = darkStyle
+            environment.preferences.save(UIPreferenceKeys.darkStyle, darkStyle.rawValue)
+        }
+    }
+    /// Task screen: "Open in your coding agent" shown as a compact card (persisted).
+    public var handoffCollapsed = false {
+        didSet { environment.preferences.save(UIPreferenceKeys.handoffCollapsed, handoffCollapsed ? "1" : nil) }
     }
     /// Settings › General › Global shortcut that opens the popover from anywhere (persisted).
     public var globalHotKey: HotKeyPreset = .defaultPreset {
@@ -275,6 +330,15 @@ public final class AppModel {
         self.isLoaded = initialState != nil
         self.textSize = environment.preferences.load(UIPreferenceKeys.textSize).flatMap(TextSizePreference.init(rawValue:)) ?? .standard
         self.globalHotKey = environment.preferences.load(UIPreferenceKeys.globalHotKey).flatMap(HotKeyPreset.init(rawValue:)) ?? .defaultPreset
+        self.appearance = environment.preferences.load(UIPreferenceKeys.appearance).flatMap(AppearancePreference.init(rawValue:)) ?? .system
+        self.darkStyle = environment.preferences.load(UIPreferenceKeys.darkStyle).flatMap(DarkStyle.init(rawValue:)) ?? .graphite
+        DarkStyle.current = darkStyle
+        environment.applyAppearance(appearance)
+        self.handoffCollapsed = environment.preferences.load(UIPreferenceKeys.handoffCollapsed) == "1"
+        if let stored = environment.preferences.load(UIPreferenceKeys.seenApprovals)?.data(using: .utf8),
+           let decoded = try? JSONDecoder().decode([String: Set<String>].self, from: stored) {
+            self.seenApprovals = decoded
+        }
     }
 
     // MARK: Lifecycle
@@ -299,6 +363,17 @@ public final class AppModel {
             }
         }
         await reload()
+        await askForNotificationsIfNeeded()
+    }
+
+    /// Live app with a connected account and macOS has never asked: ask now, so notifications can't stay
+    /// silently off when the setup assistant was skipped.
+    func askForNotificationsIfNeeded() async {
+        guard mode == .live, !state.accounts.isEmpty, environment.notificationPermission != nil else { return }
+        await refreshNotificationPermission()
+        guard notificationPermission == .notDetermined else { return }
+        _ = await send(.requestNotificationPermission)
+        await refreshNotificationPermission()
     }
 
     /// Stops observing the backend.
@@ -311,7 +386,12 @@ public final class AppModel {
 
     public func reload() async {
         let fresh = await backend.loadState()
-        apply(fresh)
+        // Cards slide in and out and counters roll when sync or a command changes the state (D41).
+        if environment.animatesChanges, isLoaded, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            withAnimation(Motion.smooth) { apply(fresh) }
+        } else {
+            apply(fresh)
+        }
     }
 
     /// Replaces the state and recomputes everything derived from it.
@@ -321,6 +401,7 @@ public final class AppModel {
         indexes = Indexes(newState)
         sections = PopoverDerivation.derive(from: newState, now: now)
         isLoaded = true
+        baselineApprovalsIfNeeded()
         if let selection = popoverSelection, !popoverRows.contains(where: { $0.id == selection }) {
             popoverSelection = nil
         }
@@ -346,7 +427,9 @@ public final class AppModel {
             await reload()
             return result
         } catch {
-            showBanner(.critical, (error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+            let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            lastCommandError = message
+            showBanner(.critical, message)
             await reload()
             return nil
         }
@@ -394,8 +477,9 @@ public final class AppModel {
         }
         if case .approvePreview = command { pendingPreview = nil }
         if case .declinePreview = command { pendingPreview = nil }
-        if let message = result.message {
-            showBanner(result.tone ?? (result.handoffCommand != nil || result.createdTaskID != nil ? .success : .neutral), message)
+        let tone = result.tone ?? (result.handoffCommand != nil || result.createdTaskID != nil ? .success : .neutral)
+        if let message = result.message, result.showsBanner(after: command, tone: tone) {
+            showBanner(tone, message)
         }
     }
 
@@ -469,7 +553,7 @@ public final class AppModel {
     /// Non-terminal task linked to an attention item, if any.
     public func activeTask(for item: AttentionItem) -> TaskRecord? {
         if let linked = task(item.linkedTaskID), !linked.task.isTerminal { return linked }
-        return state.tasks.first { $0.task.origin.attentionItemID == item.id && !$0.task.isTerminal }
+        return state.tasks.first { !$0.task.isTerminal && $0.task.coveredAttentionIDs.contains(item.id) }
     }
 
     /// Tasks created from a change request (newest first).
@@ -508,7 +592,7 @@ public final class AppModel {
         if let badge = mode.badgeText { parts[0] += " (\(badge.lowercased()))" }
         let needs = sections.count(.needsYou)
         let ready = sections.count(.ready)
-        let working = sections.count(.aiWorking)
+        let working = sections.count(.inProgress)
         if needs > 0 { parts.append("\(needs) need\(needs == 1 ? "s" : "") you") }
         if working > 0 { parts.append("\(working) in progress") }
         if ready > 0 { parts.append("\(ready) ready") }
@@ -527,7 +611,9 @@ public final class AppModel {
 
     /// Rows visible in the popover (top 3 per section), in keyboard order.
     public var popoverRows: [PopoverItem] {
-        PopoverSection.allCases.filter { !collapsedPopoverSections.contains($0) }.flatMap { sections.items($0).prefix(Self.popoverRowLimit) }
+        PopoverSection.allCases.filter { !collapsedPopoverSections.contains($0) }.flatMap { section in
+            popoverGroups(section).filter { !collapsedPopoverGroups.contains($0.id) }.flatMap(\.items)
+        }
     }
 
     public static let popoverRowLimit = 3

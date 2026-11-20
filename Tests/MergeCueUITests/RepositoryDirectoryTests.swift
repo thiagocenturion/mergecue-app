@@ -94,6 +94,50 @@ struct EngineBackendRepositoryTests {
         #expect(scan.errorMessage == nil)
     }
 
+    @Test func chooseFolderSavesMappingForSubfolderAndReportsNonCheckouts() async throws {
+        let harness = try await DemoBackendHarness.start()
+        defer { Task { await harness.stop() } }
+        let backend = harness.backend
+        let mapping = try #require(await harness.state().mappings.first)
+        _ = try await backend.perform(.removeMapping(id: mapping.id))
+        #expect(await harness.state().mappings.contains { $0.repo == mapping.repo } == false)
+
+        // A subfolder of the clone maps the clone's top level, confirmed (exact remote match), and reaches the state.
+        let sub = URL(fileURLWithPath: mapping.checkoutPath).appending(path: "mergecue-test-subfolder-\(UUID().uuidString.prefix(6))")
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: sub) }
+        let result = try await backend.perform(.mapCheckoutFolder(repo: mapping.repo, repoFullPath: mapping.repoFullPath,
+                                                                  checkoutPath: sub.path, mapAnyway: false))
+        let saved = try #require(result.savedMapping)
+        #expect(result.mappingPreview == nil)
+        #expect(saved.isConfirmed)
+        #expect(URL(fileURLWithPath: saved.checkoutPath).resolvingSymlinksInPath().path
+                == URL(fileURLWithPath: mapping.checkoutPath).resolvingSymlinksInPath().path)
+        #expect(await harness.state().mappings.contains { $0.id == saved.id })
+
+        // A plain folder is never saved; the result explains why.
+        let plain = FileManager.default.temporaryDirectory.appending(path: "mergecue-plain-\(UUID().uuidString.prefix(6))")
+        try FileManager.default.createDirectory(at: plain, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: plain) }
+        let refused = try await backend.perform(.mapCheckoutFolder(repo: mapping.repo, repoFullPath: mapping.repoFullPath, checkoutPath: plain.path, mapAnyway: true))
+        let preview = try #require(refused.mappingPreview)
+        #expect(!preview.isRepository && !preview.canMapAnyway)
+        #expect(refused.savedMapping == nil)
+        #expect(await harness.state().mappings.contains { $0.checkoutPath == plain.path } == false)
+
+        // No scan runs by itself.
+        #expect(await harness.state().checkoutScan.isRunning == false)
+    }
+
+    @Test func searchFoldersRoundTrip() async throws {
+        let harness = try await DemoBackendHarness.start()
+        defer { Task { await harness.stop() } }
+        _ = try await harness.backend.perform(.setCheckoutSearchFolders(["/tmp/mergecue-search-a"]))
+        #expect(await harness.state().checkoutSearchFolders == ["/tmp/mergecue-search-a"])
+        _ = try await harness.backend.perform(.setCheckoutSearchFolders(nil))
+        #expect(await harness.state().checkoutSearchFolders != ["/tmp/mergecue-search-a"])
+    }
+
     @Test func listingErrorsAreReportedPerAccount() async throws {
         let harness = try await DemoBackendHarness.start()
         defer { Task { await harness.stop() } }

@@ -131,6 +131,8 @@ public enum ActivityKind: String, Codable, Sendable, CaseIterable {
     case cancelled, dismissed, retried, reopened
     /// `blocked` → `waiting_for_agent` (user unblock).
     case unblocked
+    /// "In progress" set by the owner.
+    case startedManually = "started_manually"
     case note
     case rejectedCall = "rejected_call"
 }

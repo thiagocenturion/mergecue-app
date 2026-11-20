@@ -49,6 +49,12 @@ public nonisolated struct TaskRecord: Sendable, Hashable, Identifiable {
     public var hasRealClaim: Bool {
         task.state == .working && task.lease != nil
     }
+
+    /// `working` because the owner set "In progress" by hand (no agent lease).
+    public var isManuallyInProgress: Bool {
+        task.state == .working && task.lease == nil
+            && activities.last(where: { $0.toState == .working })?.kind == .startedManually
+    }
 }
 
 /// Whether the MergeCue MCP server is registered with (and verified for) an agent. The agent kinds and the
@@ -173,6 +179,8 @@ public nonisolated struct AppState: Sendable, Hashable {
     public var repositoryLists: [AccountKey: RepositoryListState]
     /// The local checkout scan (`.scanCheckouts`).
     public var checkoutScan: CheckoutScanState
+    /// Settings ▸ Repositories ▸ Search folders (engine setting; the scan walks these).
+    public var checkoutSearchFolders: [String]
     /// Settings ▸ Agents ▸ "Agent read access" (engine setting).
     public var agentReadAccess: AgentReadAccess
 
@@ -195,10 +203,12 @@ public nonisolated struct AppState: Sendable, Hashable {
         worktreeCleanupCandidates: [WorktreeCleanupCandidate] = [],
         repositoryLists: [AccountKey: RepositoryListState] = [:],
         checkoutScan: CheckoutScanState = .idle,
+        checkoutSearchFolders: [String] = [],
         agentReadAccess: AgentReadAccess = .default
     ) {
         self.repositoryLists = repositoryLists
         self.checkoutScan = checkoutScan
+        self.checkoutSearchFolders = checkoutSearchFolders
         self.accounts = accounts
         self.attention = attention
         self.tasks = tasks
