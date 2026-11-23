@@ -161,6 +161,13 @@ func d48Scenes() -> [Scene] {
             model.selectedAttentionID = model.state.attention.first { $0.providerKind == .github && $0.number == 42 && $0.reason == .changesRequested }?.id
         }, kind: window)
     )
+    // D50: a list dragged below what its content needs is held at its minimum; tabs off shows "Use tabs".
+    list.append(Scene(name: "window-prs-narrow-list", size: windowSize, configure: { model in
+        model.screen = .changeRequests
+        model.detailTabsEnabled = false
+        model.setSplitWidth("pullRequests", 120)
+        model.selectedChangeRequestID = model.state.changeRequests.first?.key.id
+    }, kind: window))
     return list
 }
 

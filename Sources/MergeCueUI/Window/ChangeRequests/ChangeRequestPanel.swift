@@ -93,6 +93,17 @@ struct ChangeRequestPanel: View {
         if let focus {
             ItemActionsMenu(model: model, item: focus)
         }
+        if model.detailTabsEnabled == false {
+            // The way back after turning tabs off from the tab bar (D50).
+            Button {
+                withAnimation(Motion.smooth) { model.detailTabsEnabled = true }
+            } label: {
+                Image(systemName: "rectangle.on.rectangle")
+            }
+            .buttonStyle(IconButtonStyle(size: 28))
+            .help("Open details in tabs")
+            .accessibilityLabel("Use tabs")
+        }
         if let onClose {
             Button(action: onClose) { Image(systemName: "xmark") }
                 .buttonStyle(IconButtonStyle(size: 28))

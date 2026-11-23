@@ -79,3 +79,18 @@ struct SplitWidthTests {
         #expect(relaunched.splitWidth("inbox") == nil)
     }
 }
+
+@Suite("Turning tabs back on (D50)")
+@MainActor
+struct TabsReenableTests {
+    @Test func tabsCanBeTurnedBackOnAndReopenTheCurrentItem() async throws {
+        let model = await makeModel()
+        let id = try #require(model.state.attention.first { $0.disposition == .open }?.id)
+        model.detailTabsEnabled = true
+        model.selectedAttentionID = id
+        model.detailTabsEnabled = false
+        #expect(model.inboxTabs.isEmpty)
+        model.detailTabsEnabled = true
+        #expect(model.inboxTabs == [id])
+    }
+}

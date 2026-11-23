@@ -12,11 +12,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     init(model: AppModel) {
         self.model = model
         let hosting = NSHostingController(rootView: MainWindowView(model: model))
+        // The window keeps its own size (no fitting size from SwiftUI); its minimum comes from `pinMinimumSize`.
         hosting.sizingOptions = []
         let window = NSWindow(contentViewController: hosting)
         MainWindowController.configure(window, badge: model.mode.badgeText)
         super.init(window: window)
         window.delegate = self
+        Self.pinMinimumSize(hosting.view)
         installSidebarToggle(in: window)
         observeTitle()
     }
@@ -46,6 +48,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         model.toggleSidebar()
     }
 
+    /// Required constraints on the content view: AppKit never lets a window be smaller than what its content view's
+    /// required constraints allow, on any resize path (dragging an edge, zoom, scripts, restored frames). The window's
+    /// own `contentMinSize` was not enough: with Auto Layout content AppKit takes the minimum from constraints (D50).
+    static func pinMinimumSize(_ view: NSView) {
+        let minimum = MainWindowMetrics.minimumSize
+        NSLayoutConstraint.activate([
+            view.widthAnchor.constraint(greaterThanOrEqualToConstant: minimum.width),
+            view.heightAnchor.constraint(greaterThanOrEqualToConstant: minimum.height),
+        ])
+    }
+
     /// Grows the window to the minimum content size, keeping its top-left corner.
     static func clampToMinimum(_ window: NSWindow) {
         let content = window.contentRect(forFrameRect: window.frame).size
@@ -63,7 +76,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     /// Never smaller than the minimum (a restored frame from an older build could be).
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
-        NSSize(width: max(frameSize.width, sender.minSize.width), height: max(frameSize.height, sender.minSize.height))
+        // Clamp to the fixed minimum, not `sender.minSize`: Auto Layout can lower that one.
+        let minimum = sender.frameRect(forContentRect: NSRect(origin: .zero, size: MainWindowMetrics.minimumSize)).size
+        return NSSize(width: max(frameSize.width, minimum.width), height: max(frameSize.height, minimum.height))
     }
 
     /// Keeps the window's title and subtitle on the current screen (VoiceOver, Mission Control, Window menu).

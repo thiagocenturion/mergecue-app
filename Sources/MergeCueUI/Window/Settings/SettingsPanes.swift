@@ -538,6 +538,19 @@ struct GeneralSettings: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            Card("Details", systemImage: "rectangle.stack") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle("Open details in tabs", isOn: Binding(
+                        get: { model.detailTabsEnabled == true },
+                        set: { enabled in withAnimation(Motion.smooth) { model.detailTabsEnabled = enabled } }
+                    ))
+                    .toggleStyle(.switch)
+                    Text("Keep several pull requests and inbox items open side by side and switch between them.")
+                        .scaledFont(.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             Card("Text size", systemImage: "textformat.size") {
                 VStack(alignment: .leading, spacing: 8) {
                     Picker("Text size", selection: $model.textSize) {

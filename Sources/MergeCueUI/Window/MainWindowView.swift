@@ -112,7 +112,7 @@ struct ScreenContent: View {
         case .inbox:
             InboxScreen(model: model)
         case .changeRequests:
-            TwoColumnScreen(model: model, key: "pullRequests", listWidth: 380) {
+            TwoColumnScreen(model: model, key: "pullRequests", listWidth: 380, minListWidth: 380) {
                 ChangeRequestList(model: model)
             } detail: {
                 ChangeRequestDetail(model: model)
@@ -125,13 +125,13 @@ struct ScreenContent: View {
                 TaskList(model: model)
             }
         case .rules:
-            TwoColumnScreen(model: model, key: "rules", listWidth: 360) {
+            TwoColumnScreen(model: model, key: "rules", listWidth: 360, minListWidth: 300) {
                 RuleList(model: model)
             } detail: {
                 RuleDetail(model: model)
             }
         case .settings:
-            TwoColumnScreen(model: model, key: "settings", listWidth: 250) {
+            TwoColumnScreen(model: model, key: "settings", listWidth: 250, minListWidth: 230) {
                 SettingsList(model: model)
             } detail: {
                 SettingsDetail(model: model)
@@ -147,6 +147,8 @@ struct TwoColumnScreen<List: View, Detail: View>: View {
     var key: String
     /// Default list width.
     var listWidth: CGFloat
+    /// The narrowest the list content fits in (its filters and rows); dragging stops there.
+    var minListWidth: CGFloat
     @ViewBuilder var list: List
     @ViewBuilder var detail: Detail
     /// The width while the split line is being dragged (saved when the drag ends).
@@ -154,13 +156,14 @@ struct TwoColumnScreen<List: View, Detail: View>: View {
 
     var body: some View {
         GeometryReader { proxy in
-            // The list keeps 240 pt; the detail keeps 440 pt (D49).
-            let range = CGFloat(240)...max(240, min(720, proxy.size.width - 440))
+            // The list keeps what its content needs; the detail keeps 440 pt (D49, D50).
+            let range = minListWidth...max(minListWidth, min(720, proxy.size.width - 440))
             let width = min(max(dragWidth ?? model.splitWidth(key) ?? listWidth, range.lowerBound), range.upperBound)
             HStack(spacing: 0) {
                 list
                     .padding(.top, MainWindowMetrics.contentTopInset - 8)
-                    .frame(width: width)
+                    // Anchored left: content wider than the pane never spills over the sidebar.
+                    .frame(width: width, alignment: .leading)
                     .frame(maxHeight: .infinity)
                 SplitDivider(
                     width: Binding(get: { width }, set: { dragWidth = $0 }), range: range, controlsLeadingPane: true,
