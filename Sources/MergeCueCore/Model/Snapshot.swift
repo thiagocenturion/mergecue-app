@@ -71,6 +71,8 @@ public struct ChangeRequestSnapshot: Codable, Sendable, Hashable, Identifiable {
     public var fetchedAt: Date
     /// Provider API URLs / ids for traceability.
     public var nativeRefs: [String: String]
+    /// The current user's own review of this change request as Sync tracks it (D53); nil from adapters.
+    public var viewerReview: ViewerReviewMemory?
 
     public init(
         summary: ChangeRequestSummary,
@@ -87,7 +89,8 @@ public struct ChangeRequestSnapshot: Codable, Sendable, Hashable, Identifiable {
         changedFiles: [ChangedFile] = [],
         readiness: MergeReadiness = .unknown,
         fetchedAt: Date,
-        nativeRefs: [String: String] = [:]
+        nativeRefs: [String: String] = [:],
+        viewerReview: ViewerReviewMemory? = nil
     ) {
         self.summary = summary
         self.description = description
@@ -104,6 +107,7 @@ public struct ChangeRequestSnapshot: Codable, Sendable, Hashable, Identifiable {
         self.readiness = readiness
         self.fetchedAt = fetchedAt
         self.nativeRefs = nativeRefs
+        self.viewerReview = viewerReview
     }
 
     public var id: String { summary.key.id }

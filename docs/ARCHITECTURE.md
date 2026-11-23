@@ -173,8 +173,14 @@ public struct ChangeRequestSnapshot: Codable, Sendable, Hashable, Identifiable {
     var threads: [ReviewThread]; var checks: [CheckRun]; var aggregateCheckState: AggregateCheckState
     var commits: [CommitInfo]; var changedFiles: [ChangedFile]; var readiness: MergeReadiness
     var fetchedAt: Date; var nativeRefs: [String: String] /* provider API URLs / ids for traceability */
+    var viewerReview: ViewerReviewMemory? /* D53: set by Sync (ViewerReview.nextMemory), nil from adapters */
     var unresolvedThreadCount: Int { get }
 }
+// D53 (Model/ViewerReview.swift): the current user's own review of others' CRs.
+public struct ViewerReviewMemory { var verdict: ReviewState?; var verdictHeadSHA: String?; var verdictSeenAt: Date?; var lostApprovalAt: Date?; var lostApprovalHeadSHA: String? }
+public enum ReviewLane { case toReview, waitingOnAuthor, approved, closed }
+public struct ViewerReviewStatus { var lane; var verdict; var isRequested; var needsReapproval; var headMovedSinceVerdict; var rebasedSinceVerdict; var commitsSinceVerdict: Int? }
+public enum ViewerReview { static func currentVerdict(_:userID:) -> ReviewState?; static func nextMemory(previous:current:userID:now:) -> ViewerReviewMemory?; static func status(of:userID:) -> ViewerReviewStatus? }
 public struct HeadInfo: Codable, Sendable, Hashable { var headSHA: String?; var state: ChangeRequestState; var isDraft: Bool; var updatedAt: Date }
 public struct LogExcerpt: Codable, Sendable, Hashable { var text: String /* redacted, bounded */; var truncated: Bool; var fullLogURL: URL?; var totalBytes: Int? }
 public struct DiffPayload: Codable, Sendable, Hashable { var unifiedDiff: String; var files: [ChangedFile]; var truncated: Bool; var baseSHA: String?; var headSHA: String? }
@@ -257,7 +263,7 @@ public enum ChangeEventType: String, Codable, Sendable, CaseIterable {
     case reviewComment = "review_comment", changeRequested = "change_requested", reply, ciFailed = "ci_failed",
          ciRecovered = "ci_recovered", approval, readyToMerge = "ready_to_merge", merged,
          closedWithoutMerge = "closed_without_merge", reviewRequested = "review_requested", headChanged = "head_changed",
-         threadResolved = "thread_resolved"
+         threadResolved = "thread_resolved", approvalReset = "approval_reset" /* D53 */
 }
 public struct ChangeEvent: Codable, Sendable, Hashable, Identifiable {
     var id: String          // stable event identity = hash(account, CR, type, objectID, objectVersion) → dedupe key
@@ -275,7 +281,7 @@ public struct ChangeEvent: Codable, Sendable, Hashable, Identifiable {
     static func commentObjectID(thread: ThreadKey, commentID: String) -> String  // "<thread id>/c:<id>": issue vs review comments never collide
     static func checkObjectID(_ key: CheckKey) -> String; static func reviewObjectID(_ id: String) -> String; static func headObjectID(sha: String) -> String
 }
-public enum AttentionReason: String, Codable, Sendable { case reviewComment = "review_comment", changesRequested = "changes_requested", reviewerQuestion = "reviewer_question", codeSuggestion = "code_suggestion", reply, ciFailed = "ci_failed", reviewRequested = "review_requested", readyToMerge = "ready_to_merge", mergeConflict = "merge_conflict" }
+public enum AttentionReason: String, Codable, Sendable { case reviewComment = "review_comment", changesRequested = "changes_requested", reviewerQuestion = "reviewer_question", codeSuggestion = "code_suggestion", reply, ciFailed = "ci_failed", reviewRequested = "review_requested", readyToMerge = "ready_to_merge", mergeConflict = "merge_conflict", reapprovalNeeded = "reapproval_needed", updatedSinceReview = "updated_since_review" /* D53 */ }
 public enum AttentionPriority: Int, Codable, Sendable, Comparable { case low, normal, high, urgent
     var name: String /* "low"… — the IPC/MCP form */; init?(name:) }   // Int raw value = ordering + indexed column only
 public enum AttentionDisposition: Codable, Sendable, Hashable { case open, acknowledged, snoozed(until: Date), resolved /*condition cleared*/, dismissed }
@@ -910,6 +916,11 @@ Polling model (DECISIONS D35, D36, modelled on GitButler); every tunable lives i
   Failures are classified with `ProviderError.classify` → `AccountSyncState(providerError:now:)`; a nil result
   (cancellation) is not a failure.
   Re-runs that stay green produce nothing; failure→success produces `ci_recovered` which resolves the CI item.
+- Before deriving, Sync sets `snapshot.viewerReview = ViewerReview.nextMemory(previous:current:userID:now:)` (D53).
+  `approval_reset` (the user's approval of another's CR disappeared after the head moved) →
+  `reapprovalNeeded`; `head_changed` after the user commented / requested changes → `updatedSinceReview`; a review
+  request item resolves once the user gives a verdict. Merges of reviewed CRs notify only with the opt-in
+  `reviewedMerged` category (`NotificationCategory.isOnByDefault`, stored in `NotificationPreferences.enabled`).
 - `AttentionDeriver.apply(events:snapshot:existing:account:now:) -> [AttentionItem]` — one item per dedupe key
   (CR+thread, CR+check name, CR+reason); new activity on an existing thread updates the item (unread again) instead
   of creating another; resolved thread / recovered CI / merged / closed → `resolved`. Question vs suggestion vs

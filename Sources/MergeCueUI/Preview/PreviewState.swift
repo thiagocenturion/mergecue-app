@@ -157,6 +157,15 @@ nonisolated extension PreviewWorld {
         ids.bbCheckoutCI = add(bb131, dedupe: AttentionItem.dedupeKey(changeRequest: bb131.key, checkName: bb131.checks[0].name), reason: .ciFailed,
                                summary: "e2e / safari failed · 1 of 38 tests", check: bb131.checks[0].key,
                                created: ago(minutes: 95), updated: ago(minutes: 95), unread: false, task: PreviewTaskIDs.failed)
+        // Reviews (D53): acknowledged, so the owner's mockup scenes keep their Needs you rows and counts.
+        let bb12 = catalog.bbRisk12
+        _ = add(bb12, dedupe: AttentionItem.dedupeKey(changeRequest: bb12.key, reason: .reapprovalNeeded), reason: .reapprovalNeeded,
+                summary: "Your approval was reset by new commits", created: ago(minutes: 18), updated: ago(minutes: 18), unread: false,
+                disposition: .acknowledged)
+        let gl322 = catalog.glLedger322
+        _ = add(gl322, dedupe: AttentionItem.dedupeKey(changeRequest: gl322.key, reason: .updatedSinceReview), reason: .updatedSinceReview,
+                summary: "New commits since your review", created: ago(minutes: 40), updated: ago(minutes: 40), unread: false,
+                disposition: .acknowledged)
         return (items, ids)
     }
 

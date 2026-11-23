@@ -111,6 +111,12 @@ struct ScreenContent: View {
         switch model.screen {
         case .inbox:
             InboxScreen(model: model)
+        case .reviews:
+            TwoColumnScreen(model: model, key: "reviews", listWidth: 400, minListWidth: 380) {
+                ReviewList(model: model)
+            } detail: {
+                ChangeRequestDetail(model: model)
+            }
         case .changeRequests:
             TwoColumnScreen(model: model, key: "pullRequests", listWidth: 380, minListWidth: 380) {
                 ChangeRequestList(model: model)

@@ -75,7 +75,8 @@ struct EventAttentionTests {
     }
 
     @Test func eventTypeRawValues() {
-        #expect(ChangeEventType.allCases.count == 12)
+        #expect(ChangeEventType.allCases.count == 13)
+        #expect(ChangeEventType.approvalReset.rawValue == "approval_reset")
         #expect(ChangeEventType.closedWithoutMerge.rawValue == "closed_without_merge")
         #expect(ChangeEventType.ciRecovered.rawValue == "ci_recovered")
         #expect(ChangeEventType.headChanged.rawValue == "head_changed")

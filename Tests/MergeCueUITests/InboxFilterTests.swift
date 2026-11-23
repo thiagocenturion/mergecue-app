@@ -52,7 +52,9 @@ struct InboxFilterTests {
         let mine = run(InboxFilter(scope: .mine, collapseRead: false)).visibleItems
         let reviewing = run(InboxFilter(scope: .reviewing, collapseRead: false)).visibleItems
         #expect(!mine.isEmpty && mine.allSatisfy { snapshots[$0.changeRequest]?.contains(.authored) == true })
-        #expect(!reviewing.isEmpty && reviewing.allSatisfy { snapshots[$0.changeRequest]?.contains(.reviewRequested) == true })
+        #expect(!reviewing.isEmpty && reviewing.allSatisfy {
+            !(snapshots[$0.changeRequest] ?? []).isDisjoint(with: [.reviewRequested, .participated])
+        })
         #expect(Set(mine.map(\.id)).isDisjoint(with: reviewing.map(\.id)))
     }
 

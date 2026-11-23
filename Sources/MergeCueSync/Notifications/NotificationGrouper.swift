@@ -26,7 +26,8 @@ public struct NotificationPolicy: Sendable, Hashable {
 ///
 /// A change request is notified when at least one *newly inserted*, non-baseline event not authored by the user
 /// fed an attention item that ends up actionable (not resolved, not dismissed, not in an active snooze), or when
-/// such an event has an informational type (default: approval) on the user's own change request. Everything else
+/// such an event has an informational type (default: approval) on the user's own change request, or it is the merge
+/// of a change request the user reviewed (`reviewedMerged`, opt-in; D53). Everything else
 /// (own replies, green re-runs, CI recoveries, baseline) stays silent. Items and informational events whose
 /// `NotificationCategory` the owner switched off (`preferences`) never notify — the items themselves are unchanged.
 public enum NotificationGrouper {
@@ -63,9 +64,11 @@ public enum NotificationGrouper {
             // Events of items the owner switched off must not resurface as "informational".
             let switchedOff = attentionUpserts.filter { $0.changeRequest == key && !preferences.allows($0.reason) }
             let itemEventIDs = Set((items + switchedOff).flatMap(\.eventIDs))
+            let reviewed = !isMine && snapshot?.viewerReview?.verdict != nil
             let informational = candidates.filter {
-                $0.changeRequest == key && isMine && informationalTypes.contains($0.type) && !itemEventIDs.contains($0.id)
-                    && preferences.allows(informationalEvent: $0.type)
+                guard $0.changeRequest == key, !itemEventIDs.contains($0.id) else { return false }
+                if isMine { return informationalTypes.contains($0.type) && preferences.allows(informationalEvent: $0.type) }
+                return reviewed && $0.type == .merged && preferences.isEnabled(.reviewedMerged)
             }
             guard !items.isEmpty || !informational.isEmpty else { return nil }
             let groupEvents = candidates.filter { $0.changeRequest == key }
@@ -96,7 +99,9 @@ public enum NotificationGrouper {
         let kind = key.kind
         // Only approvals: lead with the good news (D47).
         let onlyApprovals = items.isEmpty && !informational.isEmpty && informational.allSatisfy { $0.type == .approval }
-        let title = (onlyApprovals ? "Approved · " : "") + "\(sample.repoFullPath) \(kind.formattedNumber(key.number))"
+        let onlyMerged = items.isEmpty && !informational.isEmpty && informational.allSatisfy { $0.type == .merged }
+        let lead = onlyApprovals ? "Approved · " : onlyMerged ? "Merged · " : ""
+        let title = lead + "\(sample.repoFullPath) \(kind.formattedNumber(key.number))"
         let crTitle = snapshot?.summary.title ?? sample.title
         let subtitle = "\(kind.displayName) · \(crTitle)"
 

@@ -93,6 +93,12 @@ public nonisolated enum Presentation {
         case .mergeConflict:
             headline = "Merge conflict"
             subtitle = item.summary
+        case .reapprovalNeeded:
+            headline = "Re-approval needed"
+            subtitle = item.summary
+        case .updatedSinceReview:
+            headline = snapshot.map { "\(shortName($0.summary.author)) updated the PR" } ?? "Updated since your review"
+            subtitle = item.summary
         }
         return AttentionText(headline: headline, subtitle: subtitle, symbol: statusSymbol(item.reason), tone: item.reason.tone,
                              commentCount: comments)
@@ -109,6 +115,8 @@ public nonisolated enum Presentation {
         case .reviewRequested: "eye.fill"
         case .readyToMerge: "checkmark"
         case .mergeConflict: "arrow.triangle.merge"
+        case .reapprovalNeeded: "arrow.counterclockwise"
+        case .updatedSinceReview: "arrow.triangle.2.circlepath"
         }
     }
 
@@ -131,6 +139,8 @@ public nonisolated enum Presentation {
         case .reviewRequested: "Review requested"
         case .readyToMerge: "Ready to merge"
         case .mergeConflict: "Merge conflict"
+        case .reapprovalNeeded: "Re-approve"
+        case .updatedSinceReview: "Updated"
         }
     }
 

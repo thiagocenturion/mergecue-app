@@ -67,8 +67,9 @@ struct PopoverTabBar: View {
     }
 }
 
-/// Open pull/merge requests at a glance: yours first, then the ones you review, each with checks, approvals,
-/// open threads and age. Clicking a row opens it in the app; ↗ opens it in the browser.
+/// Open pull/merge requests at a glance: the ones you review (D53: a "3 to review · 2 waiting · 4 approved" line
+/// that opens the Reviews screen, then only the ones to review; first while any need you) and yours, each with checks, approvals, open
+/// threads and age. Clicking a row opens it in the app; ↗ opens it in the browser.
 struct PopoverPullRequestList: View {
     let model: AppModel
 
@@ -76,16 +77,53 @@ struct PopoverPullRequestList: View {
         let open = model.state.changeRequests.filter { $0.summary.state == .open }
             .sorted { $0.summary.updatedAt > $1.summary.updatedAt }
         let mine = open.filter { $0.summary.involvement.contains(.authored) }
-        let others = open.filter { !$0.summary.involvement.contains(.authored) }
+        let reviews = ReviewQueue.run(state: model.state, filter: ChangeRequestFilter(), now: model.now)
         VStack(alignment: .leading, spacing: 18) {
-            if open.isEmpty {
+            if mine.isEmpty && reviews.isEmpty {
                 NothingSelected(title: "No open pull requests", symbol: "arrow.triangle.pull",
                                 message: "Pull and merge requests you author or review appear here.")
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 30)
             }
+            // Reviews that need you come first (they ask for action); otherwise yours lead (D48, D53).
+            if !reviews.toReview.isEmpty { reviewSection(reviews) }
             section("Your pull requests", rows: mine)
-            section("Reviewing", rows: others)
+            if reviews.toReview.isEmpty { reviewSection(reviews) }
+        }
+    }
+
+    @ViewBuilder
+    private func reviewSection(_ queue: ReviewQueue) -> some View {
+        if !queue.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Button {
+                    model.showScreen(.reviews)
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("Reviews")
+                            .scaledFont(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Theme.textPrimary)
+                        Text(ReviewText.summaryLine(queue))
+                            .scaledFont(.system(size: 12))
+                            .foregroundStyle(Theme.textSecondary)
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
+                        Image(systemName: "chevron.right")
+                            .scaledFont(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+                    .padding(.horizontal, 4)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Open Reviews")
+                .accessibilityLabel("Reviews: \(ReviewText.summaryLine(queue))")
+                .accessibilityHint("Opens the Reviews screen")
+                ForEach(Array(queue.toReview.enumerated()), id: \.element.id) { index, entry in
+                    PopoverPullRequestRow(model: model, snapshot: entry.snapshot, review: entry)
+                        .appearStaggered(index)
+                }
+            }
         }
     }
 
@@ -110,6 +148,8 @@ struct PopoverPullRequestList: View {
 struct PopoverPullRequestRow: View {
     let model: AppModel
     let snapshot: ChangeRequestSnapshot
+    /// Your review state, shown as a chip under the title (Reviews section).
+    var review: ReviewEntry?
     @State private var isHovering = false
 
     var body: some View {
@@ -134,6 +174,10 @@ struct PopoverPullRequestRow: View {
                         }
                         .scaledFont(.system(size: 11.5))
                         .foregroundStyle(Theme.textSecondary)
+                        if let review {
+                            let chip = ReviewText.chip(review)
+                            Chip(text: chip.text, symbol: chip.symbol, tone: chip.tone)
+                        }
                     }
                     Spacer(minLength: 0)
                 }

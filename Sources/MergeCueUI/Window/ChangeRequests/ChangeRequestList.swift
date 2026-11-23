@@ -275,13 +275,15 @@ struct ChangeRequestRow: View {
             HStack(spacing: 8) {
                 Text("@\(summary.author.username)")
                     .foregroundStyle(Theme.textSecondary)
-                if summary.involvement.contains(.reviewRequested) {
-                    Chip(text: "Reviewing", symbol: "eye", tone: .progress)
-                } else if summary.involvement.contains(.authored) {
+                if summary.involvement.contains(.authored) {
                     Chip(text: "Mine", symbol: "person")
-                } else if summary.involvement.contains(.participated) {
-                    Chip(text: "Reviewed", symbol: "bubble.left.and.bubble.right")
-                        .help("You reviewed or commented on this — MergeCue keeps following replies to your comments.")
+                } else if let entry = model.reviewEntry(snapshot) {
+                    // Your own review state (D53): Review requested, Re-approval needed, Approved by you, …
+                    let chip = ReviewText.chip(entry)
+                    Chip(text: chip.text, symbol: chip.symbol, tone: chip.tone)
+                } else if summary.involvement.contains(.participated) || summary.involvement.contains(.mentioned) {
+                    Chip(text: "Following", symbol: "bubble.left.and.bubble.right")
+                        .help("You take part in this. MergeCue keeps following replies to your comments.")
                 }
                 if summary.isDraft { Chip(text: "Draft") }
                 if let syncError {

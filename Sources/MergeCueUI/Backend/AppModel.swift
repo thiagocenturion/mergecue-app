@@ -4,14 +4,15 @@ import MergeCueCore
 import Observation
 import SwiftUI
 
-/// Main window screens (⌘1–⌘5).
+/// Main window screens (⌘1–⌘6).
 public nonisolated enum MainScreen: String, Sendable, Hashable, CaseIterable, Identifiable {
-    case inbox, changeRequests, tasks, rules, settings
+    case inbox, reviews, changeRequests, tasks, rules, settings
 
     public var id: String { rawValue }
     public var title: String {
         switch self {
         case .inbox: "Inbox"
+        case .reviews: "Reviews"
         case .changeRequests: "Pull requests"
         case .tasks: "Tasks"
         case .rules: "Rules"
@@ -22,6 +23,7 @@ public nonisolated enum MainScreen: String, Sendable, Hashable, CaseIterable, Id
     public var symbol: String {
         switch self {
         case .inbox: "tray"
+        case .reviews: "checkmark.bubble"
         case .changeRequests: "arrow.triangle.pull"
         case .tasks: "checklist.checked"
         case .rules: "wand.and.stars"
@@ -29,14 +31,15 @@ public nonisolated enum MainScreen: String, Sendable, Hashable, CaseIterable, Id
         }
     }
 
-    /// "1"…"5" for ⌘1–⌘5.
+    /// "1"…"6" for ⌘1–⌘6.
     public var shortcutDigit: Character {
         switch self {
         case .inbox: "1"
-        case .changeRequests: "2"
-        case .tasks: "3"
-        case .rules: "4"
-        case .settings: "5"
+        case .reviews: "2"
+        case .changeRequests: "3"
+        case .tasks: "4"
+        case .rules: "5"
+        case .settings: "6"
         }
     }
 }
@@ -253,6 +256,10 @@ public final class AppModel {
     public var inboxFilter = InboxFilter()
     public var showReadInInbox = false
     public var changeRequestFilter = ChangeRequestFilter()
+    /// Reviews screen filters (provider, account, search; D53).
+    public var reviewFilter = ChangeRequestFilter()
+    /// Collapsed lanes of the Reviews screen ("Approved, watching" starts collapsed).
+    public var collapsedReviewLanes: Set<ReviewLane> = [.approved]
 
     // MARK: Presentation
     public var banners: [Banner] = []

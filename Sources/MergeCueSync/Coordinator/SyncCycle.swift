@@ -135,6 +135,9 @@ struct SyncCycle {
             case .success(var snapshot)?:
                 snapshot.summary.involvement.formUnion(summary.involvement)
                 if let token = summary.versionToken { snapshot.summary.versionToken = token }
+                snapshot.viewerReview = ViewerReview.nextMemory(
+                    previous: stored[summary.key], current: snapshot, userID: me, now: now
+                )
                 let existing = try await database.attentionItems(changeRequest: summary.key)
                 for item in existing { existingByKey[item.dedupeKey] = item }
                 let derived = EventDeriver.derive(
@@ -162,7 +165,8 @@ struct SyncCycle {
             let existing = try await database.attentionItems(changeRequest: previous.key)
             for item in existing { existingByKey[item.dedupeKey] = item }
             var lifecycle: [ChangeEvent] = []
-            if case .success(let snapshot)? = results[previous.key] {
+            if case .success(var snapshot)? = results[previous.key] {
+                snapshot.viewerReview = ViewerReview.nextMemory(previous: previous, current: snapshot, userID: me, now: now)
                 let derived = EventDeriver.derive(
                     previous: previous, current: snapshot, currentUserID: me, isBaseline: isBaseline, now: now
                 )

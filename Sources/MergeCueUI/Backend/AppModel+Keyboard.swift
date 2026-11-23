@@ -88,6 +88,17 @@ extension AppModel {
         selectedChangeRequestID = next
     }
 
+    /// ↑/↓ on the Reviews screen: the next PR/MR in lane order (collapsed lanes are skipped).
+    public func moveReviewSelection(by delta: Int) {
+        let queue = reviewQueue
+        let order = [ReviewLane.toReview, .waitingOnAuthor, .approved]
+            .filter { !collapsedReviewLanes.contains($0) }
+            .flatMap { queue.entries($0).map(\.id) }
+        guard let next = KeyboardSelection.step(order, from: selectedChangeRequestID, by: delta) else { return }
+        if next != selectedChangeRequestID { changeRequestTab = .conversation }
+        selectedChangeRequestID = next
+    }
+
     /// Return / Space on a PR/MR row: shows its conversation.
     public func openChangeRequest(_ id: String) {
         selectedChangeRequestID = id
@@ -176,30 +187,36 @@ extension AppModel {
         switch screen {
         case .inbox:
             if let item = attentionItem(selectedAttentionID) {
-                title = "Inbox — \(item.repoFullPath) \(item.providerKind.formattedNumber(item.number))"
+                title = "Inbox · \(item.repoFullPath) \(item.providerKind.formattedNumber(item.number))"
             } else {
                 title = "Inbox"
             }
+        case .reviews:
+            if let snapshot = snapshot(id: selectedChangeRequestID) {
+                title = "\(MainScreen.reviews.title) · \(snapshot.summary.repository.fullPath) \(snapshot.summary.providerKind.formattedNumber(snapshot.summary.key.number))"
+            } else {
+                title = MainScreen.reviews.title
+            }
         case .changeRequests:
             if let snapshot = snapshot(id: selectedChangeRequestID) {
-                title = "\(MainScreen.changeRequests.title) — \(snapshot.summary.repository.fullPath) \(snapshot.summary.providerKind.formattedNumber(snapshot.summary.key.number))"
+                title = "\(MainScreen.changeRequests.title) · \(snapshot.summary.repository.fullPath) \(snapshot.summary.providerKind.formattedNumber(snapshot.summary.key.number))"
             } else {
                 title = MainScreen.changeRequests.title
             }
         case .tasks:
             if let record = task(selectedTaskID) {
-                title = "Task \(record.id.rawValue) — \(TaskStateStyle.label(record))"
+                title = "Task \(record.id.rawValue) · \(TaskStateStyle.label(record))"
             } else {
                 title = "Tasks"
             }
         case .rules:
             if let id = selectedRuleID, let rule = state.rules.first(where: { $0.id == id }) {
-                title = "Rules — \(rule.name)"
+                title = "Rules · \(rule.name)"
             } else {
                 title = "Rules"
             }
         case .settings:
-            title = "Settings — \(settingsTab.title)"
+            title = "Settings · \(settingsTab.title)"
         }
         return (title, subtitle)
     }

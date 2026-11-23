@@ -349,6 +349,8 @@ nonisolated extension AttentionReason {
         case .reviewRequested: "eye.fill"
         case .readyToMerge: "checkmark.circle.fill"
         case .mergeConflict: "arrow.triangle.merge"
+        case .reapprovalNeeded: "arrow.counterclockwise.circle.fill"
+        case .updatedSinceReview: "arrow.triangle.2.circlepath"
         }
     }
 
@@ -356,7 +358,8 @@ nonisolated extension AttentionReason {
         switch self {
         case .changesRequested, .reviewComment, .reviewerQuestion, .reply: .attention
         case .ciFailed, .mergeConflict: .critical
-        case .codeSuggestion, .reviewRequested: .progress
+        case .reapprovalNeeded: .attention
+        case .codeSuggestion, .reviewRequested, .updatedSinceReview: .progress
         case .readyToMerge: .success
         }
     }

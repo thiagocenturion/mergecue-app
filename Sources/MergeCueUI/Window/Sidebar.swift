@@ -1,7 +1,7 @@
 import MergeCueCore
 import SwiftUI
 
-/// Logo, navigation (⌘1–⌘5), connected accounts with their sync status, the non-live badge and the sync footer.
+/// Logo, navigation (⌘1–⌘6), connected accounts with their sync status, the non-live badge and the sync footer.
 /// In a narrow window (`compact`) it shows icons only; labels move to tooltips and VoiceOver.
 struct Sidebar: View {
     let model: AppModel
@@ -53,6 +53,7 @@ struct Sidebar: View {
         switch screen {
         case .inbox: model.sections.needsYou.filter { if case .attention = $0.source { true } else { false } }.count
         case .tasks: model.sections.count(.ready) + model.state.tasks.filter { [.blocked, .failed, .stale].contains($0.task.state) }.count
+        case .reviews: model.reviewQueue.toReview.count
         case .rules: model.pendingRuleProposals.count
         case .changeRequests, .settings: 0
         }

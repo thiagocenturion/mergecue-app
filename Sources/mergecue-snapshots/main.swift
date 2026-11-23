@@ -171,6 +171,22 @@ func d48Scenes() -> [Scene] {
     return list
 }
 
+/// D53 scenes: the Reviews screen with every lane open, and the prompt shown while reviews are not tracked.
+func d53Scenes() -> [Scene] {
+    var list: [Scene] = []
+    list.append(Scene(name: "window-reviews", size: windowSize, configure: { model in
+        model.screen = .reviews
+        model.collapsedReviewLanes = []
+        model.selectedChangeRequestID = model.state.changeRequests.first {
+            $0.summary.providerKind == .bitbucketCloud && $0.summary.key.number == 12
+        }?.id
+    }, kind: window))
+    list.append(Scene(name: "window-reviews-untracked", size: windowSize, configure: { model in
+        model.screen = .reviews
+    }, kind: window, prepare: { $0.trackingPreferences = .authoredOnly }))
+    return list
+}
+
 let scenes: [Scene] = [
     // The four mockup screens.
     Scene(name: "1-main-inbox", size: windowSize, configure: { model in
@@ -592,7 +608,7 @@ if !arguments.contains("--no-engine-demo"), filter.map({ $0.hasPrefix("engine") 
     written += renderEngineDemo()
 }
 
-for scene in scenes + d48Scenes() where filter.map({ !$0.hasPrefix("engine") && scene.name.contains($0) }) ?? true {
+for scene in scenes + d48Scenes() + d53Scenes() where filter.map({ !$0.hasPrefix("engine") && scene.name.contains($0) }) ?? true {
     for (suffix, appearance) in [("dark", NSAppearance.Name.darkAqua), ("light", NSAppearance.Name.aqua)] {
         let model: AppModel
         if let prepare = scene.prepare {

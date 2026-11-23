@@ -356,9 +356,9 @@ extension Theme {
         case .changesRequested, .ciFailed: needsText
         case .reviewerQuestion, .codeSuggestion: violetText
         case .reviewComment, .reply: accentText
-        case .reviewRequested: cyanText
+        case .reviewRequested, .updatedSinceReview: cyanText
         case .readyToMerge: mintText
-        case .mergeConflict: waitingText
+        case .mergeConflict, .reapprovalNeeded: waitingText
         }
     }
 
@@ -371,6 +371,8 @@ extension Theme {
         case .reviewRequested: "eye.fill"
         case .readyToMerge: "checkmark.circle.fill"
         case .mergeConflict: "exclamationmark.triangle.fill"
+        case .reapprovalNeeded: "arrow.counterclockwise.circle.fill"
+        case .updatedSinceReview: "arrow.triangle.2.circlepath.circle.fill"
         }
     }
 
@@ -380,9 +382,9 @@ extension Theme {
         case .changesRequested, .ciFailed: needs
         case .reviewerQuestion, .codeSuggestion: violet
         case .reviewComment, .reply: accent
-        case .reviewRequested: cyan
+        case .reviewRequested, .updatedSinceReview: cyan
         case .readyToMerge: mint
-        case .mergeConflict: waiting
+        case .mergeConflict, .reapprovalNeeded: waiting
         }
     }
 }

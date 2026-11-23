@@ -415,7 +415,8 @@ nonisolated extension AttentionReason {
         case .ciFailed: .ciFailed
         case .reviewRequested: .reviewRequested
         case .readyToMerge: .readyToMerge
-        case .mergeConflict: .headChanged
+        case .mergeConflict, .updatedSinceReview: .headChanged
+        case .reapprovalNeeded: .approvalReset
         }
     }
 }

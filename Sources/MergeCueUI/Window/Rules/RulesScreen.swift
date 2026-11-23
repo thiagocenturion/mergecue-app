@@ -235,6 +235,7 @@ enum RuleText {
         case .reviewRequested: "a review request"
         case .headChanged: "new commits"
         case .threadResolved: "a resolved thread"
+        case .approvalReset: "a reset approval"
         }
     }
 

@@ -28,7 +28,7 @@ public enum TaskType: String, Codable, Sendable, CaseIterable {
         case .codeSuggestion: .addressSuggestion
         case .reviewerQuestion, .reply: .draftReply
         case .ciFailed: .investigateCI
-        case .reviewRequested, .readyToMerge, .mergeConflict: nil
+        case .reviewRequested, .readyToMerge, .mergeConflict, .reapprovalNeeded, .updatedSinceReview: nil
         }
     }
 }

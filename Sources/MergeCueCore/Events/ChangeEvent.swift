@@ -14,6 +14,8 @@ public enum ChangeEventType: String, Codable, Sendable, CaseIterable, CodingKeyR
     case reviewRequested = "review_requested"
     case headChanged = "head_changed"
     case threadResolved = "thread_resolved"
+    /// The current user's approval of someone else's change request was reset by new commits (D53).
+    case approvalReset = "approval_reset"
 
     public var displayName: String {
         switch self {
@@ -29,6 +31,7 @@ public enum ChangeEventType: String, Codable, Sendable, CaseIterable, CodingKeyR
         case .reviewRequested: "Review requested"
         case .headChanged: "New commits"
         case .threadResolved: "Thread resolved"
+        case .approvalReset: "Approval reset"
         }
     }
 }

@@ -585,7 +585,7 @@ struct GeneralSettings: View {
                     }
                     Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
                         shortcut(model.globalHotKey == .off ? "—" : model.globalHotKey.displayName, "Show or hide the popover (works in any app, no Accessibility permission needed)")
-                        shortcut("⌘1 … ⌘5", "Inbox, PRs & MRs, Tasks, Rules, Settings")
+                        shortcut("⌘1 … ⌘6", "Inbox, Reviews, PRs & MRs, Tasks, Rules, Settings")
                         shortcut("⌘R", "Refresh all accounts")
                         shortcut("⌘,", "Settings")
                         shortcut("⌘K", "Search the inbox")

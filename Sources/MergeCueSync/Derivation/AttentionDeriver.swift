@@ -16,9 +16,14 @@ import MergeCueCore
 /// - `ci_failed`: one item per check name on the user's own CR while that check is still failing
 ///   (`high`, or `normal` for checks the provider marks as not required).
 /// - `change_requested` on the user's CR while a reviewer's latest verdict is still "changes requested".
-/// - `review_requested` while the review is still requested; `ready_to_merge` on the user's CR while ready.
+/// - `review_requested` while the review is still requested and the user has not given a verdict;
+///   `ready_to_merge` on the user's CR while ready.
+/// - Reviews of others' CRs (D53, `ViewerReview.status`): `approval_reset` → `reapprovalNeeded` while the approval
+///   is still missing; `head_changed` after the user commented or requested changes → `updatedSinceReview` until
+///   they review again.
 /// - Resolution (`disposition = .resolved`): thread resolved or gone, check recovered/passing/gone, no outstanding
-///   change request, review no longer requested, readiness lost, and every item once the CR is merged/closed.
+///   change request, review no longer requested or given, re-approval given, re-reviewed, readiness lost, and every
+///   item once the CR is merged/closed.
 /// - Baseline events follow the same rules, so the first sync creates items for currently actionable state only.
 public enum AttentionDeriver {
     public static func apply(
@@ -86,6 +91,13 @@ public enum AttentionDeriver {
             .filter { $0.state == .changesRequested && $0.person.remoteID != userID }
             .map(\.person)
             .sorted { $0.username < $1.username }
+    }
+
+    /// New commits after the user commented or requested changes (and their approval was not reset, which has its
+    /// own item).
+    public static func isUpdatedSinceReview(_ status: ViewerReviewStatus) -> Bool {
+        status.lane == .toReview && status.headMovedSinceVerdict && !status.needsReapproval
+            && (status.verdict == .changesRequested || status.verdict == .commented)
     }
 
     /// Reason of a thread item (see type docs).
@@ -227,7 +239,9 @@ public enum AttentionDeriver {
                 ))
             }
             let requestEvents = events.filter { $0.type == .reviewRequested }
-            if !requestEvents.isEmpty, snapshot.summary.involvement.contains(.reviewRequested) {
+            if !requestEvents.isEmpty, snapshot.summary.involvement.contains(.reviewRequested),
+               ViewerReview.currentVerdict(snapshot, userID: me) == nil
+            {
                 put(item(
                     dedupeKey: AttentionItem.dedupeKey(changeRequest: snapshot.key, reason: .reviewRequested),
                     reason: .reviewRequested,
@@ -235,11 +249,33 @@ public enum AttentionDeriver {
                     events: requestEvents
                 ))
             }
+            deriveViewerReviewItems(events)
             let readyEvents = events.filter { $0.type == .readyToMerge }
             if isMine, !readyEvents.isEmpty, snapshot.readiness == .readyToMerge {
                 put(item(
                     dedupeKey: AttentionItem.dedupeKey(changeRequest: snapshot.key, reason: .readyToMerge),
                     reason: .readyToMerge, summary: "Ready to merge", events: readyEvents
+                ))
+            }
+        }
+
+        /// Re-approval and "updated since your review" items on change requests the user reviews (D53).
+        private mutating func deriveViewerReviewItems(_ events: [ChangeEvent]) {
+            guard !isMine, let status = ViewerReview.status(of: snapshot, userID: me) else { return }
+            let resets = events.filter { $0.type == .approvalReset }
+            if !resets.isEmpty, status.needsReapproval {
+                put(item(
+                    dedupeKey: AttentionItem.dedupeKey(changeRequest: snapshot.key, reason: .reapprovalNeeded),
+                    reason: .reapprovalNeeded, summary: "Your approval was reset by new commits", events: resets
+                ))
+            }
+            let pushes = events.filter { $0.type == .headChanged }
+            if !pushes.isEmpty, AttentionDeriver.isUpdatedSinceReview(status) {
+                let since = status.verdict == .changesRequested ? "you requested changes" : "your review"
+                let what = status.rebasedSinceVerdict ? "Rebased" : "New commits"
+                put(item(
+                    dedupeKey: AttentionItem.dedupeKey(changeRequest: snapshot.key, reason: .updatedSinceReview),
+                    reason: .updatedSinceReview, summary: "\(what) since \(since)", events: pushes
                 ))
             }
         }
@@ -291,6 +327,11 @@ public enum AttentionDeriver {
                 return AttentionDeriver.outstandingChangeRequesters(snapshot, userID: me).isEmpty
             case .reviewRequested:
                 return !snapshot.summary.involvement.contains(.reviewRequested)
+                    || ViewerReview.currentVerdict(snapshot, userID: me) != nil
+            case .reapprovalNeeded:
+                return ViewerReview.status(of: snapshot, userID: me)?.needsReapproval != true
+            case .updatedSinceReview:
+                return !(ViewerReview.status(of: snapshot, userID: me).map(AttentionDeriver.isUpdatedSinceReview) ?? false)
             case .readyToMerge:
                 return snapshot.readiness != .readyToMerge
             case .reviewComment, .reviewerQuestion, .codeSuggestion, .reply, .mergeConflict:
