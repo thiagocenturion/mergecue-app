@@ -65,4 +65,38 @@ struct ReviewQueueTests {
         #expect(MainScreen.reviews.shortcutDigit == "2")
         #expect(Set(MainScreen.allCases.map(\.shortcutDigit)).count == MainScreen.allCases.count)
     }
+
+    // MARK: D54: mine vs others
+
+    @Test func popoverScopeFiltersRowsButNotCounts() async {
+        let model = await makeModel()
+        let total = model.sections.count(.needsYou)
+        model.inboxFilter.scope = .mine
+        let mine = model.popoverSections.items(.needsYou)
+        #expect(!mine.isEmpty && mine.count < total)
+        let involvement = Dictionary(model.state.changeRequests.map { ($0.key, $0.summary.involvement) }, uniquingKeysWith: { a, _ in a })
+        #expect(mine.allSatisfy { involvement[$0.changeRequest]?.contains(.authored) == true })
+        #expect(model.sections.count(.needsYou) == total, "the badge keeps counting everything")
+        #expect(model.needsYouCount == total)
+        model.inboxFilter.scope = .all
+        #expect(model.popoverSections == model.sections)
+    }
+
+    @Test func othersPullRequestsOpenInReviews() async throws {
+        let model = await makeModel()
+        let theirs = try #require(model.state.changeRequests.first { $0.key.kind == .bitbucketCloud && $0.key.number == 12 })
+        model.showChangeRequest(theirs.key)
+        #expect(model.screen == .reviews)
+        #expect(model.selectedChangeRequestID == theirs.id)
+        let mine = try #require(model.state.changeRequests.first { $0.summary.involvement.contains(.authored) })
+        model.showChangeRequest(mine.key)
+        #expect(model.screen == .changeRequests)
+    }
+
+    @Test func pullRequestsScreenListsOnlyYourOwn() async {
+        let model = await makeModel()
+        let items = ChangeRequestQueryUI.run(state: model.state, filter: model.changeRequestFilter).flatMap(\.items)
+        #expect(!items.isEmpty)
+        #expect(items.allSatisfy { $0.summary.involvement.contains(.authored) })
+    }
 }

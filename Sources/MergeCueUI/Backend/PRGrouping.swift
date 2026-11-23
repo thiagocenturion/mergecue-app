@@ -72,7 +72,7 @@ extension AppModel {
 
     /// The popover rows of `section` shown (up to `popoverRowLimit`), grouped by change request.
     public func popoverGroups(_ section: PopoverSection) -> [PopoverPRGroup] {
-        PopoverPRGroup.make(Array(sections.items(section).prefix(Self.popoverRowLimit)), section: section)
+        PopoverPRGroup.make(Array(popoverSections.items(section).prefix(Self.popoverRowLimit)), section: section)
     }
 }
 

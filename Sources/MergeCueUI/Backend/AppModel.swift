@@ -255,7 +255,8 @@ public final class AppModel {
     // MARK: Filters
     public var inboxFilter = InboxFilter()
     public var showReadInInbox = false
-    public var changeRequestFilter = ChangeRequestFilter()
+    /// Pull requests screen: your own PRs/MRs only; others' are on the Reviews screen (D54).
+    public var changeRequestFilter = ChangeRequestFilter(scope: .mine)
     /// Reviews screen filters (provider, account, search; D53).
     public var reviewFilter = ChangeRequestFilter()
     /// Collapsed lanes of the Reviews screen ("Approved, watching" starts collapsed).
@@ -673,6 +674,17 @@ public final class AppModel {
     // MARK: Popover keyboard navigation
 
     /// Rows visible in the popover (top 3 per section), in keyboard order.
+    /// The popover's Inbox rows after the shared All / Mine / Reviews filter (`inboxFilter.scope`, D54). Counts,
+    /// badges and the menu bar keep using the unfiltered `sections`.
+    public var popoverSections: PopoverSections {
+        let scope = inboxFilter.scope
+        guard scope != .all else { return sections }
+        let involvement = Dictionary(state.changeRequests.map { ($0.key, $0.summary.involvement) }, uniquingKeysWith: { first, _ in first })
+        let keep = { (item: PopoverItem) in scope.includes(involvement[item.changeRequest]) }
+        return PopoverSections(needsYou: sections.needsYou.filter(keep), inProgress: sections.inProgress.filter(keep),
+                               ready: sections.ready.filter(keep))
+    }
+
     public var popoverRows: [PopoverItem] {
         guard popoverTab == .inbox else { return [] }
         return PopoverSection.allCases.filter { !collapsedPopoverSections.contains($0) }.flatMap { section in

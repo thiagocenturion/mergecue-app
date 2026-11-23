@@ -113,15 +113,20 @@ public struct PopoverView: View {
         ScrollViewReader { proxy in
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 18) {
-                    ApprovalHighlights(model: model, compact: true)
+                    // Approvals of your own PRs; the Reviews tab is about others' PRs only (D54).
+                    if model.popoverTab != .reviews { ApprovalHighlights(model: model, compact: true) }
                     switch model.popoverTab {
                     case .inbox:
+                        PopoverScopeChips(model: model)
                         ForEach(PopoverSection.allCases) { section in
                             PopoverSectionView(model: model, section: section, voiceOverFocus: $voiceOverFocus)
                         }
                         .transition(.opacity.combined(with: .move(edge: .leading)))
                     case .pullRequests:
                         PopoverPullRequestList(model: model)
+                            .transition(.opacity.combined(with: .move(edge: .trailing)))
+                    case .reviews:
+                        PopoverReviewList(model: model)
                             .transition(.opacity.combined(with: .move(edge: .trailing)))
                     }
                 }
@@ -401,7 +406,7 @@ struct PopoverSectionView: View {
     private var isCollapsed: Bool { model.collapsedPopoverSections.contains(section) }
 
     var body: some View {
-        let items = model.sections.items(section)
+        let items = model.popoverSections.items(section)
         VStack(alignment: .leading, spacing: 10) {
             Button {
                 withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) {

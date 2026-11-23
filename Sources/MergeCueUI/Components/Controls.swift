@@ -320,21 +320,23 @@ struct SectionMarker: View {
 struct FilterChips<Value: Hashable>: View {
     var options: [(Value, String)]
     @Binding var selection: Value
+    /// Smaller chips for the menu bar popover.
+    var compact = false
     @Namespace private var highlight
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: compact ? 6 : 10) {
             ForEach(Array(options.enumerated()), id: \.offset) { _, option in
                 let isSelected = option.0 == selection
                 Button {
                     withAnimation(Motion.snappy) { selection = option.0 }
                 } label: {
                     Text(option.1)
-                        .scaledFont(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                        .scaledFont(.system(size: compact ? 12 : 13, weight: isSelected ? .semibold : .medium))
                         .foregroundStyle(isSelected ? Color.white : Theme.textSecondary)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 4)
-                        .frame(minHeight: 32)
+                        .padding(.horizontal, compact ? 13 : 20)
+                        .padding(.vertical, compact ? 2 : 4)
+                        .frame(minHeight: compact ? 26 : 32)
                         .background {
                             if isSelected {
                                 Capsule()

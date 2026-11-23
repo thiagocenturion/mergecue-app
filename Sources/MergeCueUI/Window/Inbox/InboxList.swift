@@ -46,7 +46,7 @@ struct InboxColumn: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             HStack(spacing: 10) {
-                FilterChips(options: [(InboxScope.all, "All"), (.mine, "Mine"), (.reviewing, "Reviewing")], selection: $model.inboxFilter.scope)
+                FilterChips(options: [(InboxScope.all, "All"), (.mine, "Mine"), (.reviewing, "Reviews")], selection: $model.inboxFilter.scope)
                 Spacer(minLength: 8)
                 InboxFilterMenu(model: model)
             }

@@ -1,7 +1,7 @@
 import MergeCueCore
 import SwiftUI
 
-/// Pull and merge requests across accounts, one section per account with its explicit state (Loading, No PRs/MRs,
+/// Your own pull and merge requests across accounts (others' are on the Reviews screen, D54), one section per account with its explicit state (Loading, No PRs/MRs,
 /// Offline, Credentials expired, Rate limited, Unsupported permission). A problem on one account never hides the others.
 struct ChangeRequestList: View {
     @Bindable var model: AppModel
@@ -74,11 +74,6 @@ struct ChangeRequestList: View {
                 .accessibilityAddTraits(.isHeader)
             SearchField(text: $model.changeRequestFilter.searchText, prompt: "Search title, repo, author, #42…")
             HStack(spacing: 8) {
-                FilterMenu(title: model.changeRequestFilter.scope.title, isActive: model.changeRequestFilter.scope != .all) {
-                    ForEach(InboxScope.allCases) { scope in
-                        Button(scope.title) { model.changeRequestFilter.scope = scope }
-                    }
-                }
                 FilterMenu(title: model.changeRequestFilter.provider?.displayName ?? "Provider", isActive: model.changeRequestFilter.provider != nil) {
                     Button("Any Provider") { model.changeRequestFilter.provider = nil }
                     Divider()
@@ -275,16 +270,6 @@ struct ChangeRequestRow: View {
             HStack(spacing: 8) {
                 Text("@\(summary.author.username)")
                     .foregroundStyle(Theme.textSecondary)
-                if summary.involvement.contains(.authored) {
-                    Chip(text: "Mine", symbol: "person")
-                } else if let entry = model.reviewEntry(snapshot) {
-                    // Your own review state (D53): Review requested, Re-approval needed, Approved by you, …
-                    let chip = ReviewText.chip(entry)
-                    Chip(text: chip.text, symbol: chip.symbol, tone: chip.tone)
-                } else if summary.involvement.contains(.participated) || summary.involvement.contains(.mentioned) {
-                    Chip(text: "Following", symbol: "bubble.left.and.bubble.right")
-                        .help("You take part in this. MergeCue keeps following replies to your comments.")
-                }
                 if summary.isDraft { Chip(text: "Draft") }
                 if let syncError {
                     Chip(text: "Not refreshed", symbol: "exclamationmark.triangle", tone: .attention)

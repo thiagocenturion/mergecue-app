@@ -125,12 +125,4 @@ extension AppModel {
     public var reviewQueue: ReviewQueue {
         ReviewQueue.run(state: state, filter: reviewFilter, now: now)
     }
-
-    /// The user's review entry of one change request (chips on the Pull requests list), nil for their own.
-    public func reviewEntry(_ snapshot: ChangeRequestSnapshot) -> ReviewEntry? {
-        let replies = state.attention.filter {
-            $0.changeRequest == snapshot.key && $0.thread != nil && $0.isActionable(now: now)
-        }.count
-        return ReviewQueue.entry(snapshot, replies: replies)
-    }
 }

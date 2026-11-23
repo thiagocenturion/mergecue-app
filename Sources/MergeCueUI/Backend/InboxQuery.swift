@@ -288,9 +288,10 @@ public nonisolated enum ChangeRequestQueryUI {
         state.accounts.compactMap { account in
             if let provider = filter.provider, account.kind != provider { return nil }
             if let only = filter.account, account.id != only { return nil }
-            let all = state.changeRequests.filter { $0.key.account == account.id }
+            let all = state.changeRequests.filter {
+                $0.key.account == account.id && filter.scope.includes($0.summary.involvement)
+            }
             let items = all.filter { snapshot in
-                guard filter.scope.includes(snapshot.summary.involvement) else { return false }
                 guard filter.includeClosed || snapshot.summary.state == .open else { return false }
                 return matchesSearch(snapshot, text: filter.searchText)
             }

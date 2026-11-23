@@ -64,7 +64,9 @@ extension AppModel {
     }
 
     public func showChangeRequest(_ key: ChangeRequestKey) {
-        screen = .changeRequests
+        // Your own PRs/MRs live on Pull requests, others' on Reviews (D54).
+        let isMine = snapshot(key).map { $0.summary.involvement.contains(.authored) || $0.summary.author.remoteID == key.account.remoteUserID } ?? true
+        screen = isMine ? .changeRequests : .reviews
         selectedChangeRequestID = key.id
         changeRequestFilter.includeClosed = changeRequestFilter.includeClosed || snapshot(key)?.summary.state != .open
         openMainWindow()

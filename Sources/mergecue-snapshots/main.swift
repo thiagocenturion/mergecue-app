@@ -184,6 +184,9 @@ func d53Scenes() -> [Scene] {
     list.append(Scene(name: "window-reviews-untracked", size: windowSize, configure: { model in
         model.screen = .reviews
     }, kind: window, prepare: { $0.trackingPreferences = .authoredOnly }))
+    // D54: the popover's Reviews tab, and its Inbox narrowed to your own PRs with the Mine chip.
+    list.append(Scene(name: "popover-reviews", configure: { $0.popoverTab = .reviews }, kind: popover))
+    list.append(Scene(name: "popover-inbox-mine", configure: { $0.inboxFilter.scope = .mine }, kind: popover))
     return list
 }
 
