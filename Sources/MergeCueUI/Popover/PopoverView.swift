@@ -329,22 +329,17 @@ struct PopoverFooter: View {
             Rectangle().fill(Theme.divider).frame(width: 1, height: 22).padding(.horizontal, 4)
                 .accessibilityHidden(true)
             // Settings, the window and Quit in one menu, so quitting doesn't depend on right-clicking the menu bar icon.
-            Menu {
-                Button("Settings…") { model.showSettings() }
-                Button("Open MergeCue") { model.showScreen(.inbox) }
-                if let quit = model.quitHandler {
-                    Divider()
-                    Button("Quit MergeCue", action: quit)
-                }
+            AppKitMenuButton {
+                var entries: [AppKitMenuEntry] = [
+                    .action("Settings…") { model.showSettings() },
+                    .action("Open MergeCue") { model.showScreen(.inbox) },
+                ]
+                if let quit = model.quitHandler { entries += [.divider, .action("Quit MergeCue", quit)] }
+                return entries
             } label: {
                 Image(systemName: "gearshape")
                     .scaledFont(.system(size: 13.5, weight: .medium))
-                    .foregroundStyle(Theme.textSecondary)
-                    .frame(width: 30, height: 30)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
             .help("Settings and Quit (⌘, opens Settings)")
             .accessibilityLabel("Settings and more")
             .background {
@@ -364,28 +359,24 @@ struct PauseNotificationsMenu: View {
     let model: AppModel
 
     var body: some View {
-        Menu {
-            Button("Pause for 1 Hour") {
-                Task { await model.send(.pauseNotifications(until: model.now.addingTimeInterval(3_600))) }
-            }
-            Button("Pause Until Tomorrow") {
-                Task { await model.send(.pauseNotifications(until: PauseOptions.tomorrowMorning(after: model.now))) }
-            }
+        AppKitMenuButton {
+            var entries: [AppKitMenuEntry] = [
+                .action("Pause for 1 Hour") {
+                    Task { await model.send(.pauseNotifications(until: model.now.addingTimeInterval(3_600))) }
+                },
+                .action("Pause Until Tomorrow") {
+                    Task { await model.send(.pauseNotifications(until: PauseOptions.tomorrowMorning(after: model.now))) }
+                },
+            ]
             if model.notificationsPaused {
-                Divider()
-                Button("Resume Notifications") {
-                    Task { await model.send(.pauseNotifications(until: nil)) }
-                }
+                entries += [.divider, .action("Resume Notifications") { Task { await model.send(.pauseNotifications(until: nil)) } }]
             }
+            return entries
         } label: {
             Image(systemName: model.notificationsPaused ? "bell.slash.fill" : "bell")
                 .scaledFont(.system(size: 13.5, weight: .medium))
                 .foregroundStyle(model.notificationsPaused ? Theme.waitingText : Theme.textSecondary)
-                .frame(width: 30, height: 30)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
         .help(model.notificationsPaused ? "Notifications paused" : "Pause notifications")
         .accessibilityLabel(model.notificationsPaused ? "Notifications paused" : "Pause notifications")
     }
