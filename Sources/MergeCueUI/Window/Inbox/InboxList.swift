@@ -5,13 +5,26 @@ import SwiftUI
 /// the change request panel of the selected item.
 struct InboxScreen: View {
     let model: AppModel
+    /// The detail width while the split line is being dragged (saved when the drag ends).
+    @State private var dragWidth: CGFloat?
 
     var body: some View {
         GeometryReader { proxy in
-            let detailWidth = min(620, max(440, proxy.size.width * 0.47))
+            // The inbox column keeps 500 pt, the detail 400 pt; the owner's dragged width wins over the default (D49).
+            let range = CGFloat(400)...max(400, proxy.size.width - 500)
+            let preferred = dragWidth ?? model.splitWidth("inbox") ?? min(620, max(440, proxy.size.width * 0.47))
+            let detailWidth = min(max(preferred, range.lowerBound), range.upperBound)
             HStack(spacing: 0) {
                 InboxColumn(model: model)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                SplitDivider(
+                    width: Binding(get: { detailWidth }, set: { dragWidth = $0 }), range: range, controlsLeadingPane: false,
+                    onReset: { model.setSplitWidth("inbox", nil) },
+                    onCommit: {
+                        if let dragWidth { model.setSplitWidth("inbox", dragWidth) }
+                        dragWidth = nil
+                    }
+                )
                 InboxDetail(model: model)
                     .frame(width: detailWidth)
                     .frame(maxHeight: .infinity)
@@ -275,55 +288,57 @@ struct InboxSummaryCards: View {
     @Environment(\.glassEffectsEnabled) private var glassEnabled
 
     var body: some View {
-        // The icon circles drop out when the column is too narrow (small window or large text).
+        // The icons always show (owner preference); narrow columns get smaller icons, then shrinking labels.
         ViewThatFits(in: .horizontal) {
-            cards(showsIcons: true)
-            cards(showsIcons: false)
+            cards(iconSize: 44, flexibleText: false)
+            cards(iconSize: 34, flexibleText: false)
+            cards(iconSize: 30, flexibleText: true)
         }
     }
 
-    private func cards(showsIcons: Bool) -> some View {
-        HStack(spacing: 14) {
-            card(.needsYou, title: "Needs you", symbol: "exclamationmark", showsIcon: showsIcons) {
+    private func cards(iconSize: CGFloat, flexibleText: Bool) -> some View {
+        HStack(spacing: flexibleText ? 10 : 14) {
+            card(.needsYou, title: "Needs you", symbol: "exclamationmark", iconSize: iconSize, flexibleText: flexibleText) {
                 model.inboxFilter.status = .needsAction
             }
-            card(.inProgress, title: "In progress", symbol: "progress.indicator", showsIcon: showsIcons) { model.showAll(.inProgress) }
-            card(.ready, title: "Ready", symbol: "checkmark", showsIcon: showsIcons) { model.showAll(.ready) }
+            card(.inProgress, title: "In progress", symbol: "progress.indicator", iconSize: iconSize, flexibleText: flexibleText) { model.showAll(.inProgress) }
+            card(.ready, title: "Ready", symbol: "checkmark", iconSize: iconSize, flexibleText: flexibleText) { model.showAll(.ready) }
         }
     }
 
     /// Calculus's glass card with the tile's tighter padding (fallback where glass is off).
     private var tileStyle: any CardViewStyle {
-        if #available(macOS 26.0, *), glassEnabled { return LiquidGlassCardViewStyle(padding: 10) }
-        return FlatCardViewStyle(padding: 10)
+        if #available(macOS 26.0, *), glassEnabled { return LiquidGlassCardViewStyle(padding: 14) }
+        return FlatCardViewStyle(padding: 14)
     }
 
-    private func card(_ section: PopoverSection, title: String, symbol: String, showsIcon: Bool, action: @escaping () -> Void) -> some View {
+    private func card(_ section: PopoverSection, title: String, symbol: String, iconSize: CGFloat, flexibleText: Bool,
+                      action: @escaping () -> Void) -> some View {
         let count = model.sections.count(section)
         let color = section == .inProgress ? Theme.violet : Theme.color(section)
         return CardView(style: tileStyle, action: action) {
-            HStack(spacing: 14) {
-                if showsIcon {
-                    Image(systemName: symbol)
-                        .scaledFont(.system(size: 17, weight: .bold))
-                        .foregroundStyle(section == .inProgress ? AnyShapeStyle(LinearGradient(colors: [Theme.violet, Theme.cyan], startPoint: .bottomLeading, endPoint: .topTrailing)) : AnyShapeStyle(color))
-                        .symbolEffect(.variableColor.iterative.reversing, options: .repeating, isActive: section == .inProgress && count > 0)
-                        .symbolEffect(.bounce, value: count)
-                        .frame(width: 44 * textScale, height: 44 * textScale)
-                        .background(Circle().fill(color.opacity(0.16)))
-                        .accessibilityHidden(true)
-                }
+            HStack(spacing: iconSize >= 44 ? 14 : 10) {
+                Image(systemName: symbol)
+                    .scaledFont(.system(size: iconSize * 0.39, weight: .bold))
+                    .foregroundStyle(section == .inProgress ? AnyShapeStyle(LinearGradient(colors: [Theme.violet, Theme.cyan], startPoint: .bottomLeading, endPoint: .topTrailing)) : AnyShapeStyle(color))
+                    .symbolEffect(.variableColor.iterative.reversing, options: .repeating, isActive: section == .inProgress && count > 0)
+                    .symbolEffect(.bounce, value: count)
+                    .frame(width: iconSize * textScale, height: iconSize * textScale)
+                    .background(Circle().fill(color.opacity(0.16)))
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .scaledFont(.system(size: 13))
                         .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                     Text("\(count)")
                         .scaledFont(.system(size: 22, weight: .semibold).monospacedDigit())
                         .foregroundStyle(Theme.textPrimary)
                         .contentTransition(.numericText(value: Double(count)))
                         .animation(Motion.snappy, value: count)
                 }
-                .fixedSize()
+                .fixedSize(horizontal: !flexibleText, vertical: true)
                 Spacer(minLength: 0)
             }
             .frame(minHeight: 58)
@@ -417,6 +432,8 @@ struct InboxItemCard: View {
                         .scaledFont(.system(size: 12.5))
                         .foregroundStyle(Theme.textSecondary)
                         .help(UIFormat.dateTime(item.updatedAt))
+                    InboxQuickActions(model: model, item: item)
+                        .padding(.vertical, -4)
                     ItemActionsMenu(model: model, item: item, size: 24)
                         .padding(.vertical, -4)
                         .padding(.trailing, -6)
@@ -455,7 +472,7 @@ struct InboxItemCard: View {
                 .padding(.top, 10)
             }
         }
-        .padding(16)
+        .padding(Theme.cardPadding)
         .selectableGlass(isSelected: isSelected, isHovering: isHovering)
         .keyboardSelectionRing(isSelected && showsKeyboardFocus, cornerRadius: Theme.radius)
         .contentShape(SmoothRect())
@@ -605,6 +622,7 @@ struct InboxPRGroupView: View {
             unreadCount: unread, marks: marks, latest: group.items.map(\.updatedAt).max(), now: model.now,
             isCollapsed: model.isInboxGroupCollapsed(group.changeRequest),
             approval: model.approvalSummary(group.changeRequest),
+            onOpenExternal: model.snapshot(group.changeRequest).map { snapshot in { Task { await model.send(.openURL(snapshot.summary.webURL)) } } },
             toggle: { model.toggleInboxGroup(group.changeRequest) }
         ) {
             VStack(spacing: 10) {
@@ -625,6 +643,39 @@ struct InboxPRGroupView: View {
             guard seen.insert(item.reason).inserted else { return nil }
             return PRGroupMark(symbol: Presentation.attentionText(item, snapshot: model.snapshot(item.changeRequest)).symbol,
                                color: Theme.reasonColor(item.reason))
+        }
+    }
+}
+
+/// The most used actions as icons next to the ••• menu (D48): Acknowledge (while it needs you) and open the
+/// comment, thread or PR/MR in the provider.
+struct InboxQuickActions: View {
+    let model: AppModel
+    let item: AttentionItem
+
+    var body: some View {
+        HStack(spacing: 2) {
+            if model.conversationItems(for: item).contains(where: { $0.isActionable(now: model.now) }) {
+                Button {
+                    Task { await model.acknowledgeConversation(item) }
+                } label: {
+                    Image(systemName: "checkmark.circle")
+                }
+                .buttonStyle(IconButtonStyle(size: 24, filled: false))
+                .help("Acknowledge")
+                .accessibilityLabel("Acknowledge")
+                .transition(.opacity.combined(with: .scale(scale: 0.8)))
+            }
+            if let url = model.providerURL(for: item) {
+                Button {
+                    Task { await model.send(.openURL(url)) }
+                } label: {
+                    Image(systemName: "arrow.up.right.square")
+                }
+                .buttonStyle(IconButtonStyle(size: 24, filled: false))
+                .help(item.thread == nil ? "Open in \(item.providerKind.displayName)" : "Open the comment in \(item.providerKind.displayName)")
+                .accessibilityLabel("Open in \(item.providerKind.displayName)")
+            }
         }
     }
 }

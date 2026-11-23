@@ -12,9 +12,8 @@ struct Sidebar: View {
 
     var body: some View {
         VStack(alignment: compact ? .center : .leading, spacing: 0) {
-            // The panel starts `floatingInset` below the window top; the logo stays where it was.
-            Color.clear.frame(height: max(0, MainWindowMetrics.titlebarInset - Self.floatingInset))
-            SidebarLogo(compact: compact)
+            Color.clear.frame(height: 16)
+            SidebarProfile(model: model, compact: compact)
                 .padding(.bottom, compact ? 18 : 26)
             ScrollView(.vertical) {
                 VStack(alignment: compact ? .center : .leading, spacing: 0) {

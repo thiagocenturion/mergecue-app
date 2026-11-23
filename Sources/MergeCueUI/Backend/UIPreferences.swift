@@ -44,6 +44,10 @@ public nonisolated enum UIPreferenceKeys {
     public static let appearance = "MergeCueAppearance"
     public static let darkStyle = "MergeCueDarkStyle"
     public static let handoffCollapsed = "MergeCueHandoffCollapsed"
+    public static let sidebarCollapsed = "MergeCueSidebarCollapsed"
+    public static let avatarAccount = "MergeCueAvatarAccount"
+    public static let detailTabs = "MergeCueDetailTabs"
+    public static let splitWidths = "MergeCueSplitWidths"
     /// JSON `{changeRequestID: [approverRemoteID]}` of approvals already seen (D47).
     public static let seenApprovals = "MergeCueSeenApprovals"
 }

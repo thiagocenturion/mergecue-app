@@ -61,6 +61,7 @@ struct ApprovalHighlightCard: View {
                         }
                     }
                     .scaledFont(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
                 }
             }
             .layoutPriority(1)
@@ -81,7 +82,7 @@ struct ApprovalHighlightCard: View {
             .help("Dismiss")
             .accessibilityLabel("Dismiss approval")
         }
-        .padding(.horizontal, compact ? 12 : 16)
+        .padding(.horizontal, compact ? 16 : Theme.cardPadding)
         .padding(.vertical, compact ? 10 : 12)
         .sheen(active: !reduceMotion, shape: SmoothRect())
         .glassCard(tint: Theme.mint)

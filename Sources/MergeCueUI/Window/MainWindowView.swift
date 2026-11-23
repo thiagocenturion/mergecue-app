@@ -6,7 +6,10 @@ import SwiftUI
 public struct MainWindowView: View {
     @Bindable var model: AppModel
     /// Icon-only sidebar below `MainWindowMetrics.compactSidebarThreshold`.
-    @State private var compactSidebar = false
+    /// The window is too narrow for the full sidebar.
+    @State private var narrowWindow = false
+    /// Icon-only sidebar: chosen with the title bar toggle (D48), or forced by a narrow window.
+    private var compactSidebar: Bool { model.sidebarCollapsed || narrowWindow }
 
     public init(model: AppModel) {
         self.model = model
@@ -25,20 +28,23 @@ public struct MainWindowView: View {
                     .frame(width: compactSidebar ? Theme.compactSidebarWidth : Theme.sidebarWidth)
                     .frame(maxHeight: .infinity)
                     .glassCard()
-                    .padding(Sidebar.floatingInset)
+                    // The panel floats below the traffic lights and the sidebar toggle, never under them (D48).
+                    .padding(.top, MainWindowMetrics.titlebarInset)
+                    .padding([.leading, .bottom, .trailing], Sidebar.floatingInset)
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
             ScreenContent(model: model)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .animation(Motion.smooth, value: isFocusedReview)
+        .animation(Motion.smooth, value: compactSidebar)
         // One glow for the whole window, so navigating keeps the loop running instead of restarting it.
         .auroraBackdrop(height: 560)
         .background(Theme.windowBackground)
         .overlay(alignment: .top) { BannerStack(model: model) }
         .ignoresSafeArea()
         .frame(minWidth: MainWindowMetrics.minimumSize.width, minHeight: MainWindowMetrics.minimumSize.height)
-        .onGeometryChange(for: Bool.self) { $0.size.width < MainWindowMetrics.compactSidebarThreshold } action: { compactSidebar = $0 }
+        .onGeometryChange(for: Bool.self) { $0.size.width < MainWindowMetrics.compactSidebarThreshold } action: { narrowWindow = $0 }
         .sheet(item: $model.pendingPreview) { preview in
             ApprovalSheet(model: model, preview: preview)
                 .dynamicTypeSize(model.textSize.dynamicTypeSize)
@@ -106,7 +112,7 @@ struct ScreenContent: View {
         case .inbox:
             InboxScreen(model: model)
         case .changeRequests:
-            TwoColumnScreen(listWidth: 380) {
+            TwoColumnScreen(model: model, key: "pullRequests", listWidth: 380) {
                 ChangeRequestList(model: model)
             } detail: {
                 ChangeRequestDetail(model: model)
@@ -119,13 +125,13 @@ struct ScreenContent: View {
                 TaskList(model: model)
             }
         case .rules:
-            TwoColumnScreen(listWidth: 360) {
+            TwoColumnScreen(model: model, key: "rules", listWidth: 360) {
                 RuleList(model: model)
             } detail: {
                 RuleDetail(model: model)
             }
         case .settings:
-            TwoColumnScreen(listWidth: 250) {
+            TwoColumnScreen(model: model, key: "settings", listWidth: 250) {
                 SettingsList(model: model)
             } detail: {
                 SettingsDetail(model: model)
@@ -136,20 +142,38 @@ struct ScreenContent: View {
 
 /// A list column and a detail column below the invisible title bar.
 struct TwoColumnScreen<List: View, Detail: View>: View {
+    let model: AppModel
+    /// Saves the dragged list width per screen.
+    var key: String
+    /// Default list width.
     var listWidth: CGFloat
     @ViewBuilder var list: List
     @ViewBuilder var detail: Detail
+    /// The width while the split line is being dragged (saved when the drag ends).
+    @State private var dragWidth: CGFloat?
 
     var body: some View {
-        HStack(spacing: 0) {
-            list
-                .padding(.top, MainWindowMetrics.contentTopInset - 8)
-                .frame(width: listWidth)
-                .frame(maxHeight: .infinity)
-            Rectangle().fill(Theme.divider).frame(width: 1)
-            detail
-                .padding(.top, MainWindowMetrics.contentTopInset - 8)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        GeometryReader { proxy in
+            // The list keeps 240 pt; the detail keeps 440 pt (D49).
+            let range = CGFloat(240)...max(240, min(720, proxy.size.width - 440))
+            let width = min(max(dragWidth ?? model.splitWidth(key) ?? listWidth, range.lowerBound), range.upperBound)
+            HStack(spacing: 0) {
+                list
+                    .padding(.top, MainWindowMetrics.contentTopInset - 8)
+                    .frame(width: width)
+                    .frame(maxHeight: .infinity)
+                SplitDivider(
+                    width: Binding(get: { width }, set: { dragWidth = $0 }), range: range, controlsLeadingPane: true,
+                    onReset: { model.setSplitWidth(key, nil) },
+                    onCommit: {
+                        if let dragWidth { model.setSplitWidth(key, dragWidth) }
+                        dragWidth = nil
+                    }
+                )
+                detail
+                    .padding(.top, MainWindowMetrics.contentTopInset - 8)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
     }
 }

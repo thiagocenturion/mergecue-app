@@ -92,14 +92,19 @@ extension AppModel {
         ApprovalDerivation.highlights(state: state, seen: seenApprovals)
     }
 
-    /// The approval chip of a change request group ("2 approvals"), nil without approvals.
-    public func approvalSummary(_ changeRequest: ChangeRequestKey) -> (text: String, isNew: Bool, isSatisfied: Bool)? {
+    /// The approval chip of a change request ("2 approvals", short "2" or "1/2"), nil without approvals.
+    public func approvalSummary(_ changeRequest: ChangeRequestKey) -> ApprovalSummary? {
         guard let snapshot = snapshot(changeRequest) else { return nil }
         let people = ApprovalDerivation.approvers(snapshot).people
         guard !people.isEmpty else { return nil }
         let known = seenApprovals[changeRequest.id] ?? []
-        let text = people.count == 1 ? "Approved" : "\(people.count) approvals"
-        return (text, people.contains { !known.contains($0.remoteID) }, snapshot.approvals.isSatisfied == true)
+        let required = snapshot.approvals.requiredCount
+        return ApprovalSummary(
+            count: people.count, required: required,
+            text: required.map { "\(people.count) of \($0) approvals" } ?? (people.count == 1 ? "1 approval" : "\(people.count) approvals"),
+            short: required.map { "\(people.count)/\($0)" } ?? "\(people.count)",
+            isNew: people.contains { !known.contains($0.remoteID) }, isSatisfied: snapshot.approvals.isSatisfied == true
+        )
     }
 
     /// Marks the change request's current approvals as seen (opening it, or dismissing the highlight).
@@ -116,4 +121,16 @@ extension AppModel {
         seenApprovals = ApprovalDerivation.allApprovers(state: state).merging(seenApprovals) { $0.union($1) }
         approvalsBaselined = true
     }
+}
+
+/// Approvals of one change request for chips and rows.
+public nonisolated struct ApprovalSummary: Sendable, Hashable {
+    public var count: Int
+    public var required: Int?
+    /// "2 approvals", "1 of 2 approvals".
+    public var text: String
+    /// "2", "1/2".
+    public var short: String
+    public var isNew: Bool
+    public var isSatisfied: Bool
 }

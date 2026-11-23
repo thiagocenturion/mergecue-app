@@ -44,7 +44,7 @@ struct ApprovalSheet: View {
                     .scaledFont(Theme.body)
                     .foregroundStyle(Theme.textPrimary)
                     .textSelection(.enabled)
-                    .padding(14)
+                    .padding(Theme.cardPadding)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .cardBackground(Theme.surfaceSunken, radius: 10)
             }
@@ -72,7 +72,7 @@ struct ApprovalSheet: View {
                         .buttonStyle(SecondaryButtonStyle(size: .small))
                     }
                 }
-                .padding(12)
+                .padding(Theme.cardPadding)
                 .glassCard(tint: Theme.critical)
             }
             HStack(spacing: 10) {

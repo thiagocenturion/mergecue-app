@@ -6,9 +6,28 @@ struct InboxDetail: View {
     let model: AppModel
 
     var body: some View {
+        VStack(spacing: 10) {
+            if model.detailTabsEnabled == true, !model.inboxTabs.isEmpty {
+                DetailTabBar(
+                    tabs: model.inboxTabs.compactMap { id in
+                        model.attentionItem(id).map { item in
+                            // The item's own headline ("Roman requested changes"): several tabs can share one PR.
+                            DetailTab(id: id, title: Presentation.attentionText(item, snapshot: model.snapshot(item.changeRequest)).headline,
+                                      providerKind: item.providerKind, isUnread: model.conversationIsUnread(item))
+                        }
+                    },
+                    selected: model.selectedAttentionID,
+                    onSelect: { model.selectedAttentionID = $0 },
+                    onClose: { model.closeInboxDetail($0) },
+                    onDisable: { withAnimation(Motion.smooth) { model.detailTabsEnabled = false } }
+                )
+            } else if model.detailTabsEnabled == nil, model.selectedAttentionID != nil {
+                DetailTabsPrompt(model: model)
+            }
         ZStack {
             if let item = model.attentionItem(model.selectedAttentionID) {
-                ChangeRequestPanel(model: model, changeRequest: item.changeRequest, focus: item)
+                ChangeRequestPanel(model: model, changeRequest: item.changeRequest, focus: item,
+                                   onClose: model.detailTabsEnabled == true ? nil : { model.closeInboxDetail(item.id) })
                     .id(item.id)
                     .transition(.asymmetric(insertion: .opacity.combined(with: .offset(x: 18)), removal: .opacity))
             } else {
@@ -17,7 +36,9 @@ struct InboxDetail: View {
                     .cardBackground(Theme.panel, radius: 16)
             }
         }
+        }
         .animation(Motion.smooth, value: model.selectedAttentionID)
+        .animation(Motion.smooth, value: model.detailTabsEnabled)
         .padding(.top, MainWindowMetrics.contentTopInset - 6)
         .padding(.bottom, 14)
         .padding(.trailing, 14)

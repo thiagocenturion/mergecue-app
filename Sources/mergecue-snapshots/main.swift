@@ -131,6 +131,39 @@ func showTask(_ state: TaskState) -> (AppModel) -> Void {
     }
 }
 
+/// D48–D49 scenes, kept apart so the main array stays quick to type-check.
+func d48Scenes() -> [Scene] {
+    var list: [Scene] = []
+    list.append(
+        Scene(name: "window-inbox-tabs", size: windowSize, configure: { model in
+            model.screen = .inbox
+            model.detailTabsEnabled = true
+            for item in model.state.attention.filter({ $0.disposition == .open }).prefix(3) { model.selectedAttentionID = item.id }
+        }, kind: window)
+    )
+    list.append(
+        Scene(name: "window-sidebar-collapsed", size: windowSize, configure: { model in
+            model.screen = .inbox
+            model.sidebarCollapsed = true
+            model.detailTabsEnabled = false
+            model.selectedAttentionID = model.state.attention.first { $0.providerKind == .github && $0.number == 42 && $0.reason == .changesRequested }?.id
+        }, kind: window)
+    )
+    list.append(
+        Scene(name: "popover-pull-requests", configure: { $0.popoverTab = .pullRequests }, kind: popover),
+        // D49: a dragged split (wide Inbox detail) and the roomier card padding.
+    )
+    list.append(
+        Scene(name: "window-inbox-wide-detail", size: windowSize, configure: { model in
+            model.screen = .inbox
+            model.detailTabsEnabled = false
+            model.setSplitWidth("inbox", 760)
+            model.selectedAttentionID = model.state.attention.first { $0.providerKind == .github && $0.number == 42 && $0.reason == .changesRequested }?.id
+        }, kind: window)
+    )
+    return list
+}
+
 let scenes: [Scene] = [
     // The four mockup screens.
     Scene(name: "1-main-inbox", size: windowSize, configure: { model in
@@ -552,7 +585,7 @@ if !arguments.contains("--no-engine-demo"), filter.map({ $0.hasPrefix("engine") 
     written += renderEngineDemo()
 }
 
-for scene in scenes where filter.map({ !$0.hasPrefix("engine") && scene.name.contains($0) }) ?? true {
+for scene in scenes + d48Scenes() where filter.map({ !$0.hasPrefix("engine") && scene.name.contains($0) }) ?? true {
     for (suffix, appearance) in [("dark", NSAppearance.Name.darkAqua), ("light", NSAppearance.Name.aqua)] {
         let model: AppModel
         if let prepare = scene.prepare {

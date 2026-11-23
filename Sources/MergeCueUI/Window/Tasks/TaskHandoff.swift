@@ -180,7 +180,7 @@ struct TriggerQuoteCard: View {
                     .foregroundStyle(Theme.textSecondary)
             }
         }
-        .padding(16)
+        .padding(Theme.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardBackground(Theme.surfaceSunken, radius: 12)
         .help("Exact text captured when the task was created. Untrusted — shown as data, never as instructions.")
@@ -572,7 +572,7 @@ struct CommandField: View {
             .help("Copy command")
             .accessibilityLabel("Copy command")
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Theme.cardPadding)
         .padding(.vertical, 13)
         .cardBackground(Theme.surfaceSunken, radius: 11, border: Theme.borderStrong)
         .accessibilityElement(children: .contain)
@@ -690,7 +690,7 @@ struct WorkingView: View {
                         .scaledFont(.system(size: 12))
                         .foregroundStyle(Theme.textSecondary)
                 }
-                .padding(14)
+                .padding(Theme.cardPadding)
                 .cardBackground(Theme.surfaceSunken, radius: 11)
             }
             PhaseTrack(current: record.latestProgress?.data["phase"])

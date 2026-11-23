@@ -126,7 +126,7 @@ extension EnvironmentValues {
 @available(macOS 26.0, *)
 struct LiquidGlassCardViewStyle: CardViewStyle {
     var cornerRadius: CGFloat = Theme.radius
-    var padding: CGFloat = 16
+    var padding: CGFloat = Theme.cardPadding
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.content
@@ -144,7 +144,7 @@ extension CardViewStyle where Self == LiquidGlassCardViewStyle {
 /// would clip into a hard line (see the shadow rule in the owner's instructions); the surface colour carries it.
 struct FlatCardViewStyle: CardViewStyle {
     var cornerRadius: CGFloat = Theme.radius
-    var padding: CGFloat = 16
+    var padding: CGFloat = Theme.cardPadding
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.content

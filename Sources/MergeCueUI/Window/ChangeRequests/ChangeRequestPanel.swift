@@ -9,6 +9,8 @@ struct ChangeRequestPanel: View {
     let changeRequest: ChangeRequestKey
     /// The inbox item the panel is opened for (nil on the Pull requests screen).
     var focus: AttentionItem?
+    /// Closes the panel (detail tabs off; D48).
+    var onClose: (() -> Void)?
 
     var body: some View {
         let snapshot = model.snapshot(changeRequest)
@@ -60,38 +62,66 @@ struct ChangeRequestPanel: View {
     // MARK: Header
 
     @ViewBuilder
+    private func headerLeading(_ snapshot: ChangeRequestSnapshot?, kind: ProviderKind, repoPath: String) -> some View {
+        ProviderBadge(kind: kind, size: 36, style: .circle)
+        Text(repoPath)
+            .scaledFont(.system(size: 16, weight: .medium))
+            .foregroundStyle(Theme.textPrimary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .layoutPriority(1)
+        Text(kind.formattedNumber(changeRequest.number))
+            .scaledFont(.system(size: 16))
+            .foregroundStyle(Theme.textSecondary)
+            .lineLimit(1)
+            .fixedSize()
+            .layoutPriority(2)
+        if let url = snapshot?.summary.webURL {
+            Button {
+                Task { await model.send(.openURL(url)) }
+            } label: {
+                Image(systemName: "arrow.up.right.square")
+            }
+            .buttonStyle(IconButtonStyle(size: 26, filled: false))
+            .help("Open in \(kind.displayName)")
+            .accessibilityLabel("Open in \(kind.displayName)")
+        }
+    }
+
+    @ViewBuilder
+    private var headerTrailing: some View {
+        if let focus {
+            ItemActionsMenu(model: model, item: focus)
+        }
+        if let onClose {
+            Button(action: onClose) { Image(systemName: "xmark") }
+                .buttonStyle(IconButtonStyle(size: 28))
+                .keyboardShortcut("w", modifiers: [.command, .shift])
+                .help("Close (⇧⌘W)")
+                .accessibilityLabel("Close details")
+        }
+    }
+
+    @ViewBuilder
     private func header(_ snapshot: ChangeRequestSnapshot?) -> some View {
         let kind = changeRequest.kind
         let repoPath = snapshot?.summary.repository.fullPath ?? focus?.repoFullPath ?? ""
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
-                ProviderBadge(kind: kind, size: 36, style: .circle)
-                Text(repoPath)
-                    .scaledFont(.system(size: 16, weight: .medium))
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .layoutPriority(1)
-                Text(kind.formattedNumber(changeRequest.number))
-                    .scaledFont(.system(size: 16))
-                    .foregroundStyle(Theme.textSecondary)
-                    .lineLimit(1)
-                    .fixedSize()
-                    .layoutPriority(2)
-                if let url = snapshot?.summary.webURL {
-                    Button {
-                        Task { await model.send(.openURL(url)) }
-                    } label: {
-                        Image(systemName: "arrow.up.right.square")
-                    }
-                    .buttonStyle(IconButtonStyle(size: 26, filled: false))
-                    .help("Open in \(kind.displayName)")
-                    .accessibilityLabel("Open in \(kind.displayName)")
+            // Narrow panels move the status pill to its own line instead of squeezing the repository to "…" (D48).
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    headerLeading(snapshot, kind: kind, repoPath: repoPath)
+                    Spacer(minLength: 8)
+                    statusPill(snapshot)
+                    headerTrailing
                 }
-                Spacer(minLength: 8)
-                statusPill(snapshot)
-                if let focus {
-                    ItemActionsMenu(model: model, item: focus)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 12) {
+                        headerLeading(snapshot, kind: kind, repoPath: repoPath)
+                        Spacer(minLength: 8)
+                        headerTrailing
+                    }
+                    statusPill(snapshot)
                 }
             }
             .accessibilityElement(children: .contain)
@@ -182,7 +212,7 @@ struct ChangeRequestPanel: View {
                        isLoadingCode: isLoadingCode(snapshot))
         } else if let focus, let checkKey = focus.check, let check = snapshot.check(checkKey) {
             CheckDetail(model: model, check: check)
-                .padding(14)
+                .padding(Theme.cardPadding)
                 .cardBackground(Theme.surface)
         } else {
             if let description = snapshot.description, !description.isEmpty {
@@ -458,7 +488,7 @@ struct ChangeRequestFilesTab: View {
             }
             .scaledFont(.system(size: 12.5, weight: .medium).monospacedDigit())
             ChangedFileList(files: snapshot.changedFiles)
-                .padding(14)
+                .padding(Theme.cardPadding)
                 .cardBackground(Theme.surface)
         }
     }
@@ -509,7 +539,7 @@ struct ChangeRequestChecksTab: View {
         .cardBackground(Theme.surface)
         ForEach(snapshot.checks.filter { $0.status.isFailing && $0.key.source != .gitlabPipeline }) { check in
             CheckDetail(model: model, check: check)
-                .padding(14)
+                .padding(Theme.cardPadding)
                 .cardBackground(Theme.surface)
         }
     }
@@ -599,7 +629,7 @@ struct ChangeRequestTimelineTab: View {
                 .accessibilityElement(children: .combine)
             }
         }
-        .padding(14)
+        .padding(Theme.cardPadding)
         .cardBackground(Theme.surface)
     }
 }

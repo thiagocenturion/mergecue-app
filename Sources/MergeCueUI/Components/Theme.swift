@@ -182,6 +182,8 @@ enum Theme {
     /// The one corner radius of every rectangular container (D41). SwiftUI caps a corner at half the shorter side,
     /// so small elements with it become capsules.
     static let radius: CGFloat = 32
+    /// Inner padding of cards and glass rows: enough room inside 32 pt corners (D49).
+    static let cardPadding: CGFloat = 20
     static let cornerRadius: CGFloat = radius
     static let cardRadius: CGFloat = radius
     /// Corner radius of Liquid Glass cards (`glassCard`).
@@ -252,6 +254,15 @@ extension View {
     func shadowRoom(_ inset: CGFloat = 16) -> some View {
         contentMargins(.horizontal, inset, for: .scrollContent)
             .padding(.horizontal, -inset)
+    }
+
+    /// The same for a horizontal `ScrollView` (a chip rail), which is only as tall as its content: room above and
+    /// about twice as much below, where shadows fall, cancelled outside so the layout doesn't move.
+    func shadowRail(top: CGFloat = 16, bottom: CGFloat = 32) -> some View {
+        contentMargins(.top, top, for: .scrollContent)
+            .contentMargins(.bottom, bottom, for: .scrollContent)
+            .padding(.top, -top)
+            .padding(.bottom, -bottom)
     }
 }
 

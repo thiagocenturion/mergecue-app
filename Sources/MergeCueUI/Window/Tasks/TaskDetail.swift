@@ -292,7 +292,7 @@ struct StatusCallout<Actions: View>: View {
             HStack(spacing: 10) { actions }
                 .padding(.leading, 36)
         }
-        .padding(16)
+        .padding(Theme.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassCard(tint: Theme.color(tone))
     }

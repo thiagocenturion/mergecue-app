@@ -214,8 +214,28 @@ public final class AppModel {
 
     // MARK: Navigation and selection
     public var screen: MainScreen = .inbox
-    public var selectedAttentionID: String?
-    public var selectedChangeRequestID: String?
+    public var selectedAttentionID: String? {
+        didSet { if let selectedAttentionID { openDetailTab(selectedAttentionID, in: &inboxTabs) } }
+    }
+    public var selectedChangeRequestID: String? {
+        didSet { if let selectedChangeRequestID { openDetailTab(selectedChangeRequestID, in: &prTabs) } }
+    }
+    /// Open detail tabs (D48): Inbox item ids and pull request ids, in opening order. Only used with tabs on.
+    public var inboxTabs: [String] = []
+    public var prTabs: [String] = []
+    /// Detail tabs on or off (persisted); nil until the owner answered the first-time question.
+    public var detailTabsEnabled: Bool? {
+        didSet {
+            environment.preferences.save(UIPreferenceKeys.detailTabs, detailTabsEnabled.map { $0 ? "1" : "0" })
+            if detailTabsEnabled != true {
+                inboxTabs = []
+                prTabs = []
+            } else {
+                if let selectedAttentionID { openDetailTab(selectedAttentionID, in: &inboxTabs) }
+                if let selectedChangeRequestID { openDetailTab(selectedChangeRequestID, in: &prTabs) }
+            }
+        }
+    }
     public var selectedTaskID: TaskID?
     /// Tasks screen shows the finished tasks (done, cancelled, dismissed) instead of the open ones.
     public var showsFinishedTasks = false
@@ -264,6 +284,15 @@ public final class AppModel {
         get { environment.preferences.load(UIPreferenceKeys.seenApprovals) != nil }
         set { if newValue, environment.preferences.load(UIPreferenceKeys.seenApprovals) == nil { environment.preferences.save(UIPreferenceKeys.seenApprovals, "{}") } }
     }
+    /// Column widths the owner set by dragging a split line, per screen (persisted; D49).
+    public var splitWidths: [String: Double] = [:] {
+        didSet {
+            let encoded = (try? JSONEncoder().encode(splitWidths)).flatMap { String(data: $0, encoding: .utf8) }
+            environment.preferences.save(UIPreferenceKeys.splitWidths, splitWidths.isEmpty ? nil : encoded)
+        }
+    }
+    /// The popover's view: Inbox sections or open pull requests (D48).
+    public var popoverTab: PopoverTab = .inbox
     /// Collapsed change request groups in the Inbox (change request ids; expanded by default).
     public var collapsedInboxGroups: Set<String> = []
     /// Collapsed change request groups in the popover (`PopoverPRGroup.id`; expanded by default).
@@ -288,6 +317,19 @@ public final class AppModel {
             environment.preferences.save(UIPreferenceKeys.darkStyle, darkStyle.rawValue)
         }
     }
+    /// The account whose avatar the sidebar shows (persisted; nil = the first account with an avatar).
+    public var avatarAccountID: String? {
+        didSet { environment.preferences.save(UIPreferenceKeys.avatarAccount, avatarAccountID) }
+    }
+    /// Sidebar collapsed to icons by the owner with the title bar toggle (persisted; D48).
+    public var sidebarCollapsed = false {
+        didSet { environment.preferences.save(UIPreferenceKeys.sidebarCollapsed, sidebarCollapsed ? "1" : nil) }
+    }
+
+    public func toggleSidebar() {
+        withAnimation(Motion.smooth) { sidebarCollapsed.toggle() }
+    }
+
     /// Task screen: "Open in your coding agent" shown as a compact card (persisted).
     public var handoffCollapsed = false {
         didSet { environment.preferences.save(UIPreferenceKeys.handoffCollapsed, handoffCollapsed ? "1" : nil) }
@@ -335,6 +377,13 @@ public final class AppModel {
         DarkStyle.current = darkStyle
         environment.applyAppearance(appearance)
         self.handoffCollapsed = environment.preferences.load(UIPreferenceKeys.handoffCollapsed) == "1"
+        self.sidebarCollapsed = environment.preferences.load(UIPreferenceKeys.sidebarCollapsed) == "1"
+        self.detailTabsEnabled = environment.preferences.load(UIPreferenceKeys.detailTabs).map { $0 == "1" }
+        if let stored = environment.preferences.load(UIPreferenceKeys.splitWidths)?.data(using: .utf8),
+           let decoded = try? JSONDecoder().decode([String: Double].self, from: stored) {
+            self.splitWidths = decoded
+        }
+        self.avatarAccountID = environment.preferences.load(UIPreferenceKeys.avatarAccount)
         if let stored = environment.preferences.load(UIPreferenceKeys.seenApprovals)?.data(using: .utf8),
            let decoded = try? JSONDecoder().decode([String: Set<String>].self, from: stored) {
             self.seenApprovals = decoded
@@ -611,7 +660,8 @@ public final class AppModel {
 
     /// Rows visible in the popover (top 3 per section), in keyboard order.
     public var popoverRows: [PopoverItem] {
-        PopoverSection.allCases.filter { !collapsedPopoverSections.contains($0) }.flatMap { section in
+        guard popoverTab == .inbox else { return [] }
+        return PopoverSection.allCases.filter { !collapsedPopoverSections.contains($0) }.flatMap { section in
             popoverGroups(section).filter { !collapsedPopoverGroups.contains($0.id) }.flatMap(\.items)
         }
     }

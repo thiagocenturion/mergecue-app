@@ -92,10 +92,14 @@ struct CommentCard: View {
                 Text(comment.author.displayName.flatMap(Presentation.firstName) ?? comment.author.username)
                     .scaledFont(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(1)
+                    .fixedSize()
                     .help("@\(comment.author.username)")
                 Text(UIFormat.relative(from: comment.createdAt, now: now))
                     .scaledFont(.system(size: 12.5))
                     .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(1)
+                    .fixedSize()
                     .help(UIFormat.dateTime(comment.createdAt))
                 if comment.author.isBot { Chip(text: "Bot") }
                 switch comment.kind {
@@ -117,6 +121,20 @@ struct CommentCard: View {
                         .padding(.vertical, 3.5)
                         .background(Capsule().fill(Theme.surfaceRaised))
                 }
+                // Quick actions next to the menu (D48): open the comment, copy its text.
+                if let url = comment.webURL, let onOpen {
+                    Button { onOpen(url) } label: { Image(systemName: "arrow.up.right.square") }
+                        .buttonStyle(IconButtonStyle(size: 24, filled: false))
+                        .help("Open in \(providerKind.displayName)")
+                        .accessibilityLabel("Open comment in \(providerKind.displayName)")
+                }
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(SecretRedactor.redact(comment.body), forType: .string)
+                } label: { Image(systemName: "doc.on.doc") }
+                    .buttonStyle(IconButtonStyle(size: 24, filled: false))
+                    .help("Copy text")
+                    .accessibilityLabel("Copy comment text")
                 Menu {
                     Button("Copy Text") {
                         NSPasteboard.general.clearContents()
@@ -139,7 +157,7 @@ struct CommentCard: View {
             CommentBody(text: comment.body, onOpen: onOpen)
                 .padding(.leading, 46)
         }
-        .padding(14)
+        .padding(Theme.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardBackground(Theme.surface)
         .overlay(alignment: .leading) {
@@ -359,7 +377,7 @@ struct UntrustedQuote: View {
                 CommentBody(text: quote.text)
             }
         }
-        .padding(12)
+        .padding(Theme.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardBackground(Theme.surfaceSunken, radius: 10)
     }

@@ -125,7 +125,7 @@ private struct FinishedTaskRow: View {
                     .scaledFont(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.textTertiary)
             }
-            .padding(14)
+            .padding(Theme.cardPadding)
             .selectableGlass(isSelected: false, isHovering: isHovering)
         }
         .buttonStyle(PlainRowButtonStyle())

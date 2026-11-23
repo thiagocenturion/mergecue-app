@@ -75,3 +75,12 @@ extension AppModel {
         PopoverPRGroup.make(Array(sections.items(section).prefix(Self.popoverRowLimit)), section: section)
     }
 }
+
+extension AppModel {
+    /// Popover: opens a change request in the app's Pull requests screen and closes the popover (D48).
+    public func openChangeRequestFromPopover(_ changeRequest: ChangeRequestKey) {
+        markApprovalsSeen(changeRequest)
+        showChangeRequest(changeRequest)
+        closePopoverHandler?()
+    }
+}

@@ -22,7 +22,11 @@ struct PRGroupView<Rows: View>: View {
     var now: Date
     var isCollapsed: Bool
     /// Approvals on this change request ("2 approvals"); new ones glow (D47).
-    var approval: (text: String, isNew: Bool, isSatisfied: Bool)?
+    var approval: ApprovalSummary?
+    /// Opens the change request (popover: in the app); nil makes the title toggle the group.
+    var onOpen: (() -> Void)?
+    /// Opens the change request in the provider's web page.
+    var onOpenExternal: (() -> Void)?
     /// Popover sizing (smaller type and badge).
     var compact = false
     var toggle: () -> Void
@@ -55,53 +59,81 @@ struct PRGroupView<Rows: View>: View {
     }
 
     private var header: some View {
-        Button {
-            withAnimation(reduceMotion ? .easeOut(duration: 0.15) : Motion.smooth) { toggle() }
-        } label: {
-            HStack(spacing: compact ? 10 : 12) {
-                ProviderBadge(kind: providerKind, size: compact ? 28 : 32, style: .circle)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(UIFormat.untrustedDisplay(title))
-                        .scaledFont(.system(size: compact ? 13.5 : 14.5, weight: .semibold))
-                        .foregroundStyle(Theme.textPrimary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    Text("\(repoFullPath) \(providerKind.formattedNumber(number))")
-                        .scaledFont(.system(size: compact ? 11.5 : 12))
-                        .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+        HStack(spacing: compact ? 8 : 10) {
+            // The title area opens the change request when `onOpen` is set (popover), else it toggles the group.
+            Button {
+                if let onOpen { onOpen() } else { toggleAnimated() }
+            } label: {
+                HStack(spacing: compact ? 10 : 12) {
+                    ProviderBadge(kind: providerKind, size: compact ? 28 : 32, style: .circle)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(UIFormat.untrustedDisplay(title))
+                            .scaledFont(.system(size: compact ? 13.5 : 14.5, weight: .semibold))
+                            .foregroundStyle(Theme.textPrimary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Text("\(repoFullPath) \(providerKind.formattedNumber(number))")
+                            .scaledFont(.system(size: compact ? 11.5 : 12))
+                            .foregroundStyle(Theme.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    Spacer(minLength: 0)
                 }
-                .layoutPriority(1)
-                Spacer(minLength: 8)
-                if let approval {
-                    ApprovalChip(text: approval.text, isNew: approval.isNew, compact: compact)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PressScaleButtonStyle())
+            .help(onOpen == nil ? (isCollapsed ? "Expand" : "Collapse") : "Open in MergeCue")
+            .accessibilityLabel(accessibilityText)
+            .accessibilityHint(onOpen == nil ? (isCollapsed ? "Expands the group" : "Collapses the group") : "Opens the \(providerKind.changeRequestNoun) in MergeCue")
+            .accessibilityAddTraits(.isHeader)
+            .layoutPriority(1)
+            if let approval {
+                // The long form when it fits, else the count ("1/2").
+                ViewThatFits(in: .horizontal) {
+                    ApprovalChip(text: compact ? approval.short : approval.text, isNew: approval.isNew, compact: compact)
+                    ApprovalChip(text: approval.short, isNew: approval.isNew, compact: true)
                 }
-                if isCollapsed {
-                    summary
-                        .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .trailing)))
-                } else {
-                    CountBadge(count: count, highlighted: unreadCount > 0)
-                        .transition(.opacity)
+                .layoutPriority(-1)
+            }
+            if isCollapsed {
+                summary
+                    .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .trailing)))
+            } else {
+                CountBadge(count: count, highlighted: unreadCount > 0)
+                    .transition(.opacity)
+            }
+            if let onOpenExternal {
+                Button(action: onOpenExternal) {
+                    Image(systemName: "arrow.up.right.square")
                 }
+                .buttonStyle(IconButtonStyle(size: compact ? 24 : 26, filled: false))
+                .help("Open in \(providerKind.displayName)")
+                .accessibilityLabel("Open in \(providerKind.displayName)")
+            }
+            Button(action: toggleAnimated) {
                 Image(systemName: "chevron.down")
                     .scaledFont(.system(size: 11, weight: .bold))
                     .foregroundStyle(Theme.textSecondary)
                     .rotationEffect(.degrees(isCollapsed ? -90 : 0))
-                    .frame(width: 16)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
             }
-            .padding(.leading, compact ? 8 : 10)
-            .padding(.trailing, compact ? 12 : 16)
-            .padding(.vertical, compact ? 7 : 9)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .glassShape(Capsule(), interactive: true, fallback: Theme.surface)
-            .background(alignment: .bottom) { stack }
-            .contentShape(Capsule())
+            .buttonStyle(PressScaleButtonStyle())
+            .help(isCollapsed ? "Expand" : "Collapse")
+            .accessibilityLabel(isCollapsed ? "Expand group" : "Collapse group")
         }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel(accessibilityText)
-        .accessibilityHint(isCollapsed ? "Expands the group" : "Collapses the group")
-        .accessibilityAddTraits(.isHeader)
+        .padding(.leading, compact ? 8 : 10)
+        .padding(.trailing, compact ? 10 : 14)
+        .padding(.vertical, compact ? 7 : 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassShape(Capsule(), interactive: true, fallback: Theme.surface)
+        .background(alignment: .bottom) { stack }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func toggleAnimated() {
+        withAnimation(reduceMotion ? .easeOut(duration: 0.15) : Motion.smooth) { toggle() }
     }
 
     /// Collapsed: reason marks overlapping like avatars, the unread count, the item count and the latest activity.
@@ -162,7 +194,7 @@ struct PRGroupView<Rows: View>: View {
     }
 }
 
-/// "✓ Approved" in mint; a new approval glows and its seal bounces once.
+/// "✓ 2 approvals" in mint (compact: "✓ 2" or "✓ 1/2"); a new approval glows and its seal bounces once.
 struct ApprovalChip: View {
     var text: String
     var isNew: Bool
@@ -173,7 +205,7 @@ struct ApprovalChip: View {
         HStack(spacing: 4) {
             Image(systemName: "checkmark.seal.fill")
                 .symbolEffect(.bounce, value: appeared && isNew)
-            if !compact || isNew { Text(text) }
+            Text(text).monospacedDigit()
         }
         .scaledFont(.system(size: compact ? 11 : 11.5, weight: .semibold))
         .foregroundStyle(Theme.mintText)
@@ -183,6 +215,7 @@ struct ApprovalChip: View {
         .shadow(color: Theme.mint.opacity(isNew ? 0.5 : 0), radius: 6)
         .fixedSize()
         .onAppear { appeared = true }
-        .accessibilityLabel(isNew ? "New: \(text)" : text)
+        .help(isNew ? "New approval" : "Approvals")
+        .accessibilityLabel(isNew ? "New approval: \(text)" : "Approvals: \(text)")
     }
 }

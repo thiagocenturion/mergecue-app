@@ -27,7 +27,7 @@ struct ChangeRequestList: View {
                                     .padding(.horizontal, 6)
                                 if section.listState.isProblem || section.items.isEmpty {
                                     AccountListStateRow(model: model, section: section)
-                                        .padding(12)
+                                        .padding(Theme.cardPadding)
                                         .cardBackground(Theme.surface, radius: 11)
                                 }
                                 ForEach(section.items) { snapshot in
@@ -242,7 +242,7 @@ struct FailedChangeRequestRow: View {
                 .buttonStyle(SecondaryButtonStyle(size: .small))
                 .accessibilityLabel("Retry loading \(account.kind.changeRequestAbbreviation) \(failure.changeRequest.number)")
         }
-        .padding(12)
+        .padding(Theme.cardPadding)
         .cardBackground(Theme.surface, radius: 11)
         .accessibilityElement(children: .contain)
     }
@@ -292,8 +292,7 @@ struct ChangeRequestRow: View {
                 Spacer(minLength: 4)
                 ChecksBadge(state: snapshot.aggregateCheckState)
                 if let approval = model.approvalSummary(summary.key) {
-                    ApprovalChip(text: snapshot.approvals.requiredCount.map { "\(ApprovalDerivation.approvers(snapshot).people.count)/\($0)" } ?? approval.text,
-                                 isNew: approval.isNew, compact: true)
+                    ApprovalChip(text: approval.short, isNew: approval.isNew, compact: true)
                 } else if let required = snapshot.approvals.requiredCount {
                     Label("0/\(required)", systemImage: "hand.thumbsup")
                         .foregroundStyle(Theme.textSecondary)
@@ -308,7 +307,7 @@ struct ChangeRequestRow: View {
             .scaledFont(.system(size: 11.5))
             .labelStyle(.titleAndIcon)
         }
-        .padding(12)
+        .padding(Theme.cardPadding)
         .selectableGlass(isSelected: isSelected, isHovering: isHovering)
         .contentShape(SmoothRect())
         .onHover { isHovering = $0 }

@@ -17,7 +17,53 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         MainWindowController.configure(window, badge: model.mode.badgeText)
         super.init(window: window)
         window.delegate = self
+        installSidebarToggle(in: window)
         observeTitle()
+    }
+
+    /// The native "Hide / Show Sidebar" button right of the traffic lights (D48).
+    private func installSidebarToggle(in window: NSWindow) {
+        let button = NSButton(image: NSImage(systemSymbolName: "sidebar.left", accessibilityDescription: "Toggle Sidebar") ?? NSImage(),
+                              target: self, action: #selector(toggleSidebar(_:)))
+        button.bezelStyle = .accessoryBarAction
+        button.isBordered = false
+        button.contentTintColor = .secondaryLabelColor
+        button.setButtonType(.momentaryPushIn)
+        button.toolTip = "Hide or show the sidebar (⌃⌘S)"
+        button.keyEquivalent = "s"
+        button.keyEquivalentModifierMask = [.control, .command]
+        button.frame = NSRect(x: 0, y: 0, width: 30, height: 28)
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 38, height: 28))
+        button.frame.origin = NSPoint(x: 6, y: 0)
+        container.addSubview(button)
+        let accessory = NSTitlebarAccessoryViewController()
+        accessory.view = container
+        accessory.layoutAttribute = .leading
+        window.addTitlebarAccessoryViewController(accessory)
+    }
+
+    @objc private func toggleSidebar(_ sender: Any?) {
+        model.toggleSidebar()
+    }
+
+    /// Grows the window to the minimum content size, keeping its top-left corner.
+    static func clampToMinimum(_ window: NSWindow) {
+        let content = window.contentRect(forFrameRect: window.frame).size
+        let minimum = MainWindowMetrics.minimumSize
+        guard content.width < minimum.width || content.height < minimum.height else { return }
+        let size = NSSize(width: max(content.width, minimum.width), height: max(content.height, minimum.height))
+        var frame = window.frameRect(forContentRect: NSRect(origin: .zero, size: size))
+        frame.origin = NSPoint(x: window.frame.minX, y: window.frame.maxY - frame.height)
+        if let visible = window.screen?.visibleFrame {
+            frame.origin.x = min(max(frame.origin.x, visible.minX), visible.maxX - frame.width)
+            frame.origin.y = min(max(frame.origin.y, visible.minY), visible.maxY - frame.height)
+        }
+        window.setFrame(frame, display: true)
+    }
+
+    /// Never smaller than the minimum (a restored frame from an older build could be).
+    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        NSSize(width: max(frameSize.width, sender.minSize.width), height: max(frameSize.height, sender.minSize.height))
     }
 
     /// Keeps the window's title and subtitle on the current screen (VoiceOver, Mission Control, Window menu).
@@ -44,17 +90,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.titlebarSeparatorStyle = .none
-        // An empty unified toolbar makes the title bar taller and centres the traffic lights in it, so they sit
-        // inside the floating sidebar's rounded corner (D43). No items: it only shapes the title bar.
-        let toolbar = NSToolbar(identifier: "MergeCueMain")
-        toolbar.showsBaselineSeparator = false
-        toolbar.displayMode = .iconOnly
-        window.toolbar = toolbar
-        window.toolbarStyle = .unified
+        // No toolbar: the traffic lights stay in the plain title bar and the floating sidebar starts below them (D48).
+        window.toolbar = nil
         // The palette colour, so the window behind the content follows the dark style (graphite or midnight).
         window.backgroundColor = Palette.windowBackground.nsColor
         window.setContentSize(MainWindowMetrics.defaultSize)
         window.contentMinSize = MainWindowMetrics.minimumSize
+        window.minSize = window.frameRect(forContentRect: NSRect(origin: .zero, size: MainWindowMetrics.minimumSize)).size
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
         window.center()
@@ -71,7 +113,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 window.setContentSize(MainWindowMetrics.defaultSize)
                 window.center()
             }
+            // Naming the autosave restores the saved frame too, so clamp after it: a frame saved by an older build
+            // may be below today's minimum, and the content would then be cropped (D48).
             window.setFrameAutosaveName(MainWindowController.autosaveName)
+            Self.clampToMinimum(window)
         }
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
@@ -89,8 +134,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
 public enum MainWindowMetrics {
     public static let defaultSize = NSSize(width: 1_360, height: 860)
-    /// Small enough for a 13" display at larger text sizes; below `compactSidebarThreshold` the sidebar shows icons only.
-    public static let minimumSize = NSSize(width: 960, height: 600)
+    /// The smallest window where nothing is cropped: icon sidebar + Inbox column + 440 pt detail, and the sidebar's
+    /// navigation and accounts in height (D48). Fits a 13" display.
+    public static let minimumSize = NSSize(width: 1_080, height: 700)
     /// Window widths below this use the icon-only sidebar.
     public static let compactSidebarThreshold: CGFloat = 1_140
     /// Height reserved at the top of the sidebar for the traffic lights (transparent 28 pt title bar + margin).

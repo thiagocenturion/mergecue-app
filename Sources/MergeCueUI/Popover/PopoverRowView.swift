@@ -60,7 +60,7 @@ struct PopoverRowView: View {
             Spacer(minLength: 4)
             trailing
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, Theme.cardPadding)
         .padding(.vertical, 12)
         .selectableGlass(isSelected: isSelected, isHovering: isHovering)
         // Keyboard selection in the popover stays visible as a focus ring (Full Keyboard Access users rely on it).

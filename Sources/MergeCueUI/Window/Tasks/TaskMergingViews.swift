@@ -45,7 +45,7 @@ struct RelatedTaskBanner: View {
                     .fixedSize()
                 }
             }
-            .padding(.horizontal, 18)
+            .padding(.horizontal, Theme.cardPadding)
             .padding(.vertical, 14)
             .glassCard(tint: Theme.accentText)
             .accessibilityElement(children: .contain)
@@ -106,7 +106,7 @@ struct CoveredItemsCard: View {
                     }
                 }
             }
-            .padding(18)
+            .padding(Theme.cardPadding)
             .glassCard()
         }
     }
@@ -220,7 +220,7 @@ private struct CoveredItemRow: View {
                 .accessibilityLabel("Remove \(title) from this task")
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Theme.cardPadding)
         .padding(.vertical, 10)
         .cardBackground(Theme.surfaceSunken)
         .accessibilityElement(children: .contain)

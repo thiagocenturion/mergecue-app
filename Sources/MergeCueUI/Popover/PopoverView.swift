@@ -114,10 +114,18 @@ public struct PopoverView: View {
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 18) {
                     ApprovalHighlights(model: model, compact: true)
-                    ForEach(PopoverSection.allCases) { section in
-                        PopoverSectionView(model: model, section: section, voiceOverFocus: $voiceOverFocus)
+                    switch model.popoverTab {
+                    case .inbox:
+                        ForEach(PopoverSection.allCases) { section in
+                            PopoverSectionView(model: model, section: section, voiceOverFocus: $voiceOverFocus)
+                        }
+                        .transition(.opacity.combined(with: .move(edge: .leading)))
+                    case .pullRequests:
+                        PopoverPullRequestList(model: model)
+                            .transition(.opacity.combined(with: .move(edge: .trailing)))
                     }
                 }
+                .animation(Motion.smooth, value: model.popoverTab)
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
                 .padding(.bottom, 18)
@@ -139,41 +147,40 @@ struct PopoverHeader: View {
 
     var body: some View {
         let summary = Presentation.syncSummary(accounts: model.state.accounts, now: model.now, refreshing: model.isRefreshing)
-        HStack(alignment: .center, spacing: 14) {
+        HStack(alignment: .center, spacing: 12) {
+            // The whole brand area opens the app (D48).
             Button {
                 model.showScreen(.inbox)
             } label: {
-                AppMark(size: 50)
+                HStack(spacing: 12) {
+                    AppMark(size: 44)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("MergeCue")
+                            .scaledFont(.system(size: 18, weight: .bold))
+                            .foregroundStyle(Theme.textPrimary)
+                            .fixedSize()
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(summary.tone == .success ? Theme.mint : (summary.tone == .neutral ? Theme.textTertiary : Theme.color(summary.tone)))
+                                .frame(width: 7, height: 7)
+                                .accessibilityHidden(true)
+                            Text(summary.text.replacingOccurrences(of: "Synced just now", with: "Synced now"))
+                                .scaledFont(.system(size: 12.5))
+                                .foregroundStyle(Theme.textSecondary)
+                                .lineLimit(1)
+                        }
+                        .help(accountLines)
+                    }
+                }
+                .contentShape(Rectangle())
             }
-            .buttonStyle(PlainRowButtonStyle())
+            .buttonStyle(PressScaleButtonStyle())
             .help("Open MergeCue")
-            .accessibilityLabel("Open MergeCue window")
-            VStack(alignment: .leading, spacing: 3) {
-                Text("MergeCue")
-                    .scaledFont(.system(size: 19, weight: .bold))
-                    .foregroundStyle(Theme.textPrimary)
-                    .fixedSize()
-                Text("Your PRs at a glance")
-                    .scaledFont(.system(size: 14))
-                    .foregroundStyle(Theme.textSecondary)
-                    .fixedSize()
-            }
+            .accessibilityLabel("Open MergeCue. \(summary.text)")
+            .accessibilityHint(accountLines)
             Spacer(minLength: 6)
             VStack(alignment: .trailing, spacing: 8) {
-            HStack(spacing: 7) {
-                Circle()
-                    .fill(summary.tone == .success ? Theme.mint : (summary.tone == .neutral ? Theme.textTertiary : Theme.color(summary.tone)))
-                    .frame(width: 8, height: 8)
-                    .accessibilityHidden(true)
-                Text(summary.text.replacingOccurrences(of: "Synced just now", with: "Synced now"))
-                    .scaledFont(.system(size: 13))
-                    .foregroundStyle(Theme.textSecondary)
-                    .lineLimit(1)
-            }
-            .help(accountLines)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(summary.text)
-            .accessibilityHint(accountLines)
+            PopoverTabBar(model: model)
             ModeBadge(mode: model.mode)
             }
         }
@@ -580,7 +587,10 @@ struct PopoverPRGroupView: View {
             providerKind: group.changeRequest.kind, repoFullPath: first?.repoFullPath ?? "", number: group.changeRequest.number,
             title: model.snapshot(group.changeRequest)?.summary.title ?? first?.title ?? "", count: group.items.count,
             unreadCount: group.items.filter(\.isUnread).count, marks: marks, latest: group.items.map(\.date).max(), now: model.now,
-            isCollapsed: model.isPopoverGroupCollapsed(group), approval: model.approvalSummary(group.changeRequest), compact: true,
+            isCollapsed: model.isPopoverGroupCollapsed(group), approval: model.approvalSummary(group.changeRequest),
+            onOpen: { model.openChangeRequestFromPopover(group.changeRequest) },
+            onOpenExternal: model.snapshot(group.changeRequest).map { snapshot in { Task { await model.send(.openURL(snapshot.summary.webURL)) } } },
+            compact: true,
             toggle: { model.togglePopoverGroup(group) }
         ) {
             VStack(spacing: 8) {

@@ -30,7 +30,7 @@ struct BannerView: View {
             .focused($dismissFocused)
             .accessibilityLabel("Dismiss message")
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Theme.cardPadding)
         .padding(.vertical, 10)
         .glassCard(tint: color)
         .onHover { hovering in
