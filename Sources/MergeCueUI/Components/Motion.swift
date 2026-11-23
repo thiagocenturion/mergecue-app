@@ -41,6 +41,37 @@ extension View {
         modifier(StaggeredAppear(delay: Double(min(index, 8)) * 0.04))
     }
 
+    /// A short accent glow around a card the app just scrolled to (D51).
+    func focusHighlight(_ active: Bool) -> some View {
+        overlay {
+            SmoothRect(radius: Theme.radius + Self.focusOutset)
+                .strokeBorder(Theme.accent, lineWidth: 2.5)
+                .shadow(color: Theme.accent.opacity(0.55), radius: 7)
+                .opacity(active ? 1 : 0)
+                .scaleEffect(active ? 1 : 1.015)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+                .padding(-Self.focusOutset)
+        }
+    }
+
+    /// How far the focus ring sits outside the highlighted view, so it clears headers and card edges.
+    nonisolated static var focusOutset: CGFloat { 6 }
+
+    /// A `ScrollViewReader` target `room` points above this view, so `scrollTo(id, anchor: .top)` leaves space for
+    /// the focus ring and its glow instead of pinning the view to the scroll view's clipped top edge.
+    func scrollAnchor<ID: Hashable>(_ id: ID, room: CGFloat = 24) -> some View {
+        background(alignment: .top) {
+            // A `room`-tall target that ends where this view starts.
+            Color.clear
+                .frame(height: room)
+                .id(id)
+                .padding(.top, -room)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .accessibilityHidden(true)
+        }
+    }
+
     /// A gentle repeating scale pulse (current step markers, live indicators).
     func pulsing(_ active: Bool = true) -> some View {
         modifier(PulseModifier(active: active))

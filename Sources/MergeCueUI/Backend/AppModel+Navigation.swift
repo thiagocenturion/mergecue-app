@@ -75,7 +75,12 @@ extension AppModel {
         if let id = attentionIDs.first(where: { attentionItem($0) != nil }) {
             showAttention(id)
         } else if let snapshot = snapshot(id: changeRequestID) {
-            showChangeRequest(snapshot.key)
+            // A notification without items is about approvals or state: show the approvals when there are new ones.
+            if approvalHighlights.contains(where: { $0.changeRequest == snapshot.key }) {
+                showApprovals(snapshot.key)
+            } else {
+                showChangeRequest(snapshot.key)
+            }
         } else {
             showScreen(.inbox)
         }

@@ -63,7 +63,7 @@ struct TaskReviewScreen: View {
             }
             Spacer(minLength: 12)
             Button {
-                model.showChangeRequest(task.origin.changeRequest)
+                model.showChangeRequest(task.origin.changeRequest, thread: task.origin.thread)
             } label: {
                 Image(systemName: "book")
             }

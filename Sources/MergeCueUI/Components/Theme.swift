@@ -416,6 +416,9 @@ enum AppIconImage {
 extension EnvironmentValues {
     /// Off in offscreen snapshots: `cacheDisplay` cannot capture Liquid Glass, which the window server composites.
     @Entry public var glassEffectsEnabled = true
+    /// Off in offscreen renders: animated scrolls only advance while the window is on an awake display, so a
+    /// focus scroll (D51) jumps instead.
+    @Entry var animatesFocusScroll = true
 }
 
 struct GlassCardModifier: ViewModifier {

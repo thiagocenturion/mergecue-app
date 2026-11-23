@@ -11,6 +11,10 @@ struct ChangeRequestPanel: View {
     var focus: AttentionItem?
     /// Closes the panel (detail tabs off; D48).
     var onClose: (() -> Void)?
+    /// The scroll anchor briefly highlighted after a focus request (D51).
+    @State private var highlighted: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.animatesFocusScroll) private var animatesFocusScroll
 
     var body: some View {
         let snapshot = model.snapshot(changeRequest)
@@ -26,6 +30,7 @@ struct ChangeRequestPanel: View {
             ], selection: $model.changeRequestTab)
             .padding(.top, 18)
             .padding(.horizontal, 12)
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     tabContent(snapshot)
@@ -43,6 +48,10 @@ struct ChangeRequestPanel: View {
                     guard !Task.isCancelled else { return }
                     model.markApprovalsSeen(changeRequest)
                 }
+            }
+            .task(id: model.detailFocusRequest?.token) {
+                await consumeFocusRequest(snapshot, proxy: proxy)
+            }
             }
             if let focus {
                 RelatedTaskBanner(model: model, item: focus)
@@ -221,6 +230,8 @@ struct ChangeRequestPanel: View {
                        now: model.now, reviewers: reviewerIDs, authorID: snapshot.summary.author.remoteID, checkoutPath: checkout,
                        onOpen: open, showsHeader: false, codeLines: model.codeLines(for: thread, snapshot: snapshot),
                        isLoadingCode: isLoadingCode(snapshot))
+                .focusHighlight(highlighted == Self.anchor(thread.key))
+                .scrollAnchor(Self.anchor(thread.key))
         } else if let focus, let checkKey = focus.check, let check = snapshot.check(checkKey) {
             CheckDetail(model: model, check: check)
                 .padding(Theme.cardPadding)
@@ -232,16 +243,19 @@ struct ChangeRequestPanel: View {
                 }
             }
             ReviewersCard(snapshot: snapshot)
+                .focusHighlight(highlighted == Self.reviewersAnchor)
+                .scrollAnchor(Self.reviewersAnchor)
             // One card per conversation, like the Inbox.
-            let threads = ConversationGrouping.conversations(snapshot).compactMap { group -> (ReviewThread, [ThreadKey])? in
-                ConversationGrouping.merged(group).map { ($0, group.map(\.key)) }
+            let threads = ConversationGrouping.conversations(snapshot).compactMap { group -> ConversationEntry? in
+                ConversationGrouping.merged(group).map { ConversationEntry(thread: $0, keys: group.map(\.key)) }
             }
             .sorted { lhs, rhs in
-                if lhs.0.isUnresolved != rhs.0.isUnresolved { return lhs.0.isUnresolved }
-                return lhs.0.lastActivityAt > rhs.0.lastActivityAt
+                if lhs.thread.isUnresolved != rhs.thread.isUnresolved { return lhs.thread.isUnresolved }
+                return lhs.thread.lastActivityAt > rhs.thread.lastActivityAt
             }
-            ForEach(threads, id: \.0.id) { entry in
-                let (thread, keys) = entry
+            ForEach(threads, id: \.thread.id) { entry in
+                // `scrollAnchor` (not `.id`): an `.id` on a ForEach row is never found by `scrollTo`.
+                let (thread, keys) = (entry.thread, entry.keys)
                 let unread = model.state.attention
                     .filter { item in item.isUnread && item.thread.map(keys.contains) == true }
                     .map(\.createdAt).min()
@@ -250,6 +264,8 @@ struct ChangeRequestPanel: View {
                            now: model.now, reviewers: reviewerIDs, authorID: snapshot.summary.author.remoteID, checkoutPath: checkout,
                            onOpen: open, codeLines: model.codeLines(for: thread, snapshot: snapshot),
                            isLoadingCode: isLoadingCode(snapshot))
+                    .focusHighlight(highlighted == entry.anchor)
+                    .scrollAnchor(entry.anchor)
                     .padding(.top, 6)
             }
             if threads.isEmpty {
@@ -263,6 +279,49 @@ struct ChangeRequestPanel: View {
     private func open(_ url: URL) {
         Task { await model.send(.openURL(url)) }
     }
+
+    // MARK: Focus (D51)
+
+    static let reviewersAnchor = "reviewers"
+
+    static func anchor(_ key: ThreadKey) -> String { "thread|\(key.id)" }
+
+    /// The scroll anchor showing `target`: the conversation card that contains the thread, or the reviewers card.
+    private func anchor(for target: DetailFocusRequest.Target, in snapshot: ChangeRequestSnapshot) -> String? {
+        switch target {
+        case .reviewers:
+            return focus == nil ? Self.reviewersAnchor : nil
+        case .thread(let key):
+            if let focus, let thread = model.conversationThread(for: focus) { return Self.anchor(thread.key) }
+            for group in ConversationGrouping.conversations(snapshot) where group.contains(where: { $0.key == key }) {
+                return ConversationGrouping.merged(group).map { Self.anchor($0.key) }
+            }
+            return nil
+        }
+    }
+
+    /// Scrolls to the requested thread or approvals once the content is laid out, highlights it for about a
+    /// second, and clears the request.
+    private func consumeFocusRequest(_ snapshot: ChangeRequestSnapshot?, proxy: ScrollViewProxy) async {
+        guard let request = model.detailFocusRequest, request.changeRequestID == changeRequest.id, let snapshot else { return }
+        model.changeRequestTab = .conversation
+        try? await Task.sleep(for: .milliseconds(250))
+        guard !Task.isCancelled, let anchor = anchor(for: request.target, in: snapshot) else { return }
+        withAnimation(scrollAnimation) { proxy.scrollTo(anchor, anchor: .top) }
+        // The rest runs on its own: clearing the request changes this task's id, which cancels it.
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
+            // Again once layout has settled: the first scroll is lost when the content was not laid out yet, and
+            // code context arriving after it shifts the target.
+            withAnimation(scrollAnimation) { proxy.scrollTo(anchor, anchor: .top) }
+            withAnimation(Motion.hover) { highlighted = anchor }
+            try? await Task.sleep(for: .seconds(1.2))
+            withAnimation(.easeOut(duration: 0.6)) { if highlighted == anchor { highlighted = nil } }
+        }
+        if model.detailFocusRequest?.token == request.token { model.detailFocusRequest = nil }
+    }
+
+    private var scrollAnimation: Animation? { reduceMotion || !animatesFocusScroll ? nil : Motion.smooth }
 
     /// The diff that gives line comments their code is still to come.
     private func isLoadingCode(_ snapshot: ChangeRequestSnapshot) -> Bool {
@@ -346,7 +405,7 @@ struct ItemActionsMenuContent: View {
             }
         }
         Divider()
-        Button("Show \(item.providerKind.changeRequestAbbreviation) Details") { model.showChangeRequest(item.changeRequest) }
+        Button("Show \(item.providerKind.changeRequestAbbreviation) Details") { model.showChangeRequest(item.changeRequest, thread: item.thread) }
         if let url = model.providerURL(for: item) {
             Button("Open in \(item.providerKind.displayName)") { Task { await model.send(.openURL(url)) } }
             Button("Copy Link") { model.copyToPasteboard(url.absoluteString, confirmation: "Link copied") }
@@ -643,4 +702,11 @@ struct ChangeRequestTimelineTab: View {
         .padding(Theme.cardPadding)
         .cardBackground(Theme.surface)
     }
+}
+
+/// One conversation card in the change request's thread list, identified by its scroll anchor.
+private struct ConversationEntry {
+    var thread: ReviewThread
+    var keys: [ThreadKey]
+    var anchor: String { ChangeRequestPanel.anchor(thread.key) }
 }

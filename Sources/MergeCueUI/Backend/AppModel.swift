@@ -215,7 +215,12 @@ public final class AppModel {
     // MARK: Navigation and selection
     public var screen: MainScreen = .inbox
     public var selectedAttentionID: String? {
-        didSet { if let selectedAttentionID { openDetailTab(selectedAttentionID, in: &inboxTabs) } }
+        didSet {
+            guard let selectedAttentionID, selectedAttentionID != oldValue else { return }
+            openDetailTab(selectedAttentionID, in: &inboxTabs)
+            // Opening an item scrolls its detail to the conversation and highlights it (D51).
+            if let item = attentionItem(selectedAttentionID) { focusInboxItem(item) }
+        }
     }
     public var selectedChangeRequestID: String? {
         didSet { if let selectedChangeRequestID { openDetailTab(selectedChangeRequestID, in: &prTabs) } }
@@ -291,6 +296,8 @@ public final class AppModel {
             environment.preferences.save(UIPreferenceKeys.splitWidths, splitWidths.isEmpty ? nil : encoded)
         }
     }
+    /// A pending "scroll to this thread / to the approvals" for the detail panel (D51).
+    public var detailFocusRequest: DetailFocusRequest?
     /// The popover's view: Inbox sections or open pull requests (D48).
     public var popoverTab: PopoverTab = .inbox
     /// Collapsed change request groups in the Inbox (change request ids; expanded by default).

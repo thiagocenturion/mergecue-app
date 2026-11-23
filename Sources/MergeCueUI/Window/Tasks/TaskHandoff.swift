@@ -58,7 +58,7 @@ struct TaskHandoffScreen: View {
                     Text("\(task.origin.providerKind.shortName)  ·  \(task.origin.changeRequestRef.repoFullPath)")
                         .foregroundStyle(Theme.textSecondary)
                     Button {
-                        model.showChangeRequest(task.origin.changeRequest)
+                        model.showChangeRequest(task.origin.changeRequest, thread: task.origin.thread)
                     } label: {
                         Text(task.origin.providerKind.formattedNumber(task.origin.changeRequest.number))
                             .lineLimit(1)

@@ -129,7 +129,7 @@ struct TaskCard: View {
             Button("Open") { model.selectedTaskID = task.id }
             Section("Set Status") { TaskStatusMenuItems(model: model, task: task) }
             Divider()
-            Button("Show \(task.origin.providerKind.changeRequestAbbreviation) Details") { model.showChangeRequest(task.origin.changeRequest) }
+            Button("Show \(task.origin.providerKind.changeRequestAbbreviation) Details") { model.showChangeRequest(task.origin.changeRequest, thread: task.origin.thread) }
         }
         .accessibilityLabel("Task \(task.id.rawValue), \(Presentation.taskTitle(record, snapshot: snapshot)), \(TaskStateStyle.label(record))")
     }

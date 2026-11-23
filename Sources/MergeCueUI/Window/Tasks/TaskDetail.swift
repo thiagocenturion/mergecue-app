@@ -51,7 +51,7 @@ struct TaskActionsMenu: View {
             if task.state == .blocked { Button("Unblock") { send(.unblockTask(task.id)) } }
             if task.state == .readyForReview { Button("Mark Done Without Changes") { send(.markTaskDone(task.id)) } }
             mergeSection
-            Button("Show \(task.origin.providerKind.changeRequestAbbreviation) Details") { model.showChangeRequest(task.origin.changeRequest) }
+            Button("Show \(task.origin.providerKind.changeRequestAbbreviation) Details") { model.showChangeRequest(task.origin.changeRequest, thread: task.origin.thread) }
             Button("Open in \(task.origin.providerKind.displayName)") { send(.openURL(task.origin.webURL)) }
             Divider()
             if task.state.isTerminal {

@@ -29,6 +29,7 @@ struct ApprovalHighlightCard: View {
     let highlight: ApprovalHighlight
     var compact = false
     @State private var appeared = false
+    @State private var isHovering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -67,8 +68,7 @@ struct ApprovalHighlightCard: View {
             .layoutPriority(1)
             Spacer(minLength: 6)
             Button("View") {
-                model.markApprovalsSeen(highlight.changeRequest)
-                model.showChangeRequest(highlight.changeRequest)
+                model.showApprovals(highlight.changeRequest)
             }
             .buttonStyle(TintedOutlineButtonStyle(color: Theme.mint, textColor: Theme.mintText, size: .small))
             .fixedSize()
@@ -85,7 +85,14 @@ struct ApprovalHighlightCard: View {
         .padding(.horizontal, compact ? 16 : Theme.cardPadding)
         .padding(.vertical, compact ? 10 : 12)
         .sheen(active: !reduceMotion, shape: SmoothRect())
-        .glassCard(tint: Theme.mint)
+        .glassCard(tint: Theme.mint, interactive: true)
+        // The whole card opens the pull request at its approvals (D51); the buttons keep their own actions.
+        .contentShape(SmoothRect())
+        .onTapGesture { model.showApprovals(highlight.changeRequest) }
+        .onHover { hovering in withAnimation(Motion.hover) { isHovering = hovering } }
+        .scaleEffect(isHovering && !reduceMotion ? 1.01 : 1)
+        .help("Open the \(highlight.providerKind.changeRequestNoun) at its approvals")
+        .accessibilityAddTraits(.isButton)
         .onAppear { appeared = true }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(highlight.headline). \(highlight.title). \(highlight.progressText)")
