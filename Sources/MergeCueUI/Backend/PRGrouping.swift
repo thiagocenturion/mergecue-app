@@ -5,10 +5,10 @@ import MergeCueCore
 // header per change request. Groups start expanded; collapsing one keeps a summary visible (count, unread, reasons).
 
 extension InboxResult {
-    /// The Inbox's change request groups in display order: groups with something unread or actionable first, then
+    /// The Inbox's change request groups in display order: groups with something actionable first, then
     /// by latest activity. Items keep `InboxQuery`'s order inside each group.
     public func prGroups(now: Date) -> [InboxGroup] {
-        func isActive(_ group: InboxGroup) -> Bool { group.items.contains { $0.isUnread || $0.isActionable(now: now) } }
+        func isActive(_ group: InboxGroup) -> Bool { group.items.contains { $0.isActionable(now: now) } }
         func latest(_ group: InboxGroup) -> Date { group.items.map(\.updatedAt).max() ?? .distantPast }
         return groups.filter { !$0.items.isEmpty }.sorted { lhs, rhs in
             let (left, right) = (isActive(lhs), isActive(rhs))

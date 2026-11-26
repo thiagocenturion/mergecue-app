@@ -569,7 +569,7 @@ upsertMapping(_:), mappings(repo: RepoKey?) -> [RepoMapping], deleteMapping(id:)
 // settings kv (Codable JSON)
 setting<T: Codable>(_ key: String, as: T.Type) -> T?; setSetting<T: Codable>(_ key: String, _ value: T?)
 // retention
-pruneHistory(olderThan: Date) -> Int  /* + resolved/dismissed attention items of untracked, unlinked CRs */
+pruneHistory(olderThan: Date) -> Int  /* + resolved/acknowledged/dismissed attention items of untracked, unlinked CRs */
 checkpointAndOptimize() /* PRAGMA optimize + wal_checkpoint(TRUNCATE) */; fileSizes() -> Int /* db + WAL bytes */
 ```
 `StoreError`: `versionConflict(current: Int)`, `notFound`, `corrupted(String)`, `sqlite(code: Int32, message: String)`.

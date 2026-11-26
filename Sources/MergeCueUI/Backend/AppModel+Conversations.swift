@@ -32,15 +32,28 @@ extension AppModel {
         }
     }
 
+    /// Acknowledges every actionable item of the conversation and marks the rest read, so nothing of it is left
+    /// unread behind the card (D55).
     public func acknowledgeConversation(_ item: AttentionItem) async {
-        for target in conversationItems(for: item) where target.isActionable(now: now) {
+        let members = conversationItems(for: item)
+        for target in members where target.isActionable(now: now) {
             await send(.acknowledge(attentionID: target.id))
         }
+        await markReadLeftovers(of: members)
     }
 
     public func snoozeConversation(_ item: AttentionItem, until: Date) async {
-        for target in conversationItems(for: item) where target.isActionable(now: now) {
+        let members = conversationItems(for: item)
+        for target in members where target.isActionable(now: now) {
             await send(.snooze(attentionID: target.id, until: until))
+        }
+        await markReadLeftovers(of: members)
+    }
+
+    /// Marks read the members an acknowledge or snooze did not touch (resolved or snoozed while unread).
+    private func markReadLeftovers(of members: [AttentionItem]) async {
+        for target in members where target.isUnread && !target.isActionable(now: now) {
+            await send(.markRead(attentionID: target.id, read: true))
         }
     }
 

@@ -50,7 +50,8 @@ public nonisolated struct InboxFilter: Sendable, Hashable {
     public var repo: RepoKey?
     public var status: InboxStatusFilter = .all
     public var searchText: String = ""
-    /// Hide already-read activity behind a "Show read" row.
+    /// Show only conversations that still need you (open, or snoozed past its time) and fold the rest
+    /// (acknowledged, resolved by the provider, snoozed) behind a "Show cleared" row, read or not (D55).
     public var collapseRead: Bool = true
 
     public init(scope: InboxScope = .all, provider: ProviderKind? = nil, account: AccountKey? = nil, repo: RepoKey? = nil,
@@ -80,7 +81,7 @@ public nonisolated struct InboxGroup: Sendable, Hashable, Identifiable {
     public var items: [AttentionItem]
     /// Every item of each conversation, keyed by the representing item's id (itself included).
     public var members: [String: [AttentionItem]] = [:]
-    /// Read conversations hidden by `collapseRead`.
+    /// Cleared conversations (nothing actionable) hidden by `collapseRead`.
     public var hiddenReadCount: Int
     public var latest: Date
 
@@ -91,7 +92,7 @@ public nonisolated struct InboxGroup: Sendable, Hashable, Identifiable {
 
 public nonisolated struct InboxResult: Sendable, Hashable {
     public var groups: [InboxGroup]
-    /// Read items hidden by `collapseRead` across all groups.
+    /// Cleared conversations hidden by `collapseRead` across all groups.
     public var hiddenReadCount: Int
     public var totalCount: Int
 
@@ -138,8 +139,10 @@ public nonisolated enum InboxQuery {
             // One card per conversation: replies, threads on the same line and top-level comments read as one.
             let conversations = ConversationGrouping.group(items, snapshots: snapshots, order: byPriority)
             let collapse = filter.collapseRead && !showRead && filter.status != .done
+            // Unread alone does not keep a card: an item the provider resolved while unread (you approved on the
+            // website, CI recovered, the thread was resolved) no longer needs you and has nothing to acknowledge (D55).
             let visible = collapse
-                ? conversations.filter { $0.contains { $0.isUnread || $0.isActionable(now: now) } }
+                ? conversations.filter { $0.contains { $0.isActionable(now: now) } }
                 : conversations
             let hidden = conversations.count - visible.count
             hiddenTotal += hidden

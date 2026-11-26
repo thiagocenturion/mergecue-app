@@ -86,7 +86,7 @@ extension MergeCueDatabase {
             removed += try connection.run(
                 """
                 DELETE FROM attention_items WHERE updated_at < ?
-                    AND disposition IN ('resolved', 'dismissed')
+                    AND disposition IN ('resolved', 'acknowledged', 'dismissed')
                     AND linked_task_id IS NULL
                     AND cr_id NOT IN (SELECT id FROM change_requests)
                 """,

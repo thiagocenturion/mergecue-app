@@ -58,12 +58,28 @@ struct InboxFilterTests {
         #expect(Set(mine.map(\.id)).isDisjoint(with: reviewing.map(\.id)))
     }
 
-    @Test func collapseReadHidesReadActivity() {
+    @Test func collapseReadHidesClearedActivity() {
         let collapsed = InboxQuery.run(state: state, filter: InboxFilter(collapseRead: true), now: testNow)
         let expanded = InboxQuery.run(state: state, filter: InboxFilter(collapseRead: true), now: testNow, showRead: true)
         #expect(collapsed.hiddenReadCount > 0)
-        #expect(collapsed.visibleItems.allSatisfy { $0.isUnread || $0.isActionable(now: testNow) })
+        #expect(collapsed.visibleItems.allSatisfy { $0.isActionable(now: testNow) })
         #expect(expanded.visibleItems.count == collapsed.visibleItems.count + collapsed.hiddenReadCount)
+    }
+
+    /// D55: an item the provider resolved while it was still unread (approved on the website, CI recovered) has
+    /// nothing left to acknowledge, so it must not stay in the Inbox forever.
+    @Test func unreadButClearedItemsAreCollapsed() throws {
+        var state = state
+        let index = try #require(state.attention.firstIndex { $0.isActionable(now: testNow) && $0.thread == nil })
+        let item = state.attention[index]
+        for disposition in [AttentionDisposition.resolved, .acknowledged, .snoozed(until: testNow.addingTimeInterval(3_600))] {
+            state.attention[index].disposition = disposition
+            state.attention[index].isUnread = true
+            let result = InboxQuery.run(state: state, filter: InboxFilter(collapseRead: true), now: testNow)
+            #expect(!result.visibleItems.contains { $0.id == item.id }, "\(disposition.name) stays hidden while unread")
+            let shown = InboxQuery.run(state: state, filter: InboxFilter(collapseRead: true), now: testNow, showRead: true)
+            #expect(shown.visibleItems.contains { $0.id == item.id }, "still behind Show cleared items")
+        }
     }
 
     @Test func statusFilters() {

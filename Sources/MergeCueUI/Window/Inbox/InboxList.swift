@@ -156,7 +156,7 @@ struct InboxColumn: View {
             Button {
                 model.showReadInInbox = true
             } label: {
-                Label("Show \(result.hiddenReadCount) read item\(result.hiddenReadCount == 1 ? "" : "s")", systemImage: "chevron.down.circle")
+                Label("Show \(result.hiddenReadCount) cleared item\(result.hiddenReadCount == 1 ? "" : "s")", systemImage: "chevron.down.circle")
                     .scaledFont(.system(size: 13))
                     .foregroundStyle(Theme.accentText)
             }
@@ -166,7 +166,7 @@ struct InboxColumn: View {
             Button {
                 model.showReadInInbox = false
             } label: {
-                Label("Collapse read items", systemImage: "chevron.up.circle")
+                Label("Collapse cleared items", systemImage: "chevron.up.circle")
                     .scaledFont(.system(size: 13))
                     .foregroundStyle(Theme.accentText)
             }
@@ -193,8 +193,8 @@ struct InboxColumn: View {
         } else if result.hiddenReadCount > 0 {
             VStack(spacing: 12) {
                 NothingSelected(title: "No new activity", symbol: "checkmark.circle",
-                                message: "You're all caught up. \(result.hiddenReadCount) read item\(result.hiddenReadCount == 1 ? " is" : "s are") collapsed.")
-                Button("Show Read Items") { model.showReadInInbox = true }
+                                message: "You're all caught up. \(result.hiddenReadCount) cleared item\(result.hiddenReadCount == 1 ? " is" : "s are") collapsed.")
+                Button("Show Cleared Items") { model.showReadInInbox = true }
                     .buttonStyle(SecondaryButtonStyle())
             }
         } else {
@@ -211,8 +211,8 @@ struct InboxDayGroup: Identifiable {
 
     static func make(_ items: [AttentionItem], now: Date, calendar: Calendar = .current) -> [InboxDayGroup] {
         let sorted = items.sorted { lhs, rhs in
-            let lhsActive = lhs.isUnread || lhs.isActionable(now: now)
-            let rhsActive = rhs.isUnread || rhs.isActionable(now: now)
+            let lhsActive = lhs.isActionable(now: now)
+            let rhsActive = rhs.isActionable(now: now)
             if lhsActive != rhsActive { return lhsActive }
             return lhs.updatedAt > rhs.updatedAt
         }
@@ -229,7 +229,7 @@ struct InboxDayGroup: Identifiable {
     }
 }
 
-/// Provider, account, repository and status filters plus "Hide read", behind one control.
+/// Provider, account, repository and status filters plus "Hide cleared", behind one control.
 struct InboxFilterMenu: View {
     @Bindable var model: AppModel
 
@@ -257,7 +257,7 @@ struct InboxFilterMenu: View {
                 ForEach(InboxStatusFilter.allCases) { Text($0.title).tag($0) }
             }
             Divider()
-            Toggle("Hide Read Items", isOn: $model.inboxFilter.collapseRead)
+            Toggle("Hide Cleared Items", isOn: $model.inboxFilter.collapseRead)
             if active {
                 Divider()
                 Button("Clear Filters") {

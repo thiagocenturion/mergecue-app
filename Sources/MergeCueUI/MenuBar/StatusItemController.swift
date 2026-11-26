@@ -21,6 +21,9 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     private let popover = NSPopover()
     private var currentIconShowsDot = false
     private var appearanceObservation: NSKeyValueObservation?
+    /// Light/dark of the last icon drawn for an appearance change, and whether a check is already queued.
+    private var lastIconIsDark: Bool?
+    private var appearanceCheckPending = false
     private var hotKey: GlobalHotKey?
 
     init(model: AppModel, actions: StatusMenuActions) {
@@ -44,9 +47,12 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         }
         statusItem.autosaveName = "MergeCueStatusItem"
         if #available(macOS 14.0, *) { popover.hasFullSizeContent = true }
-        // The icon is not a template: redraw it when the menu bar switches between light and dark.
-        appearanceObservation = statusItem.button?.observe(\.effectiveAppearance, options: [.new]) { button, _ in
-            Task { @MainActor in button.needsDisplay = true }
+        // The icon is not a template: redraw it when the menu bar switches between light and dark. AppKit sets the
+        // button's appearance again on every redraw of the status item, so redrawing on each notification never stops
+        // (a full CPU core, D55): redraw only when light/dark really changed, once per burst.
+        lastIconIsDark = statusItem.button.map { MenuBarIcon.isDark($0.effectiveAppearance) }
+        appearanceObservation = statusItem.button?.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
+            Task { @MainActor [weak self] in self?.scheduleAppearanceCheck() }
         }
         statusItem.button?.setAccessibilityCustomActions([
             NSAccessibilityCustomAction(name: "Show menu") { [weak self] in
@@ -80,6 +86,26 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         popover.isShown ? closePopover() : showPopover(fromKeyboard: true)
     }
 
+    // MARK: Appearance
+
+    private func scheduleAppearanceCheck() {
+        guard !appearanceCheckPending else { return }
+        appearanceCheckPending = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            self?.checkAppearance()
+        }
+    }
+
+    private func checkAppearance() {
+        appearanceCheckPending = false
+        guard let button = statusItem.button else { return }
+        let isDark = MenuBarIcon.isDark(button.effectiveAppearance)
+        guard isDark != lastIconIsDark else { return }
+        lastIconIsDark = isDark
+        button.needsDisplay = true
+    }
+
     // MARK: Button content
 
     private func observeModel() {
@@ -98,16 +124,22 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
             button.image = MenuBarIcon.image(showsDot: showsDot)
             currentIconShowsDot = showsDot
         }
-        if count > 0 && model.showCountInMenuBar {
-            button.attributedTitle = NSAttributedString(string: "\(count)", attributes: [
-                .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize - 1, weight: .medium),
-                .baselineOffset: 0.5,
-            ])
-        } else {
-            button.title = ""
+        // Every set redraws the status item, and this runs on each state change: set only what changed.
+        let title = count > 0 && model.showCountInMenuBar ? "\(count)" : ""
+        if button.title != title {
+            if title.isEmpty {
+                button.title = ""
+            } else {
+                button.attributedTitle = NSAttributedString(string: title, attributes: [
+                    .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize - 1, weight: .medium),
+                    .baselineOffset: 0.5,
+                ])
+            }
         }
-        button.toolTip = model.menuBarToolTip
-        button.setAccessibilityLabel(model.menuBarAccessibilityLabel)
+        let toolTip = model.menuBarToolTip
+        if button.toolTip != toolTip { button.toolTip = toolTip }
+        let label = model.menuBarAccessibilityLabel
+        if button.accessibilityLabel() != label { button.setAccessibilityLabel(label) }
         let shortcut = model.globalHotKey == .off ? "" : " Shortcut: \(model.globalHotKey.spokenName)."
         button.setAccessibilityHelp("Click to show what needs you. Control-click, or use the Show menu action, for more options.\(shortcut)")
     }

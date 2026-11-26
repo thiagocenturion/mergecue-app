@@ -107,4 +107,23 @@ struct ConversationGroupingTests {
         // Two read items, one conversation: one hidden row.
         #expect(collapsed.hiddenReadCount == baseline + 1)
     }
+
+    /// D55: acknowledging the open item of a conversation clears the card even when another item of the same
+    /// conversation was resolved by the provider while still unread (it used to come back without a checkmark).
+    @Test func acknowledgedConversationStaysClearedWithAnUnreadResolvedMember() throws {
+        let first = thread("1", kind: .conversation, comments: [comment("1", 0)])
+        let second = thread("2", kind: .conversation, comments: [comment("2", 5)])
+        var state = previewState()
+        state.changeRequests = state.changeRequests.map { $0.key == base.key ? snapshot([first, second]) : $0 }
+        var resolved = item(for: first, minutes: 1)
+        resolved.disposition = .resolved
+        var acknowledged = item(for: second, minutes: 6, unread: false)
+        acknowledged.disposition = .acknowledged
+        state.attention = state.attention.filter { $0.changeRequest != base.key } + [resolved, acknowledged]
+
+        let collapsed = InboxQuery.run(state: state, filter: InboxFilter(collapseRead: true), now: testNow)
+        #expect(collapsed.groups.first { $0.changeRequest == base.key } == nil)
+        let expanded = InboxQuery.run(state: state, filter: InboxFilter(collapseRead: true), now: testNow, showRead: true)
+        #expect(expanded.groups.first { $0.changeRequest == base.key }?.items.count == 1)
+    }
 }

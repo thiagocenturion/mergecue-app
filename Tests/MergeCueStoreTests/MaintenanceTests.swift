@@ -261,6 +261,7 @@ struct MaintenanceTests {
             item(gone, "g-open", .open, at: old),              // open → kept
             item(gone, "g-recent", .resolved, at: recent),     // too recent → kept
             item(gone, "g-linked", .resolved, at: old),        // linked to a task → kept
+            item(gone, "g-acknowledged", .acknowledged, at: old), // removed (D55)
         ]
         try await database.applySyncBatch(SyncBatch(
             account: account, snapshots: [StoreFixture.snapshot(tracked)], attentionUpserts: items, syncedAt: recent
@@ -269,7 +270,7 @@ struct MaintenanceTests {
         let linked = try #require(try await database.attentionItem(dedupeKey: items[5].dedupeKey))
         try await database.linkAttention(id: linked.id, taskID: TaskID(rawValue: "mc_linked")!)
 
-        #expect(try await database.pruneHistory(olderThan: cutoff) == 2)
+        #expect(try await database.pruneHistory(olderThan: cutoff) == 3)
         let left = Set(try await database.attentionItems(includeInactive: true).map(\.dedupeKey))
         #expect(left == Set([items[0], items[3], items[4], items[5]].map(\.dedupeKey)))
 
