@@ -495,7 +495,13 @@ public struct NotificationPreferences: Codable, Sendable, Hashable { var disable
 // Attention items, events, rules and tasks are never affected. The engine's own "agent result ready" alert
 // (EngineEnvironment.notifier) honours `agentResults`, pause and quiet hours.
 public struct GroupedNotification: Codable, Sendable, Hashable { var id: String; var threadIdentifier: String /* CR id */; var title: String; var subtitle: String; var body: String; var changeRequest: ChangeRequestKey; var attentionItemIDs: [String]; var isUrgent: Bool; var webURL: URL? }
-public protocol NotificationDelivering: Sendable { func deliver(_ notification: GroupedNotification) async }
+public protocol NotificationDelivering: Sendable {
+    func deliver(_ notification: GroupedNotification) async   // replaces delivered ones it repeats (D57)
+    func withdraw(changeRequest: ChangeRequestKey, keepingActionable: Set<String>) async   // default: no-op (D57)
+}
+// GroupedNotification.topics: news it carries besides items ("event:approval", "event:merged", "task:<id>").
+// NotificationHygiene.superseded(by:delivered:) / .stale(changeRequestID:actionable:delivered:) decide what leaves
+// Notification Center; Sync withdraws after every cycle, the Engine after acknowledge / snooze / dismiss.
 public protocol MCClock: Sendable { var now: Date { get }; func sleep(for seconds: TimeInterval) async throws }
 public struct SystemClock: MCClock; public final class TestClock: MCClock (manually advanced, thread-safe)
 public enum MCClockLimits { static let maxSleep /* 7 days */; static func sanitizedSleep(_:) -> TimeInterval }

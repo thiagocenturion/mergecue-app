@@ -216,4 +216,78 @@ struct ViewerReviewTests {
         #expect(try JSONDecoder().decode(NotificationPreferences.self, from: data) == on)
         #expect(!on.setting(.reviewedMerged, enabled: false).isEnabled(.reviewedMerged))
     }
+
+    // MARK: D57: no duplicates
+
+    /// The owner's case: an approval is reset by a push, then the author asks for the review again. One
+    /// "Re-approval needed" item and one alert, and both go once the PR is approved again.
+    @Test func reRequestAfterALostApprovalIsOneItemAndItsAlertLeavesOnApproval() async throws {
+        // GitHub: a push dismisses the stale approval, the author re-requests the review.
+        let cr = F.crKey(F.github, number: 12)
+        func pr(_ state: ReviewState) -> ChangeRequestSnapshot {
+            F.snapshot(cr, author: F.alice, involvement: [.reviewRequested], headSHA: "aaaa1111", updatedAt: F.at(0),
+                       reviewers: [Reviewer(person: F.mona, state: state)])
+        }
+        let h = try await SyncHarness(accounts: [F.github])
+        let remote = h.remote(F.github)
+        remote.supportsInvolved = true
+        remote.put(pr(.pending))
+        let coordinator = await h.makeCoordinator()
+        await h.start(coordinator)
+
+        remote.update(cr) {
+            $0 = $0.touched(60)
+            $0.summary.involvement = [.participated]
+            $0.reviewers = [Reviewer(person: F.mona, state: .approved)]
+        }
+        await h.advance(900)
+        remote.update(cr) {
+            $0 = $0.touched(1_000)
+            $0.summary.headSHA = "bbbb2222"
+            $0.commits = [CommitInfo(sha: "aaaa1111", title: "a"), CommitInfo(sha: "bbbb2222", title: "b")]
+            $0.reviewers = [Reviewer(person: F.mona, state: .dismissed)]
+        }
+        await h.advance(900)
+        #expect(try await h.activeItems().map(\.reason) == [.reapprovalNeeded])
+        #expect(h.notifier.shown.count == 1)
+
+        // The author re-requests the review: still one item, no second alert.
+        remote.update(cr) {
+            $0 = $0.touched(2_000)
+            $0.summary.involvement = [.reviewRequested]
+            $0.reviewers = [Reviewer(person: F.mona, state: .pending)]
+        }
+        await h.advance(900)
+        #expect(try await h.activeItems().map(\.reason) == [.reapprovalNeeded], "no Review requested next to it")
+        #expect(h.notifier.shown.count == 1)
+
+        // Approved again: nothing left, in the Inbox or in Notification Center.
+        remote.update(cr) {
+            $0 = $0.touched(3_000)
+            $0.summary.involvement = [.participated]
+            $0.reviewers = [Reviewer(person: F.mona, state: .approved)]
+        }
+        await h.advance(900)
+        await coordinator.stop()
+        #expect(try await h.activeItems().isEmpty)
+        #expect(h.notifier.shown.isEmpty, "the old Re-approval needed alert is withdrawn")
+    }
+
+    /// A pending request raised before the approval was lost is closed once the re-approval item exists.
+    @Test func anOpenReviewRequestClosesWhileReapprovalIsNeeded() async throws {
+        let h = try await SyncHarness(accounts: [F.bitbucket])
+        let remote = h.remote(F.bitbucket)
+        remote.put(pr(.approved))
+        let coordinator = await h.makeCoordinator()
+        await h.start(coordinator)
+        remote.update(cr) {
+            $0 = $0.touched(1_000)
+            $0.summary.headSHA = "bbbb2222"
+            $0.summary.involvement = [.reviewRequested]
+            $0.reviewers = [Reviewer(person: F.mona, state: .pending)]
+        }
+        await h.advance(900)
+        await coordinator.stop()
+        #expect(try await h.activeItems().map(\.reason) == [.reapprovalNeeded])
+    }
 }

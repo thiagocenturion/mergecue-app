@@ -204,13 +204,41 @@ final class TestCredentialStore: CredentialStoring {
     func delete(for account: AccountKey) throws { storage.withLock { $0[account] = nil } }
 }
 
-/// Records delivered notifications.
+/// Records delivered notifications and plays Notification Center: `shown` keeps what is still on screen after the
+/// D57 replace / withdraw rules.
 final class RecordingNotifier: NotificationDelivering {
     private let storage = OSAllocatedUnfairLock(initialState: [GroupedNotification]())
+    private let center = OSAllocatedUnfairLock(initialState: [GroupedNotification]())
 
-    func deliver(_ notification: GroupedNotification) async { storage.withLock { $0.append(notification) } }
+    func deliver(_ notification: GroupedNotification) async {
+        storage.withLock { $0.append(notification) }
+        center.withLock { shown in
+            let gone = Set(NotificationHygiene.superseded(by: notification, delivered: shown.map(Self.info)))
+            shown.removeAll { gone.contains($0.id) }
+            shown.append(notification)
+        }
+    }
+
+    func withdraw(changeRequest: ChangeRequestKey, keepingActionable actionable: Set<String>) async {
+        center.withLock { shown in
+            let gone = Set(NotificationHygiene.stale(changeRequestID: changeRequest.id, actionable: actionable,
+                                                     delivered: shown.map(Self.info)))
+            shown.removeAll { gone.contains($0.id) }
+        }
+    }
+
     var delivered: [GroupedNotification] { storage.withLock { $0 } }
-    func reset() { storage.withLock { $0.removeAll() } }
+    /// Still in Notification Center.
+    var shown: [GroupedNotification] { center.withLock { $0 } }
+    func reset() {
+        storage.withLock { $0.removeAll() }
+        center.withLock { $0.removeAll() }
+    }
+
+    private static func info(_ notification: GroupedNotification) -> DeliveredNotification {
+        DeliveredNotification(id: notification.id, changeRequestID: notification.changeRequest.id,
+                              attentionItemIDs: notification.attentionItemIDs, topics: notification.topics)
+    }
 }
 
 /// Records values from `@Sendable` callbacks.

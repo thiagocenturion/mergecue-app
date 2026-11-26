@@ -47,7 +47,9 @@ extension GitLabProvider {
         let needSource = isCrossProject && reuse?.source == nil
 
         async let projectTask: GLProject?? = needProject
-            ? Self.tolerant { try await api.get(GLProject.self, GitLabAPI.project(projectID)) } : nil
+            ? session.project(projectID, now: clock.now) {
+                try await Self.tolerant { try await api.get(GLProject.self, GitLabAPI.project(projectID)) }
+            } : nil
         async let discussionsTask: GitLabAPI.Paged<GLDiscussion>? = needDiscussions
             ? api.getAll(GLDiscussion.self, mrPath + "/discussions", maxPages: HydrationLimits.discussionPages) : nil
         async let approvalsTask: GLApprovals?? = needApprovals

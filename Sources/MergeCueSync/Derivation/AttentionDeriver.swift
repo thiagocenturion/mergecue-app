@@ -16,7 +16,8 @@ import MergeCueCore
 /// - `ci_failed`: one item per check name on the user's own CR while that check is still failing
 ///   (`high`, or `normal` for checks the provider marks as not required).
 /// - `change_requested` on the user's CR while a reviewer's latest verdict is still "changes requested".
-/// - `review_requested` while the review is still requested and the user has not given a verdict;
+/// - `review_requested` while the review is still requested and the user has not given a verdict, unless a lost
+///   approval already asks for it (`reapprovalNeeded` stands alone, D57);
 ///   `ready_to_merge` on the user's CR while ready.
 /// - Reviews of others' CRs (D53, `ViewerReview.status`): `approval_reset` → `reapprovalNeeded` while the approval
 ///   is still missing; `head_changed` after the user commented or requested changes → `updatedSinceReview` until
@@ -227,6 +228,12 @@ public enum AttentionDeriver {
 
         // MARK: CR-level reasons
 
+        /// A lost approval is the one item for the change request while it lasts: a re-request of the same review
+        /// (GitHub asks again after dismissing a stale approval) must not add "Review requested" next to it (D57).
+        private var needsReapproval: Bool {
+            !isMine && ViewerReview.status(of: snapshot, userID: me)?.needsReapproval == true
+        }
+
         mutating func deriveReasonItems(_ events: [ChangeEvent]) {
             guard isOpen else { return }
             let changeEvents = events.filter { $0.type == .changeRequested }
@@ -240,7 +247,7 @@ public enum AttentionDeriver {
             }
             let requestEvents = events.filter { $0.type == .reviewRequested }
             if !requestEvents.isEmpty, snapshot.summary.involvement.contains(.reviewRequested),
-               ViewerReview.currentVerdict(snapshot, userID: me) == nil
+               ViewerReview.currentVerdict(snapshot, userID: me) == nil, !needsReapproval
             {
                 put(item(
                     dedupeKey: AttentionItem.dedupeKey(changeRequest: snapshot.key, reason: .reviewRequested),
@@ -328,6 +335,7 @@ public enum AttentionDeriver {
             case .reviewRequested:
                 return !snapshot.summary.involvement.contains(.reviewRequested)
                     || ViewerReview.currentVerdict(snapshot, userID: me) != nil
+                    || needsReapproval
             case .reapprovalNeeded:
                 return ViewerReview.status(of: snapshot, userID: me)?.needsReapproval != true
             case .updatedSinceReview:

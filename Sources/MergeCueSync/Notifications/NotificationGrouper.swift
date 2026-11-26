@@ -125,6 +125,7 @@ public enum NotificationGrouper {
             body: body,
             changeRequest: key,
             attentionItemIDs: items.map(\.id),
+            topics: Array(Set(informational.map { "event:" + $0.type.rawValue })).sorted(),
             isUrgent: items.contains { $0.priority >= .high },
             webURL: webURL
         )

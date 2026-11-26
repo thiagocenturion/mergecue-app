@@ -86,12 +86,18 @@ extension MergeCueEngine {
 
     private func setDisposition(_ id: String, _ disposition: AttentionDisposition) async throws(EngineError) {
         try await uiCall {
-            try await requireAttention(id)
+            let item = try await requireAttention(id)
             try await database.setAttentionDisposition(id: id, disposition)
             if disposition != .open {
                 try await database.setAttentionUnread(id: id, false)
             }
             emit(.attention)
+            if disposition != .open, let notifier = env.notifier {
+                // Acknowledged, snoozed or dismissed: its alert leaves Notification Center (D57).
+                let at = now
+                let actionable = try await database.attentionItems(changeRequest: item.changeRequest).filter { $0.isActionable(now: at) }
+                await notifier.withdraw(changeRequest: item.changeRequest, keepingActionable: Set(actionable.map(\.id)))
+            }
         }
     }
 

@@ -292,11 +292,34 @@ public struct GitLabProvider: ReviewProvider {
 /// Per-provider cache of the authenticated user (the reviewer id used by listings).
 final class GitLabSession: Sendable {
     private let state = Mutex<GLUser?>(nil)
+    /// Project lookups of the last few minutes, in flight or done (merge requests of one project share one).
+    private let projects = Mutex<[String: (task: Task<GLProject?, any Error>, at: Date)]>([:])
+    /// How long a project lookup is reused (clone URLs and names rarely change).
+    static let projectLifetime: TimeInterval = 300
 
     var user: GLUser? { state.withLock { $0 } }
 
     func setUser(_ user: GLUser) {
         state.withLock { $0 = user }
+    }
+
+    /// The project `id`, fetched once for every merge request hydrated within `projectLifetime`: concurrent
+    /// hydrations share the lookup instead of racing two identical requests. Failures and empty answers are not kept.
+    func project(_ id: String, now: Date, fetch: @escaping @Sendable () async throws -> GLProject?) async throws -> GLProject? {
+        let task = projects.withLock { cache in
+            if let entry = cache[id], now.timeIntervalSince(entry.at) < Self.projectLifetime { return entry.task }
+            let task = Task { try await fetch() }
+            cache[id] = (task, now)
+            return task
+        }
+        do {
+            let project = try await task.value
+            if project == nil { projects.withLock { _ = $0.removeValue(forKey: id) } }
+            return project
+        } catch {
+            projects.withLock { _ = $0.removeValue(forKey: id) }
+            throw error
+        }
     }
 }
 

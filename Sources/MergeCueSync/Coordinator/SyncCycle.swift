@@ -216,6 +216,14 @@ struct SyncCycle {
                 ? "notifications paused or quiet hours" : "no actionable item or the category is switched off"
             MCLog.sync.notice("\(fresh.count) new event(s) without a notification: \(why).")
         }
+        // Notification Center keeps one alert per thing that still needs you (D57): first withdraw the alerts of
+        // items this cycle resolved (approved again, review given, thread resolved, merged, ...).
+        var touched: [ChangeRequestKey] = []
+        for key in upserts.map(\.changeRequest) + removed where !touched.contains(key) { touched.append(key) }
+        for key in touched {
+            let actionable = try await database.attentionItems(changeRequest: key).filter { $0.isActionable(now: now) }
+            await environment.notifier.withdraw(changeRequest: key, keepingActionable: Set(actionable.map(\.id)))
+        }
         for notification in notifications {
             await environment.notifier.deliver(notification)
         }
