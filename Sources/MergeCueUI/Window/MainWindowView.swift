@@ -48,18 +48,22 @@ public struct MainWindowView: View {
         .sheet(item: $model.pendingPreview) { preview in
             ApprovalSheet(model: model, preview: preview)
                 .dynamicTypeSize(model.textSize.dynamicTypeSize)
+                .environment(\.avatarImages, model.avatarImages)
         }
         .sheet(item: $model.ruleEditor) { context in
             RuleEditorSheet(model: model, context: context)
                 .dynamicTypeSize(model.textSize.dynamicTypeSize)
+                .environment(\.avatarImages, model.avatarImages)
         }
         .sheet(item: connectSheetBinding) { item in
             ConnectAccountSheet(model: model, kind: item.kind)
                 .dynamicTypeSize(model.textSize.dynamicTypeSize)
+                .environment(\.avatarImages, model.avatarImages)
         }
         .sheet(isPresented: $model.showsOnboarding) {
             OnboardingView(model: model)
                 .dynamicTypeSize(model.textSize.dynamicTypeSize)
+                .environment(\.avatarImages, model.avatarImages)
         }
         .alert(
             "Open a link to \(model.pendingLinkConfirmation?.host ?? "another site")?",
@@ -72,6 +76,7 @@ public struct MainWindowView: View {
             Text("This link comes from provider data and points outside your connected accounts and known CI services:\n\(pending.url.absoluteString)")
         }
         .dynamicTypeSize(model.textSize.dynamicTypeSize)
+        .environment(\.avatarImages, model.avatarImages)
         .defaultGlassButtons()
         // Palette colours resolve the dark style when drawn; a new identity redraws everything after a change.
         .id(model.darkStyle)

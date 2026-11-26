@@ -17,14 +17,19 @@ struct PopoverRowView: View {
 
     var body: some View {
         let content = PopoverRowContent.make(item, model: model)
+        let person = model.person(for: item)
         let shape = SmoothRect()
         HStack(spacing: 12) {
             if inGroup {
                 if item.isUnread {
                     Circle().fill(Theme.accent).frame(width: 8, height: 8).accessibilityHidden(true)
                 }
+                if let person {
+                    PersonAvatar(person: person, size: 22)
+                }
             } else {
                 ProviderBadge(kind: item.providerKind, size: 42, style: .tile)
+                    .avatarBadge(person, size: 20)
                     .overlay(alignment: .topLeading) {
                         if item.isUnread {
                             Circle()

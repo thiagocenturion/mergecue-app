@@ -103,6 +103,7 @@ public struct PopoverView: View {
             if let id { voiceOverFocus = id }
         }
         .dynamicTypeSize(model.textSize.dynamicTypeSize)
+        .environment(\.avatarImages, model.avatarImages)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("MergeCue")
         .defaultGlassButtons()

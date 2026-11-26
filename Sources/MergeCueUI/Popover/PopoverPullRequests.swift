@@ -232,7 +232,9 @@ struct PopoverPullRequestRow: View {
                 model.openChangeRequestFromPopover(summary.key)
             } label: {
                 HStack(spacing: 10) {
+                    // Reviews: the author is someone else, so their face goes on the badge.
                     ProviderBadge(kind: summary.key.kind, size: 30, style: .circle)
+                        .avatarBadge(review == nil ? nil : summary.author, size: 16)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(UIFormat.untrustedDisplay(summary.title))
                             .scaledFont(.system(size: 13.5, weight: .semibold))

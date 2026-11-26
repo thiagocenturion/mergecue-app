@@ -362,25 +362,6 @@ struct ModeBadge: View {
     }
 }
 
-/// Initial in a muted circle (no remote avatars are loaded).
-struct Avatar: View {
-    var name: String
-    var size: CGFloat = 22
-
-    var body: some View {
-        let initial = name.split(whereSeparator: { $0 == " " || $0 == "." || $0 == "-" || $0 == "_" })
-            .first?.first.map { String($0).uppercased() } ?? "?"
-        let palette: [Color] = [Color(hex: 0x6B5B95), Color(hex: 0x4F6D8F), Color(hex: 0x5B7A6E), Color(hex: 0x8A6A4F), Color(hex: 0x5E6478)]
-        let index = name.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0x7FFF_FFFF } % palette.count
-        Text(initial)
-            .scaledFont(.system(size: size * 0.46, weight: .semibold))
-            .foregroundStyle(.white.opacity(0.95))
-            .frame(width: size, height: size)
-            .background(Circle().fill(palette[index]))
-            .accessibilityHidden(true)
-    }
-}
-
 /// The small app mark (the approved icon when available, otherwise a gradient glyph).
 struct AppMark: View {
     var size: CGFloat = 18

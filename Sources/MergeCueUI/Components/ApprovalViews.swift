@@ -44,10 +44,14 @@ struct ApprovalHighlightCard: View {
                 .shadow(color: Theme.mint.opacity(appeared ? 0.45 : 0), radius: 10)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(highlight.headline)
-                    .scaledFont(.system(size: compact ? 13.5 : 14.5, weight: .semibold))
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    AvatarStack(people: highlight.newApprovers.isEmpty ? highlight.approvers : highlight.newApprovers,
+                                size: compact ? 16 : 18, ring: Theme.surface)
+                    Text(highlight.headline)
+                        .scaledFont(.system(size: compact ? 13.5 : 14.5, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(1)
+                }
                 Text("\(UIFormat.untrustedDisplay(highlight.title)) · \(highlight.providerKind.formattedNumber(highlight.changeRequest.number))")
                     .scaledFont(.system(size: compact ? 12 : 12.5))
                     .foregroundStyle(Theme.textSecondary)

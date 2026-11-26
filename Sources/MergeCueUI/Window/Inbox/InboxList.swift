@@ -498,9 +498,11 @@ struct InboxItemCard: View {
         let snapshot = model.snapshot(item.changeRequest)
         let text = Presentation.attentionText(item, snapshot: snapshot)
         let commentCount = model.conversationThread(for: item)?.comments.count ?? text.commentCount
+        let actor = Presentation.actor(item, snapshot: snapshot)
         HStack(alignment: .top, spacing: 16) {
             if !inGroup {
                 ProviderBadge(kind: item.providerKind, size: 42, style: .circle)
+                    .avatarBadge(actor, size: 20)
                     .padding(.top, 2)
             }
             VStack(alignment: .leading, spacing: 0) {
@@ -508,6 +510,9 @@ struct InboxItemCard: View {
                     if isUnread {
                         Circle().fill(Theme.accent).frame(width: 7, height: 7)
                             .accessibilityHidden(true)
+                    }
+                    if inGroup, let actor {
+                        PersonAvatar(person: actor, size: 16)
                     }
                     Text(inGroup ? item.reason.displayName : "\(item.providerKind.shortName)  •  \(item.repoFullPath)  \(item.providerKind.formattedNumber(item.number))")
                         .scaledFont(.system(size: 13))

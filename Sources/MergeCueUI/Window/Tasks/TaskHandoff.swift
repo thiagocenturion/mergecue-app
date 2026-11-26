@@ -152,7 +152,11 @@ struct TriggerQuoteCard: View {
         let root = task.origin.thread.flatMap { snapshot?.thread($0) }?.rootComment
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                ProviderGlyph(kind: task.origin.providerKind, size: 26)
+                if let author = root?.author {
+                    PersonAvatar(person: author, size: 26)
+                } else {
+                    ProviderGlyph(kind: task.origin.providerKind, size: 26)
+                }
                 Text(root.map { Presentation.shortName($0.author) } ?? quote?.author ?? (quote?.source == UntrustedText.Source.ciLog ? "CI log" : "Comment"))
                     .scaledFont(.system(size: 14.5, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)

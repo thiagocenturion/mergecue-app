@@ -994,6 +994,12 @@ unique-constraint violations.
 - UI: `NSStatusItem` + `NSPopover` (click-opened, keyboard accessible) with sections Needs you / In progress
   (waiting for an agent or being worked on) / Ready (top 3 each + counts), main window (Inbox, PRs & MRs, Tasks, Rules, Settings), onboarding,
   agent wizard, task detail, diff and CI excerpt viewers, action previews. See §4 of PLAN.
+- Avatars (D58): `PersonAvatar(person:size:)` / `AvatarStack` / `.avatarBadge(_:size:)` draw `Person.avatarURL` through
+  `public final class AvatarImageStore` (`shared`; `init(directory:loader:maxDiskBytes:freshFor:keepFor:now:)`,
+  `cachedImage(for:)`, `image(for:) async -> NSImage?`, `static isAllowed(_:)`, `static defaultDirectory(environment:)`)
+  with `public protocol AvatarImageLoading` (`AvatarHTTPLoader`: credential-free ephemeral session). Injected with
+  `EnvironmentValues.avatarImages` from `AppModel.avatarImages` (live `.shared`, preview synthetic, demo nil = initials).
+  `Presentation.actor(_:snapshot:)` / `requester(_:snapshot:)` name the person an item or task is about.
 - App bundle id `com.thiagocenturion.MergeCue` (helper `com.thiagocenturion.MergeCue.mcp`), signed with Apple Development
   (team `TTSKDZ455K`); not sandboxed; Hardened Runtime on; `mergecue-mcp` embedded in `Contents/MacOS/`.
 - Remote write policy (owner): only `post_reply` and `resolve_thread` may be enabled; `request_changes`,

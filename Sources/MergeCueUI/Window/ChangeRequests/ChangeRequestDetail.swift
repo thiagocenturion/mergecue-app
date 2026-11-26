@@ -51,7 +51,7 @@ struct ReviewersCard: View {
                 }
                 ForEach(snapshot.reviewers, id: \.person.remoteID) { reviewer in
                     HStack(spacing: 10) {
-                        Avatar(name: reviewer.person.displayLabel, size: 26)
+                        PersonAvatar(person: reviewer.person, size: 26)
                         VStack(alignment: .leading, spacing: 0) {
                             Text(reviewer.person.displayLabel).scaledFont(.system(size: 13, weight: .medium)).foregroundStyle(Theme.textPrimary)
                             Text("@" + reviewer.person.username).scaledFont(.system(size: 11.5)).foregroundStyle(Theme.textSecondary)
@@ -65,9 +65,15 @@ struct ReviewersCard: View {
                     .accessibilityElement(children: .combine)
                 }
                 ThemeDivider()
-                Text(approvalText)
-                    .scaledFont(.system(size: 12))
-                    .foregroundStyle(snapshot.approvals.isSatisfied == true ? Theme.mint : Theme.textSecondary)
+                HStack(spacing: 8) {
+                    let approvers = ApprovalDerivation.approvers(snapshot).people
+                    if !approvers.isEmpty {
+                        AvatarStack(people: approvers, size: 20, limit: 5)
+                    }
+                    Text(approvalText)
+                        .scaledFont(.system(size: 12))
+                        .foregroundStyle(snapshot.approvals.isSatisfied == true ? Theme.mint : Theme.textSecondary)
+                }
             }
         }
     }

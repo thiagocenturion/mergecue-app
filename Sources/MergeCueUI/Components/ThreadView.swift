@@ -88,7 +88,7 @@ struct CommentCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
-                Avatar(name: comment.author.displayLabel, size: 34)
+                PersonAvatar(person: comment.author, size: 34)
                 Text(comment.author.displayName.flatMap(Presentation.firstName) ?? comment.author.username)
                     .scaledFont(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)

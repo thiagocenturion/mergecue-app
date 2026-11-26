@@ -216,9 +216,12 @@ struct ReviewRow: View {
                 .foregroundStyle(Theme.textPrimary)
                 .lineLimit(2)
             HStack(spacing: 8) {
-                Text("@\(summary.author.username)")
-                    .foregroundStyle(Theme.textSecondary)
-                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    PersonAvatar(person: summary.author, size: 16)
+                    Text("@\(summary.author.username)")
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                }
                 Chip(text: chip.text, symbol: chip.symbol, tone: chip.tone)
                 if summary.isDraft { Chip(text: "Draft") }
                 Spacer(minLength: 4)

@@ -268,8 +268,11 @@ struct ChangeRequestRow: View {
                 .foregroundStyle(Theme.textPrimary)
                 .lineLimit(2)
             HStack(spacing: 8) {
-                Text("@\(summary.author.username)")
-                    .foregroundStyle(Theme.textSecondary)
+                HStack(spacing: 5) {
+                    PersonAvatar(person: summary.author, size: 16)
+                    Text("@\(summary.author.username)")
+                        .foregroundStyle(Theme.textSecondary)
+                }
                 if summary.isDraft { Chip(text: "Draft") }
                 if let syncError {
                     Chip(text: "Not refreshed", symbol: "exclamationmark.triangle", tone: .attention)

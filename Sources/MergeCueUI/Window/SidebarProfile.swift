@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The owner at the top of the sidebar (D48): avatar and name instead of the app logo. The avatar is the first
 /// connected account that has one (or the one picked from the context menu); without any, initials on the brand
-/// gradient. Images load from the provider's avatar URL and fall back to the initials if that fails.
+/// gradient. Images come from the shared avatar cache (D58) and fall back to the initials if that fails.
 struct SidebarProfile: View {
     let model: AppModel
     var compact = false
@@ -46,28 +46,21 @@ struct SidebarProfile: View {
     }
 }
 
-/// A round avatar loaded from a URL, with initials while loading or when it can't be loaded.
+/// A round avatar from the avatar cache, with initials while loading or when it can't be loaded.
 struct OwnerAvatar: View {
     var url: URL?
     var initials: String
     var size: CGFloat
 
     var body: some View {
-        ZStack {
-            Circle().fill(Theme.brandGradientDiagonal)
-            Text(initials)
-                .scaledFont(.system(size: size * 0.38, weight: .semibold))
-                .foregroundStyle(.white)
-            if let url {
-                AsyncImage(url: url, transaction: Transaction(animation: Motion.smooth)) { phase in
-                    if case .success(let image) = phase {
-                        image.resizable().scaledToFill().transition(.opacity)
-                    }
-                }
+        RemoteAvatar(url: url, size: size) {
+            ZStack {
+                Circle().fill(Theme.brandGradientDiagonal)
+                Text(initials)
+                    .scaledFont(.system(size: size * 0.38, weight: .semibold))
+                    .foregroundStyle(.white)
             }
         }
-        .frame(width: size, height: size)
-        .clipShape(Circle())
         .overlay(Circle().strokeBorder(.white.opacity(0.25), lineWidth: 1))
         .shadow(color: Color(hex: 0x3B82F6).opacity(0.25), radius: 10, y: 2)
         .accessibilityHidden(true)
