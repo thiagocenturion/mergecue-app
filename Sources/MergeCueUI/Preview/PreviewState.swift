@@ -118,7 +118,7 @@ nonisolated extension PreviewWorld {
         let gh57 = catalog.ghPayments57
         ids.ghNioReady = add(gh57, dedupe: AttentionItem.dedupeKey(changeRequest: gh57.key, reason: .readyToMerge), reason: .readyToMerge,
                              summary: "Approved by @rkoval · required checks green", created: ago(hours: 2), updated: ago(hours: 2),
-                             unread: false, disposition: .acknowledged)
+                             unread: false)
 
         let gl42 = catalog.glPayments42
         ids.glPaymentsCI = add(gl42, dedupe: AttentionItem.dedupeKey(changeRequest: gl42.key, checkName: gl42.checks[1].name), reason: .ciFailed,

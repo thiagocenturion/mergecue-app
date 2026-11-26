@@ -10,7 +10,7 @@ struct SectionDerivationTests {
         #expect(sections.count(.needsYou) == 7)
         #expect(sections.count(.inProgress) == 3, "two waiting for an agent and one being worked on")
         #expect(PopoverSection.allCases == [.needsYou, .inProgress, .ready], "no Waiting for agent section")
-        #expect(sections.count(.ready) == 1)
+        #expect(sections.count(.ready) == 2, "a task result and a PR ready to merge (D56)")
         #expect(sections.hasUrgent)
     }
 

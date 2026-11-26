@@ -114,14 +114,20 @@ public struct PopoverView: View {
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 18) {
                     // Approvals of your own PRs; the Reviews tab is about others' PRs only (D54).
-                    if model.popoverTab != .reviews { ApprovalHighlights(model: model, compact: true) }
+                    if !model.popoverShowsReviewLanes { ApprovalHighlights(model: model, compact: true) }
                     switch model.popoverTab {
                     case .inbox:
                         PopoverScopeChips(model: model)
-                        ForEach(PopoverSection.allCases) { section in
-                            PopoverSectionView(model: model, section: section, voiceOverFocus: $voiceOverFocus)
+                        if model.inboxFilter.scope == .reviewing {
+                            // Reviews filter (D56): the review lanes instead of Needs you / In progress / Ready.
+                            PopoverReviewList(model: model)
+                                .transition(.opacity)
+                        } else {
+                            ForEach(PopoverSection.allCases) { section in
+                                PopoverSectionView(model: model, section: section, voiceOverFocus: $voiceOverFocus)
+                            }
+                            .transition(.opacity.combined(with: .move(edge: .leading)))
                         }
-                        .transition(.opacity.combined(with: .move(edge: .leading)))
                     case .pullRequests:
                         PopoverPullRequestList(model: model)
                             .transition(.opacity.combined(with: .move(edge: .trailing)))
@@ -131,6 +137,7 @@ public struct PopoverView: View {
                     }
                 }
                 .animation(Motion.smooth, value: model.popoverTab)
+                .animation(Motion.smooth, value: model.inboxFilter.scope)
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
                 .padding(.bottom, 18)

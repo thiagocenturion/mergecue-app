@@ -24,7 +24,7 @@ public nonisolated enum PopoverSection: String, Sendable, Hashable, CaseIterable
         switch self {
         case .needsYou: "You're all caught up"
         case .inProgress: "Nothing in progress"
-        case .ready: "Nothing ready for review yet"
+        case .ready: "Nothing ready to merge or review yet"
         }
     }
 
@@ -183,7 +183,8 @@ public nonisolated struct PopoverSections: Sendable, Hashable {
 ///   worked on (`working`: an agent holds it, or the owner set "In progress" by hand). Only the ones really being
 ///   worked on show a spinner (`PopoverItem.isRunning`); a `working` task without a claim reads "Task ready to
 ///   start".
-/// - **Ready**: `ready_for_review` tasks.
+/// - **Ready**: only the owner's final click is left: their PRs/MRs that are ready to merge (`readyToMerge` items,
+///   D56) and `ready_for_review` tasks.
 public nonisolated enum PopoverDerivation {
     public static func derive(from state: AppState, now: Date) -> PopoverSections {
         let activeTasks = state.tasks.filter { !$0.task.isTerminal }
@@ -202,9 +203,10 @@ public nonisolated enum PopoverDerivation {
         }
         for members in conversations {
             guard let first = members.first, !members.contains(where: hasActiveTask) else { continue }
-            var row = row(for: first, now: now)
+            let isReady = first.reason == .readyToMerge
+            var row = row(for: first, section: isReady ? .ready : .needsYou, now: now)
             row.isUnread = members.contains(where: \.isUnread)
-            sections.needsYou.append(row)
+            if isReady { sections.ready.append(row) } else { sections.needsYou.append(row) }
         }
         for record in state.tasks {
             guard let section = section(for: record) else { continue }
@@ -235,11 +237,11 @@ public nonisolated enum PopoverDerivation {
 
     // MARK: Rows
 
-    static func row(for item: AttentionItem, now: Date) -> PopoverItem {
+    static func row(for item: AttentionItem, section: PopoverSection = .needsYou, now: Date) -> PopoverItem {
         PopoverItem(
             id: "att:" + item.id,
             source: .attention(item.id),
-            section: .needsYou,
+            section: section,
             providerKind: item.providerKind,
             changeRequest: item.changeRequest,
             repoFullPath: item.repoFullPath,

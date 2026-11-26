@@ -1,9 +1,9 @@
 import MergeCueCore
 import SwiftUI
 
-/// Reviews (D53): pull/merge requests of others you review, in three lanes. "To review" needs you (requested,
-/// re-approval needed, new commits or replies since your review); "Waiting on author" holds the ones you commented
-/// on or asked changes for; "Approved, watching" keeps your approvals until they merge.
+/// Reviews (D53, D56): pull/merge requests of others you review, in three lanes. "To review" needs your first look
+/// (requested, or re-approval needed); "Changes requested" holds the ones you asked changes for or commented on, with
+/// author updates (new commits, replies) flagged and first; "Approved, watching" keeps your approvals until they merge.
 struct ReviewList: View {
     @Bindable var model: AppModel
     @FocusState private var listFocused: Bool
@@ -26,9 +26,7 @@ struct ReviewList: View {
                             if queue.isEmpty {
                                 emptyState
                             } else {
-                                ForEach([ReviewLane.toReview, .waitingOnAuthor, .approved], id: \.self) { lane in
-                                    laneSection(lane, entries: queue.entries(lane))
-                                }
+                                ReviewLanes(model: model, queue: queue, listFocused: $listFocused)
                             }
                             ReviewCoverageNote(model: model)
                                 .padding(.top, 10)
@@ -82,6 +80,34 @@ struct ReviewList: View {
         }
     }
 
+    private var emptyState: some View {
+        NothingSelected(title: "Nothing to review", symbol: "checkmark.bubble",
+                        message: "Pull and merge requests that request your review, or that you commented on or approved, appear here.")
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 40)
+    }
+
+    static func emptyText(_ lane: ReviewLane) -> String {
+        switch lane {
+        case .toReview: "You're all caught up."
+        case .changesRequested: "No pull requests with your requested changes."
+        case .approved, .closed: "No approved pull requests to watch."
+        }
+    }
+}
+
+/// The three review lanes with their rows (D53, D56): shared by the Reviews screen and the Inbox's Reviews filter.
+struct ReviewLanes: View {
+    @Bindable var model: AppModel
+    let queue: ReviewQueue
+    var listFocused: FocusState<Bool>.Binding
+
+    var body: some View {
+        ForEach(ReviewQueue.lanes, id: \.self) { lane in
+            laneSection(lane, entries: queue.entries(lane))
+        }
+    }
+
     @ViewBuilder
     private func laneSection(_ lane: ReviewLane, entries: [ReviewEntry]) -> some View {
         let isCollapsed = model.collapsedReviewLanes.contains(lane)
@@ -93,7 +119,7 @@ struct ReviewList: View {
             }
             if !isCollapsed {
                 if entries.isEmpty {
-                    Text(Self.emptyText(lane))
+                    Text(ReviewList.emptyText(lane))
                         .scaledFont(.system(size: 12))
                         .foregroundStyle(Theme.textTertiary)
                         .padding(.horizontal, 10)
@@ -102,10 +128,10 @@ struct ReviewList: View {
                 ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
                     let isSelected = model.selectedChangeRequestID == entry.id
                     ReviewRow(model: model, entry: entry, isSelected: isSelected)
-                        .keyboardSelectionRing(isSelected && listFocused, cornerRadius: Theme.radius)
+                        .keyboardSelectionRing(isSelected && listFocused.wrappedValue, cornerRadius: Theme.radius)
                         .onTapGesture {
                             model.openChangeRequest(entry.id)
-                            listFocused = true
+                            listFocused.wrappedValue = true
                         }
                         .accessibilityAction { model.openChangeRequest(entry.id) }
                         .id(entry.id)
@@ -117,20 +143,6 @@ struct ReviewList: View {
         .padding(.bottom, 8)
     }
 
-    private var emptyState: some View {
-        NothingSelected(title: "Nothing to review", symbol: "checkmark.bubble",
-                        message: "Pull and merge requests that request your review, or that you commented on or approved, appear here.")
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 40)
-    }
-
-    static func emptyText(_ lane: ReviewLane) -> String {
-        switch lane {
-        case .toReview: "You're all caught up."
-        case .waitingOnAuthor: "No reviews waiting on an author."
-        case .approved, .closed: "No approved pull requests to watch."
-        }
-    }
 }
 
 /// "To review · 3" with a one-line explanation and a chevron; the whole header toggles the lane.
@@ -172,8 +184,8 @@ struct ReviewLaneHeader: View {
 
     static func hint(_ lane: ReviewLane) -> String {
         switch lane {
-        case .toReview: "Requested, re-approval needed, or updated since your review"
-        case .waitingOnAuthor: "You commented or asked for changes. Nothing new yet."
+        case .toReview: "Review requested, or re-approval needed after a push"
+        case .changesRequested: "You asked for changes or commented. Author updates come first."
         case .approved, .closed: "Your approval stands. Leaves the list when merged."
         }
     }

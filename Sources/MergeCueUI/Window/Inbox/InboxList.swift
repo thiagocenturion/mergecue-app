@@ -25,7 +25,9 @@ struct InboxScreen: View {
                         dragWidth = nil
                     }
                 )
-                InboxDetail(model: model)
+                Group {
+                    if model.inboxFilter.scope == .reviewing { ChangeRequestDetail(model: model) } else { InboxDetail(model: model) }
+                }
                     .frame(width: detailWidth)
                     .frame(maxHeight: .infinity)
             }
@@ -53,10 +55,14 @@ struct InboxColumn: View {
             .padding(.top, 22)
             InboxSummaryCards(model: model)
                 .padding(.top, 18)
-            // New approvals on your pull/merge requests (D47).
-            ApprovalHighlights(model: model)
-                .padding(.top, 14)
-            if !model.isLoaded {
+            // New approvals on your pull/merge requests (D47); not under the Reviews filter (others' PRs, D56).
+            if model.inboxFilter.scope != .reviewing {
+                ApprovalHighlights(model: model)
+                    .padding(.top, 14)
+            }
+            if model.isLoaded, model.inboxFilter.scope == .reviewing {
+                reviewLanes
+            } else if !model.isLoaded {
                 // First load: shimmering placeholders instead of an empty column.
                 VStack(spacing: 12) {
                     ForEach(0..<4, id: \.self) { index in SkeletonCard(lines: index == 0 ? 3 : 2).appearStaggered(index) }
@@ -108,6 +114,41 @@ struct InboxColumn: View {
                 .hidden()
                 .accessibilityHidden(true)
         }
+    }
+
+    /// The Reviews filter's list (D56): To review / Changes requested / Approved, the rows of the Reviews screen.
+    private var reviewLanes: some View {
+        let queue = model.inboxReviewQueue
+        return ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ReviewTrackingPrompt(model: model)
+                    if queue.isEmpty {
+                        NothingSelected(title: "Nothing to review", symbol: "checkmark.bubble",
+                                        message: "Pull and merge requests that request your review, or that you commented on or approved, appear here.")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 40)
+                    } else {
+                        ReviewLanes(model: model, queue: queue, listFocused: $listFocused)
+                    }
+                }
+                .padding(.top, 8)
+                .padding(.bottom, 24)
+                .padding(.horizontal, 4)
+            }
+            .scrollIndicators(.automatic)
+            .shadowRoom()
+            .keyboardList(isFocused: $listFocused, hasSelection: model.selectedChangeRequestID != nil,
+                          onMove: { model.moveReviewSelection(by: $0, in: queue) },
+                          onOpen: { if let id = model.selectedChangeRequestID { model.openChangeRequest(id) } },
+                          onPrimary: { model.performChangeRequestPrimaryAction() })
+            .onChange(of: model.selectedChangeRequestID) { _, id in
+                guard listFocused, let id else { return }
+                proxy.scrollTo(id)
+            }
+            .accessibilityLabel("Pull and merge requests you review")
+        }
+        .padding(.top, 8)
     }
 
     /// Greeting and search side by side; stacked when the column is narrow or the text is large.
@@ -296,13 +337,51 @@ struct InboxSummaryCards: View {
         }
     }
 
+    @ViewBuilder
     private func cards(iconSize: CGFloat, flexibleText: Bool) -> some View {
         HStack(spacing: flexibleText ? 10 : 14) {
-            card(.needsYou, title: "Needs you", symbol: "exclamationmark", iconSize: iconSize, flexibleText: flexibleText) {
-                model.inboxFilter.status = .needsAction
+            if model.inboxFilter.scope == .reviewing {
+                // Reviews filter (D56): the review lanes; a card opens its lane.
+                let queue = model.inboxReviewQueue
+                ForEach(ReviewQueue.lanes, id: \.self) { lane in
+                    card(title: Self.cardTitle(lane), spokenTitle: lane.title, symbol: Self.symbol(lane), count: queue.entries(lane).count,
+                         color: Self.color(lane), iconSize: iconSize, flexibleText: flexibleText, hint: "Shows this group") {
+                        withAnimation(Motion.smooth) { model.collapsedReviewLanes.remove(lane) }
+                        model.selectedChangeRequestID = queue.entries(lane).first?.id ?? model.selectedChangeRequestID
+                    }
+                }
+            } else {
+                card(.needsYou, title: "Needs you", symbol: "exclamationmark", iconSize: iconSize, flexibleText: flexibleText) {
+                    model.inboxFilter.status = .needsAction
+                }
+                card(.inProgress, title: "In progress", symbol: "progress.indicator", iconSize: iconSize, flexibleText: flexibleText) { model.showAll(.inProgress) }
+                card(.ready, title: "Ready", symbol: "checkmark", iconSize: iconSize, flexibleText: flexibleText) { model.showAll(.ready) }
             }
-            card(.inProgress, title: "In progress", symbol: "progress.indicator", iconSize: iconSize, flexibleText: flexibleText) { model.showAll(.inProgress) }
-            card(.ready, title: "Ready", symbol: "checkmark", iconSize: iconSize, flexibleText: flexibleText) { model.showAll(.ready) }
+        }
+    }
+
+    /// Short enough for a third of the Inbox column; the lane header below spells it out.
+    static func cardTitle(_ lane: ReviewLane) -> String {
+        switch lane {
+        case .toReview: "To review"
+        case .changesRequested: "Changes"
+        case .approved, .closed: "Approved"
+        }
+    }
+
+    static func symbol(_ lane: ReviewLane) -> String {
+        switch lane {
+        case .toReview: "eye"
+        case .changesRequested: "exclamationmark.bubble"
+        case .approved, .closed: "checkmark.seal"
+        }
+    }
+
+    static func color(_ lane: ReviewLane) -> Color {
+        switch lane {
+        case .toReview: Theme.color(.needsYou)
+        case .changesRequested: Theme.violet
+        case .approved, .closed: Theme.color(.ready)
         }
     }
 
@@ -314,14 +393,20 @@ struct InboxSummaryCards: View {
 
     private func card(_ section: PopoverSection, title: String, symbol: String, iconSize: CGFloat, flexibleText: Bool,
                       action: @escaping () -> Void) -> some View {
-        let count = model.sections.count(section)
-        let color = section == .inProgress ? Theme.violet : Theme.color(section)
-        return CardView(style: tileStyle, action: action) {
+        card(title: title, symbol: symbol, count: model.sections.count(section),
+             color: section == .inProgress ? Theme.violet : Theme.color(section), isProgress: section == .inProgress,
+             iconSize: iconSize, flexibleText: flexibleText,
+             hint: section == .needsYou ? "Shows only items that need action" : "Shows these tasks", action: action)
+    }
+
+    private func card(title: String, spokenTitle: String? = nil, symbol: String, count: Int, color: Color, isProgress: Bool = false, iconSize: CGFloat,
+                      flexibleText: Bool, hint: String, action: @escaping () -> Void) -> some View {
+        CardView(style: tileStyle, action: action) {
             HStack(spacing: iconSize >= 44 ? 14 : 10) {
                 Image(systemName: symbol)
                     .scaledFont(.system(size: iconSize * 0.39, weight: .bold))
-                    .foregroundStyle(section == .inProgress ? AnyShapeStyle(LinearGradient(colors: [Theme.violet, Theme.cyan], startPoint: .bottomLeading, endPoint: .topTrailing)) : AnyShapeStyle(color))
-                    .symbolEffect(.variableColor.iterative.reversing, options: .repeating, isActive: section == .inProgress && count > 0)
+                    .foregroundStyle(isProgress ? AnyShapeStyle(LinearGradient(colors: [Theme.violet, Theme.cyan], startPoint: .bottomLeading, endPoint: .topTrailing)) : AnyShapeStyle(color))
+                    .symbolEffect(.variableColor.iterative.reversing, options: .repeating, isActive: isProgress && count > 0)
                     .symbolEffect(.bounce, value: count)
                     .frame(width: iconSize * textScale, height: iconSize * textScale)
                     .background(Circle().fill(color.opacity(0.16)))
@@ -344,8 +429,8 @@ struct InboxSummaryCards: View {
             .frame(minHeight: 58)
             .frame(maxWidth: .infinity)
         }
-        .accessibilityLabel("\(title): \(count)")
-        .accessibilityHint(section == .needsYou ? "Shows only items that need action" : "Shows these tasks")
+        .accessibilityLabel("\(spokenTitle ?? title): \(count)")
+        .accessibilityHint(hint)
     }
 }
 

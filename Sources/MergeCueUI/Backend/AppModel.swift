@@ -685,8 +685,13 @@ public final class AppModel {
                                ready: sections.ready.filter(keep))
     }
 
+    /// Whether the popover shows the review lanes: the Reviews tab, or the Inbox under the Reviews filter (D56).
+    public var popoverShowsReviewLanes: Bool {
+        popoverTab == .reviews || (popoverTab == .inbox && inboxFilter.scope == .reviewing)
+    }
+
     public var popoverRows: [PopoverItem] {
-        guard popoverTab == .inbox else { return [] }
+        guard popoverTab == .inbox, inboxFilter.scope != .reviewing else { return [] }
         return PopoverSection.allCases.filter { !collapsedPopoverSections.contains($0) }.flatMap { section in
             popoverGroups(section).filter { !collapsedPopoverGroups.contains($0.id) }.flatMap(\.items)
         }

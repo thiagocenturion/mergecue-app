@@ -15,9 +15,12 @@ struct ReviewQueueTests {
         let queue = ReviewQueue.run(state: previewState(), filter: ChangeRequestFilter(), now: testNow)
         #expect(queue.toReview.first?.key.number == 12, "a lost approval comes first")
         #expect(try #require(entry(queue, .bitbucketCloud, 12)).status.needsReapproval)
-        #expect(entry(queue, .gitlab, 322)?.lane == .toReview, "new commits since your review")
+        let updated = try #require(entry(queue, .gitlab, 322))
+        #expect(updated.lane == .changesRequested && updated.hasUpdates, "new commits since your review stay with your request")
+        #expect(queue.changesRequested.first?.key.number == 322, "author updates come first")
         #expect(entry(queue, .github, 318)?.status.isRequested == true)
-        #expect(entry(queue, .github, 64)?.lane == .waitingOnAuthor)
+        #expect(entry(queue, .github, 64)?.lane == .changesRequested)
+        #expect(entry(queue, .github, 64)?.hasUpdates == false)
         #expect(entry(queue, .bitbucketCloud, 133)?.lane == .approved)
         #expect(entry(queue, .github, 310)?.lane == .approved)
         #expect(!queue.all.contains { $0.snapshot.summary.involvement.contains(.authored) }, "your own PRs are not reviews")
@@ -30,13 +33,14 @@ struct ReviewQueueTests {
         #expect(ReviewText.chip(try #require(entry(queue, .github, 64))).text == "Asked for changes")
         #expect(ReviewText.chip(try #require(entry(queue, .github, 310))).text == "Approved by you")
         #expect(ReviewText.note(try #require(entry(queue, .bitbucketCloud, 133))) == "1 new commit since your approval")
-        #expect(ReviewText.summaryLine(queue) == "\(queue.toReview.count) to review · 1 waiting · 2 approved")
+        #expect(ReviewText.summaryLine(queue) == "\(queue.toReview.count) to review · 2 changes requested · 2 approved")
+        #expect(queue.needsYouCount == queue.toReview.count + 1)
         for text in queue.all.map({ ReviewText.chip($0).text }) + [ReviewText.summaryLine(queue)] {
             #expect(!text.contains("\u{2014}"), "no em dashes in UI copy")
         }
     }
 
-    @Test func repliesFromTheAuthorMoveAWaitingReviewBack() throws {
+    @Test func repliesFromTheAuthorFlagTheRequestedChanges() throws {
         var state = previewState()
         let pr = try #require(state.changeRequests.first { $0.key.kind == .github && $0.key.number == 64 })
         let thread = ThreadKey(changeRequest: pr.key, remoteID: "t64", kind: .diffThread)
@@ -47,7 +51,7 @@ struct ReviewQueueTests {
         ))
         let queue = ReviewQueue.run(state: state, filter: ChangeRequestFilter(), now: testNow)
         let moved = try #require(entry(queue, .github, 64))
-        #expect(moved.lane == .toReview)
+        #expect(moved.lane == .changesRequested && moved.hasUpdates)
         #expect(ReviewText.chip(moved).text == "1 new reply")
     }
 
@@ -98,5 +102,42 @@ struct ReviewQueueTests {
         let items = ChangeRequestQueryUI.run(state: model.state, filter: model.changeRequestFilter).flatMap(\.items)
         #expect(!items.isEmpty)
         #expect(items.allSatisfy { $0.summary.involvement.contains(.authored) })
+    }
+
+    // MARK: D56: Ready and the Reviews filter
+
+    @Test func readyToMergeIsReadyNotNeedsYou() throws {
+        var state = previewState()
+        let index = try #require(state.attention.firstIndex { $0.reason == .readyToMerge })
+        state.attention[index].disposition = .open
+        let item = state.attention[index]
+        let sections = PopoverDerivation.derive(from: state, now: testNow)
+        #expect(sections.ready.contains { $0.source == .attention(item.id) && $0.section == .ready })
+        #expect(!sections.needsYou.contains { $0.source == .attention(item.id) })
+        let needsAction = InboxQuery.run(state: state, filter: InboxFilter(status: .needsAction, collapseRead: false), now: testNow)
+        #expect(!needsAction.visibleItems.contains { $0.id == item.id }, "the Needs you filter matches the Needs you count")
+    }
+
+    @Test func viewAllReadyOpensYourReadyPullRequest() async throws {
+        let model = await makeModel()
+        let ready = try #require(model.sections.ready.first { if case .attention = $0.source { true } else { false } })
+        model.showAll(.ready)
+        #expect(model.screen == .changeRequests)
+        #expect(model.selectedChangeRequestID == ready.changeRequest.id)
+    }
+
+    @Test func inboxReviewsFilterShowsTheReviewLanes() async {
+        let model = await makeModel()
+        #expect(!model.popoverShowsReviewLanes)
+        model.inboxFilter.scope = .reviewing
+        #expect(model.popoverShowsReviewLanes)
+        #expect(model.popoverRows.isEmpty, "the lanes replace the section rows")
+        #expect(model.inboxReviewQueue.all.map(\.id) == model.reviewQueue.all.map(\.id))
+        model.inboxFilter.provider = .gitlab
+        #expect(!model.inboxReviewQueue.isEmpty)
+        #expect(model.inboxReviewQueue.all.allSatisfy { $0.key.kind == .gitlab })
+        for lane in ReviewQueue.lanes {
+            #expect(!lane.title.contains("\u{2014}"))
+        }
     }
 }

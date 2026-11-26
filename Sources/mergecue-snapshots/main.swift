@@ -187,6 +187,19 @@ func d53Scenes() -> [Scene] {
     // D54: the popover's Reviews tab, and its Inbox narrowed to your own PRs with the Mine chip.
     list.append(Scene(name: "popover-reviews", configure: { $0.popoverTab = .reviews }, kind: popover))
     list.append(Scene(name: "popover-inbox-mine", configure: { $0.inboxFilter.scope = .mine }, kind: popover))
+    // D56: the Inbox's Reviews filter shows the review lanes, in the popover and the window.
+    list.append(Scene(name: "popover-inbox-reviews", configure: { model in
+        model.inboxFilter.scope = .reviewing
+        model.collapsedReviewLanes = []
+    }, kind: popover))
+    list.append(Scene(name: "popover-ready", configure: { model in
+        model.collapsedPopoverSections = [.needsYou, .inProgress]
+    }, kind: popover))
+    list.append(Scene(name: "window-inbox-reviews", size: windowSize, configure: { model in
+        model.screen = .inbox
+        model.inboxFilter.scope = .reviewing
+        model.selectedChangeRequestID = model.inboxReviewQueue.changesRequested.first?.id
+    }, kind: window))
     return list
 }
 

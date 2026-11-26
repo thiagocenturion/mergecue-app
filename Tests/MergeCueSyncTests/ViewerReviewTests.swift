@@ -55,7 +55,7 @@ struct ViewerReviewTests {
     @Test func lanes() throws {
         #expect(ViewerReview.status(of: step(nil, pr(.pending)), userID: F.me)?.lane == .toReview)
         #expect(ViewerReview.status(of: step(nil, pr(.approved)), userID: F.me)?.lane == .approved)
-        #expect(ViewerReview.status(of: step(nil, pr(.changesRequested)), userID: F.me)?.lane == .waitingOnAuthor)
+        #expect(ViewerReview.status(of: step(nil, pr(.changesRequested)), userID: F.me)?.lane == .changesRequested)
         var merged = step(nil, pr(.approved))
         merged.summary.state = .merged
         #expect(ViewerReview.status(of: merged, userID: F.me)?.lane == .closed)
@@ -83,7 +83,7 @@ struct ViewerReviewTests {
         let approved = step(nil, pr(.approved))
         let unapproved = step(approved, pr(.commented, at: 60), at: 60)
         #expect(unapproved.viewerReview?.lostApprovalAt == nil)
-        #expect(ViewerReview.status(of: unapproved, userID: F.me)?.lane == .waitingOnAuthor)
+        #expect(ViewerReview.status(of: unapproved, userID: F.me)?.lane == .changesRequested)
     }
 
     @Test func newCommitsAfterApprovalStayApprovedWithANote() throws {
@@ -101,11 +101,12 @@ struct ViewerReviewTests {
 
     // MARK: Updated since your review
 
-    @Test func newCommitsAfterARequestForChangesMoveItBackUntilReviewedAgain() throws {
+    @Test func newCommitsAfterARequestForChangesAreFlaggedUntilReviewedAgain() throws {
         let asked = step(nil, pr(.changesRequested, head: "aaaa1111"))
         let pushed = step(asked, pr(.changesRequested, head: "bbbb2222", commits: ["bbbb2222"], at: 60), at: 60)
         let status = try #require(ViewerReview.status(of: pushed, userID: F.me))
-        #expect(status.lane == .toReview)
+        #expect(status.lane == .changesRequested, "author updates stay with your request (D56)")
+        #expect(status.headMovedSinceVerdict)
         #expect(status.rebasedSinceVerdict, "the reviewed head is gone from the commit list")
 
         // The user comments again (same verdict): it now applies to the new head.
@@ -113,7 +114,9 @@ struct ViewerReviewTests {
         again.threads = [F.thread(F.threadKey(cr), comments: [F.comment("c2", by: F.mona, at: 110)])]
         let reviewedAgain = step(pushed, again, at: 120)
         #expect(reviewedAgain.viewerReview?.verdictHeadSHA == "bbbb2222")
-        #expect(ViewerReview.status(of: reviewedAgain, userID: F.me)?.lane == .waitingOnAuthor)
+        let settled = try #require(ViewerReview.status(of: reviewedAgain, userID: F.me))
+        #expect(settled.lane == .changesRequested)
+        #expect(!settled.headMovedSinceVerdict)
     }
 
     // MARK: Events, attention, notifications (end to end through Sync)

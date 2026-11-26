@@ -35,10 +35,11 @@ public struct ViewerReviewMemory: Codable, Sendable, Hashable {
 
 /// Where a change request the user reviews stands for them.
 public enum ReviewLane: String, Codable, Sendable, CaseIterable {
-    /// Needs the user: a pending request, a lost approval, or new commits after their review.
+    /// Needs the user's first look: a pending request or a lost approval.
     case toReview = "to_review"
-    /// The user commented or requested changes and nothing changed since.
-    case waitingOnAuthor = "waiting_on_author"
+    /// The user asked for changes or commented. Author updates (new commits, replies) keep it here, flagged and
+    /// sorted first (D56).
+    case changesRequested = "changes_requested"
     /// The user's approval stands; watched until merge.
     case approved
     /// Merged or closed.
@@ -47,7 +48,7 @@ public enum ReviewLane: String, Codable, Sendable, CaseIterable {
     public var title: String {
         switch self {
         case .toReview: "To review"
-        case .waitingOnAuthor: "Waiting on author"
+        case .changesRequested: "Changes requested"
         case .approved: "Approved, watching"
         case .closed: "Closed"
         }
@@ -191,7 +192,7 @@ public enum ViewerReview {
         } else if verdict == .approved {
             lane = .approved
         } else {
-            lane = headMoved ? .toReview : .waitingOnAuthor
+            lane = .changesRequested
         }
         return ViewerReviewStatus(
             lane: lane, verdict: verdict, isRequested: isRequested, needsReapproval: needsReapproval,

@@ -182,7 +182,8 @@ public nonisolated enum InboxQuery {
         case .all:
             if case .dismissed = item.disposition { return false }
         case .needsAction:
-            guard item.isActionable(now: now) else { return false }
+            // Ready to merge is the Ready section, not Needs you (D56).
+            guard item.isActionable(now: now), item.reason != .readyToMerge else { return false }
             if let task = item.linkedTaskID, activeTaskIDs.contains(task) { return false }
         case .unread:
             guard item.isUnread else { return false }

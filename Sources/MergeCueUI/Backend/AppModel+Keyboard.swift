@@ -89,9 +89,9 @@ extension AppModel {
     }
 
     /// ↑/↓ on the Reviews screen: the next PR/MR in lane order (collapsed lanes are skipped).
-    public func moveReviewSelection(by delta: Int) {
-        let queue = reviewQueue
-        let order = [ReviewLane.toReview, .waitingOnAuthor, .approved]
+    public func moveReviewSelection(by delta: Int, in lanes: ReviewQueue? = nil) {
+        let queue = lanes ?? reviewQueue
+        let order = ReviewQueue.lanes
             .filter { !collapsedReviewLanes.contains($0) }
             .flatMap { queue.entries($0).map(\.id) }
         guard let next = KeyboardSelection.step(order, from: selectedChangeRequestID, by: delta) else { return }

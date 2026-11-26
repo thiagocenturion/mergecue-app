@@ -123,6 +123,12 @@ extension AppModel {
                 if case .attention(let id) = item.source { return id }
                 return nil
             }
+        case .ready where sections.ready.contains(where: { if case .attention = $0.source { true } else { false } }):
+            // Ready to merge (D56): your PRs/MRs, first ready one selected.
+            screen = .changeRequests
+            if let row = sections.ready.first(where: { if case .attention = $0.source { true } else { false } }) {
+                selectedChangeRequestID = row.changeRequest.id
+            }
         case .inProgress, .ready:
             screen = .tasks
             selectedTaskID = sections.items(section).first.flatMap { item -> TaskID? in

@@ -53,7 +53,7 @@ struct Sidebar: View {
         switch screen {
         case .inbox: model.sections.needsYou.filter { if case .attention = $0.source { true } else { false } }.count
         case .tasks: model.sections.count(.ready) + model.state.tasks.filter { [.blocked, .failed, .stale].contains($0.task.state) }.count
-        case .reviews: model.reviewQueue.toReview.count
+        case .reviews: model.reviewQueue.needsYouCount
         case .rules: model.pendingRuleProposals.count
         case .changeRequests, .settings: 0
         }

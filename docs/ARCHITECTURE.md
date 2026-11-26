@@ -178,7 +178,7 @@ public struct ChangeRequestSnapshot: Codable, Sendable, Hashable, Identifiable {
 }
 // D53 (Model/ViewerReview.swift): the current user's own review of others' CRs.
 public struct ViewerReviewMemory { var verdict: ReviewState?; var verdictHeadSHA: String?; var verdictSeenAt: Date?; var lostApprovalAt: Date?; var lostApprovalHeadSHA: String? }
-public enum ReviewLane { case toReview, waitingOnAuthor, approved, closed }
+public enum ReviewLane { case toReview, changesRequested, approved, closed }   // D56
 public struct ViewerReviewStatus { var lane; var verdict; var isRequested; var needsReapproval; var headMovedSinceVerdict; var rebasedSinceVerdict; var commitsSinceVerdict: Int? }
 public enum ViewerReview { static func currentVerdict(_:userID:) -> ReviewState?; static func nextMemory(previous:current:userID:now:) -> ViewerReviewMemory?; static func status(of:userID:) -> ViewerReviewStatus? }
 public struct HeadInfo: Codable, Sendable, Hashable { var headSHA: String?; var state: ChangeRequestState; var isDraft: Bool; var updatedAt: Date }

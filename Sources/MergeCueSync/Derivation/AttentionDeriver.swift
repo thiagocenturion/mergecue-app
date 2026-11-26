@@ -96,7 +96,7 @@ public enum AttentionDeriver {
     /// New commits after the user commented or requested changes (and their approval was not reset, which has its
     /// own item).
     public static func isUpdatedSinceReview(_ status: ViewerReviewStatus) -> Bool {
-        status.lane == .toReview && status.headMovedSinceVerdict && !status.needsReapproval
+        status.lane == .changesRequested && status.headMovedSinceVerdict && !status.needsReapproval
             && (status.verdict == .changesRequested || status.verdict == .commented)
     }
 

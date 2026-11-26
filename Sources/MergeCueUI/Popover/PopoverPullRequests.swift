@@ -40,7 +40,7 @@ struct PopoverTabBar: View {
     @SwiftUI.Namespace private var highlight
 
     var body: some View {
-        let toReview = ReviewQueue.run(state: model.state, filter: ChangeRequestFilter(), now: model.now).toReview.count
+        let toReview = ReviewQueue.run(state: model.state, filter: ChangeRequestFilter(), now: model.now).needsYouCount
         HStack(spacing: 2) {
             ForEach(PopoverTab.allCases) { tab in
                 let isSelected = model.popoverTab == tab
@@ -172,7 +172,7 @@ struct PopoverReviewList: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 24)
             } else {
-                ForEach([ReviewLane.toReview, .waitingOnAuthor, .approved], id: \.self) { lane in
+                ForEach(ReviewQueue.lanes, id: \.self) { lane in
                     laneSection(lane, entries: queue.entries(lane))
                 }
             }
