@@ -75,6 +75,7 @@ public struct MainWindowView: View {
         } message: { pending in
             Text("This link comes from provider data and points outside your connected accounts and known CI services:\n\(pending.url.absoluteString)")
         }
+        .approvalConfirmation(model)
         .dynamicTypeSize(model.textSize.dynamicTypeSize)
         .environment(\.avatarImages, model.avatarImages)
         .defaultGlassButtons()

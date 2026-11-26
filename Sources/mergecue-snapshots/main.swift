@@ -192,6 +192,21 @@ func d53Scenes() -> [Scene] {
         model.inboxFilter.scope = .reviewing
         model.collapsedReviewLanes = []
     }, kind: popover))
+    // D59: Approve (writes off, so it opens the provider page with the outside glyph) in the Inbox detail and in
+    // the Reviews detail.
+    list.append(Scene(name: "window-inbox-approve", size: windowSize, configure: { model in
+        model.screen = .inbox
+        model.detailTabsEnabled = false
+        model.selectedAttentionID = model.state.attention.first { $0.reason == .reviewRequested && $0.providerKind == .github }?.id
+    }, kind: window))
+    list.append(Scene(name: "window-reviews-approve", size: windowSize, configure: { model in
+        model.screen = .reviews
+        model.detailTabsEnabled = false
+        model.collapsedReviewLanes = []
+        model.selectedChangeRequestID = model.state.changeRequests.first {
+            $0.summary.providerKind == .bitbucketCloud && $0.summary.key.number == 12
+        }?.id
+    }, kind: window))
     list.append(Scene(name: "popover-ready", configure: { model in
         model.collapsedPopoverSections = [.needsYou, .inProgress]
     }, kind: popover))

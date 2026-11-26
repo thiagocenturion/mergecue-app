@@ -111,6 +111,11 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
     case snooze(attentionID: String, until: Date)
     case dismissAttention(attentionID: String)
 
+    // MARK: Reviews
+    /// Approves someone else's PR/MR as the owner from the app (D59), after their confirmation. Only sent when
+    /// `AppModel.approvalRoute` is `.inApp`; otherwise the provider page opens instead.
+    case approveChangeRequest(ChangeRequestKey)
+
     // MARK: Tasks
     /// "Fix now" / "Investigate with AI" / "Draft reply" / "Address with AI". Creates `waiting_for_agent` only.
     case createTask(attentionID: String, type: TaskType)
@@ -233,6 +238,7 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
         case .acknowledge: "acknowledge"
         case .snooze: "snooze"
         case .dismissAttention: "dismissAttention"
+        case .approveChangeRequest: "approveChangeRequest"
         case .createTask(_, let type): "createTask(\(type.rawValue))"
         case .cancelTask: "cancelTask"
         case .retryTask: "retryTask"

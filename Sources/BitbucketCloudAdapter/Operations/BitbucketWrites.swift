@@ -154,6 +154,20 @@ extension BitbucketCloudProvider {
         _ = try await client.send("POST", "\(prPath)/comments", json: BBCommentBody(content: .init(raw: body), parent: nil))
     }
 
+    /// `POST …/approve` (D59). Bitbucket takes no expected head, so the head is re-read right before and a moved head
+    /// (or a pull request that is no longer open) throws `conflict` without approving.
+    public func approve(_ changeRequest: ChangeRequestKey, expectedHeadSHA: String) async throws {
+        let (path, pr) = try await fetchPullRequest(changeRequest)
+        let head = try await mapper().headInfo(pr)
+        guard head.state == .open else {
+            throw ProviderError.conflict("The pull request is \(head.state.rawValue), not open.")
+        }
+        guard BitbucketIdentifiers.sameCommit(head.headSHA, expectedHeadSHA) else {
+            throw ProviderError.conflict("The pull request changed since you looked at it. Refresh and review the new commits.")
+        }
+        _ = try await client.send("POST", "\(path.pullRequestPath(pr.id))/approve")
+    }
+
     /// Merges with the repository's default strategy (`POST …/merge`).
     ///
     /// Bitbucket's merge endpoint accepts no expected head commit, so the head is re-read immediately before the

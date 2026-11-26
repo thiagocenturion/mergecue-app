@@ -204,13 +204,14 @@ nonisolated extension PreviewWorld {
         case .github:
             break
         case .gitlab:
-            for capability in [Capability.createReply, .resolveThread, .merge] {
+            for capability in [Capability.createReply, .resolveThread, .merge, .approve] {
                 entries[capability] = .requiresWriteAccess(scope: "api")
             }
             entries[.requestChanges] = .partial(note: "GitLab has no request-changes review; MergeCue posts a blocking thread")
         case .bitbucketCloud:
             entries[.createReply] = .requiresWriteAccess(scope: "write:pullrequest:bitbucket")
             entries[.merge] = .requiresWriteAccess(scope: "write:pullrequest:bitbucket")
+            entries[.approve] = .requiresWriteAccess(scope: "write:pullrequest:bitbucket")
             entries[.resolveThread] = .partial(note: "Only inline comments can be resolved")
         }
         return CapabilityManifest(provider: kind, entries: entries)

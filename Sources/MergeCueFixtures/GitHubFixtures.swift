@@ -215,8 +215,16 @@ public enum GitHubFixtures {
             },
             StubTransport.Route(method: "POST", pathPattern: "/repos/{owner}/{repo}/pulls/{number}/reviews") { request, match in
                 guard knownPull(match), let payload = request.jsonBody, let template = json("rest/review_created.json") else { return notFound }
+                let event = payload["event"]?.stringValue
+                if event == "APPROVE" {
+                    // GitHub refuses an approval pinned to a commit that is no longer the head (422).
+                    let heads = ["42": IDs.head42, "7": IDs.head7, "12": IDs.head12]
+                    guard payload["commit_id"]?.stringValue == heads[match["number"] ?? ""] else {
+                        return StubTransport.json(#"{"message":"Validation Failed","errors":["commit_id is not part of the pull request"]}"#, status: 422)
+                    }
+                }
                 let created = template.setting("body", payload["body"] ?? .string(""))
-                    .setting("state", .string(payload["event"]?.stringValue == "REQUEST_CHANGES" ? "CHANGES_REQUESTED" : "COMMENTED"))
+                    .setting("state", .string(event == "REQUEST_CHANGES" ? "CHANGES_REQUESTED" : event == "APPROVE" ? "APPROVED" : "COMMENTED"))
                 return StubTransport.json(value: created)
             },
             StubTransport.Route(method: "PUT", pathPattern: "/repos/{owner}/{repo}/pulls/{number}/merge") { request, match in

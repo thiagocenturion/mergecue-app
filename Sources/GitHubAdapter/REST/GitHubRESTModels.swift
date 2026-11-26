@@ -162,6 +162,17 @@ struct RESTBodyPayload: Encodable, Sendable {
 }
 
 /// `POST /pulls/{n}/reviews` payload.
+/// `POST …/reviews` body of an approval: no comment, pinned to the reviewed head (D59).
+struct RESTApprovePayload: Encodable, Sendable {
+    var event: String
+    var commitID: String
+
+    enum CodingKeys: String, CodingKey {
+        case event
+        case commitID = "commit_id"
+    }
+}
+
 struct RESTReviewPayload: Encodable, Sendable {
     var body: String
     var event: String

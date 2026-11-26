@@ -234,6 +234,11 @@ struct FakeProvider: ReviewProvider {
         world.state.update { $0.writes.append(.init(kind: "merge", target: changeRequest.id, body: expectedHeadSHA)) }
     }
 
+    func approve(_ changeRequest: ChangeRequestKey, expectedHeadSHA: String) async throws {
+        if let error = world.state.get().writeError { throw error }
+        world.state.update { $0.writes.append(.init(kind: "approve", target: changeRequest.id, body: expectedHeadSHA)) }
+    }
+
     func fetchHeadSpec(for snapshot: ChangeRequestSnapshot) -> FetchHeadSpec? {
         guard world.state.get().fetchable else { return nil }
         return FetchHeadSpec(

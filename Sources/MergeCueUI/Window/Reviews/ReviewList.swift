@@ -248,7 +248,9 @@ struct ReviewRow: View {
         .contentShape(SmoothRect())
         .onHover { isHovering = $0 }
         .contextMenu {
-            Button("Open in \(summary.providerKind.displayName)") { Task { await model.send(.openURL(summary.webURL)) } }
+            Button { Task { await model.send(.openURL(summary.webURL)) } } label: {
+                Label("Open in \(summary.providerKind.displayName)", systemImage: OutsideLinkGlyph.symbol)
+            }
         }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : [.isButton])

@@ -271,6 +271,8 @@ public final class AppModel {
     public var handoffOffer: HandoffOffer?
     /// A link to an unfamiliar host, presented as a confirmation alert before it opens.
     public var pendingLinkConfirmation: LinkConfirmation?
+    /// A PR/MR the owner is about to approve from the app; the confirmation alert is showing (D59).
+    public var pendingApproval: ChangeRequestKey?
     public var ruleEditor: RuleEditorContext?
     /// Presented as the connect-account sheet.
     public var connectSheetKind: ProviderKind?

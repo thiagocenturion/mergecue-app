@@ -234,6 +234,8 @@ public enum BitbucketFixtures {
             .fixed("POST", "/repositories/acme/{repo}/pullrequests/{id}/comments/{comment}/resolve", response: file("comment_resolution.json")),
             .fixed("DELETE", "/repositories/acme/{repo}/pullrequests/{id}/comments/{comment}/resolve", response: StubTransport.empty(status: 204)),
             .fixed("POST", "/repositories/acme/{repo}/pullrequests/{id}/request-changes", response: file("request_changes_participant.json")),
+            .fixed("POST", "/repositories/acme/{repo}/pullrequests/{id}/approve",
+                   response: StubTransport.json(#"{"type":"participant","role":"REVIEWER","approved":true,"state":"approved"}"#)),
             Route(method: "POST", pathPattern: "/repositories/acme/{repo}/pullrequests/{id}/merge") { _, match in
                 respond(match["repo"] == "payments-api" && match["id"] == "42" ? "pr_42_merged.json" : nil)
             },

@@ -53,6 +53,12 @@ struct ChangeRequestPanel: View {
                 await consumeFocusRequest(snapshot, proxy: proxy)
             }
             }
+            if focus == nil, model.showsApprove(changeRequest) {
+                ApproveButton(model: model, changeRequest: changeRequest)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
+                    .padding(.top, 4)
+            }
             if let focus {
                 RelatedTaskBanner(model: model, item: focus)
                     .padding(.horizontal, 16)
@@ -407,7 +413,9 @@ struct ItemActionsMenuContent: View {
         Divider()
         Button("Show \(item.providerKind.changeRequestAbbreviation) Details") { model.showChangeRequest(item.changeRequest, thread: item.thread) }
         if let url = model.providerURL(for: item) {
-            Button("Open in \(item.providerKind.displayName)") { Task { await model.send(.openURL(url)) } }
+            Button { Task { await model.send(.openURL(url)) } } label: {
+                Label("Open in \(item.providerKind.displayName)", systemImage: OutsideLinkGlyph.symbol)
+            }
             Button("Copy Link") { model.copyToPasteboard(url.absoluteString, confirmation: "Link copied") }
         }
         if let comment = model.conversationThread(for: item)?.latestComment {
@@ -449,16 +457,29 @@ struct FocusActionBar: View {
             .buttonStyle(SecondaryButtonStyle(size: .large, fullWidth: true))
         } else if case .createTask(let attentionID, let type) = PopoverDerivation.primaryAction(for: item) {
             AITaskSplitButton(model: model, attentionID: attentionID, defaultType: type)
-        } else {
-            Button {
-                Task { await model.send(.acknowledge(attentionID: item.id)) }
-            } label: {
-                Label("Acknowledge", systemImage: "checkmark")
+        } else if Self.reviewReasons.contains(item.reason), model.showsApprove(item.changeRequest) {
+            // Reviews (D59): Approve first, Acknowledge beside it.
+            HStack(spacing: 10) {
+                ApproveButton(model: model, changeRequest: item.changeRequest)
+                acknowledge
             }
-            .buttonStyle(SecondaryButtonStyle(size: .large, fullWidth: true))
-            .disabled(!item.isActionable(now: model.now))
+        } else {
+            acknowledge
         }
     }
+
+    private var acknowledge: some View {
+        Button {
+            Task { await model.send(.acknowledge(attentionID: item.id)) }
+        } label: {
+            Label("Acknowledge", systemImage: "checkmark")
+        }
+        .buttonStyle(SecondaryButtonStyle(size: .large, fullWidth: true))
+        .disabled(!item.isActionable(now: model.now))
+    }
+
+    /// Items about the owner's review of someone else's PR/MR, where Approve is the answer.
+    static let reviewReasons: Set<AttentionReason> = [.reviewRequested, .reapprovalNeeded, .updatedSinceReview]
 }
 
 /// "✦ Fix now | ⌄": the main part creates the default task; the menu picks another task type or the agent.

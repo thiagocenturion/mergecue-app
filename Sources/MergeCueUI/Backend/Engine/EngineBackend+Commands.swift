@@ -33,6 +33,12 @@ extension EngineBackend {
             try await engine.dismissAttention(id)
             return AppCommandResult(message: "Dismissed")
 
+        // MARK: Reviews
+        case .approveChangeRequest(let key):
+            try await engine.approveChangeRequest(key)
+            let demo = mode == .demo ? " (demo fixture, nothing reached a real provider)" : ""
+            return AppCommandResult(message: "Approved \(key.kind.formattedNumber(key.number)) on \(key.kind.displayName)\(demo)", tone: .success)
+
         // MARK: Tasks
         case .createTask(let attentionID, let type):
             let task = try await engine.createTask(fromAttention: attentionID, type: type)

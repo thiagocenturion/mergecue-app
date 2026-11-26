@@ -4,7 +4,7 @@ import MergeCueCore
 extension AppModel {
     // MARK: Primary actions
 
-    /// Runs a row's primary action.
+    /// Runs a popover row's primary action (button, ⌘↩, VoiceOver).
     public func perform(_ action: PrimaryAction) async {
         switch action {
         case .createTask(let attentionID, let type):
@@ -17,6 +17,8 @@ extension AppModel {
             showTask(taskID)
         case .retryTask(let taskID):
             await send(.retryTask(taskID))
+        case .approve(let key):
+            approve(key, fromPopover: true)
         }
     }
 

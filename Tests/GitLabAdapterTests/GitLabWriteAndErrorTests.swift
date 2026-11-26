@@ -89,6 +89,17 @@ struct GitLabWriteAndErrorTests {
         }
     }
 
+    /// D59: `POST …/approve` with the reviewed head; a moved head is a conflict.
+    @Test func approveSendsTheReviewedHead() async throws {
+        let harness = GitLabHarness()
+        try await harness.provider.approve(GitLabFixtures.mr7Key, expectedHeadSHA: IDs.head7)
+        let request = try #require(harness.transport.requests("POST", path: "/projects/278990/merge_requests/7/approve").first)
+        #expect(request.jsonBody == ["sha": .string(IDs.head7)])
+        await #expect(throws: ProviderError.conflict("The merge request changed since you looked at it. Refresh and review the new commits.")) {
+            try await harness.provider.approve(GitLabFixtures.mr7Key, expectedHeadSHA: "0000000000000000000000000000000000000000")
+        }
+    }
+
     @Test func requestChangesPublishesReviewWithReviewerState() async throws {
         let harness = GitLabHarness()
         try await harness.provider.requestChanges(on: GitLabFixtures.mr7Key, body: "Please keep the old route as a fallback.")

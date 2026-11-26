@@ -104,6 +104,7 @@ struct PopoverRowView: View {
                 HStack(spacing: 6) {
                     if case .createTask(_, let type) = action, type != .investigateCI { SparkleIcon(size: 12) }
                     Text(title).lineLimit(1)
+                    if case .approve(let key) = action, model.approvalRoute(key)?.opensBrowser == true { OutsideLinkGlyph() }
                 }
                 .fixedSize()
             }
@@ -126,6 +127,7 @@ struct PopoverRowView: View {
         case .copyCommand: "Copy the handoff command for your agent"
         case .openAttention, .openTask: "Open details in the MergeCue window"
         case .retryTask: "Put the task back in the queue for an agent"
+        case .approve(let key): ApproveButton.help(model.approvalRoute(key), kind: key.kind)
         }
     }
 }

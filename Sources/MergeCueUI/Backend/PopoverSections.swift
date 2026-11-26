@@ -87,6 +87,8 @@ public nonisolated enum PrimaryAction: Sendable, Hashable {
     /// Opens the task's detail ("View", "Review", "Map checkout…").
     case openTask(TaskID, title: String)
     case retryTask(TaskID)
+    /// Approve someone else's PR/MR (D59): in the app after a confirmation, or on the provider page.
+    case approve(ChangeRequestKey)
 
     public var title: String {
         switch self {
@@ -95,6 +97,7 @@ public nonisolated enum PrimaryAction: Sendable, Hashable {
         case .copyCommand: "Copy command"
         case .openTask(_, let title): title
         case .retryTask: "Retry"
+        case .approve: "Approve"
         }
     }
 
@@ -103,7 +106,7 @@ public nonisolated enum PrimaryAction: Sendable, Hashable {
         switch self {
         case .createTask: true
         case .openTask(_, let title): title == "Review"
-        case .openAttention, .copyCommand, .retryTask: false
+        case .openAttention, .copyCommand, .retryTask, .approve: false
         }
     }
 }
@@ -256,8 +259,10 @@ public nonisolated enum PopoverDerivation {
         )
     }
 
-    /// The attention item's primary action: the first AI action it suggests, otherwise "Review"/"Open".
+    /// The attention item's primary action: the first AI action it suggests, Approve for a lost approval (D59),
+    /// otherwise "Review"/"Open".
     public static func primaryAction(for item: AttentionItem) -> PrimaryAction {
+        if item.reason == .reapprovalNeeded { return .approve(item.changeRequest) }
         let aiActions: [AttentionAction] = [.fixWithAI, .investigateWithAI, .addressWithAI, .draftReply]
         if let action = item.suggestedActions.first(where: aiActions.contains), let type = TaskType(attentionAction: action) {
             return .createTask(attentionID: item.id, type: type)

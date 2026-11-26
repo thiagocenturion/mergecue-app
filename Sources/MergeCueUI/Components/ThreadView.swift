@@ -141,7 +141,7 @@ struct CommentCard: View {
                         NSPasteboard.general.setString(SecretRedactor.redact(comment.body), forType: .string)
                     }
                     if let url = comment.webURL, let onOpen {
-                        Button("Open in \(providerKind.displayName)") { onOpen(url) }
+                        Button { onOpen(url) } label: { Label("Open in \(providerKind.displayName)", systemImage: OutsideLinkGlyph.symbol) }
                     }
                 } label: {
                     Image(systemName: "ellipsis")

@@ -7,11 +7,13 @@ public enum Capability: String, Codable, Sendable, CaseIterable, CodingKeyRepres
     /// Open change requests of others the user reviewed or commented on (`ChangeRequestScope.involved`). Additive:
     /// providers without it are simply not asked.
     case listInvolved
+    /// Approve a change request as the user (D59).
+    case approve
 
     /// Whether the capability writes to the provider (requires `Account.writesEnabled` + approval).
     public var isWrite: Bool {
         switch self {
-        case .resolveThread, .requestChanges, .createReply, .merge: true
+        case .resolveThread, .requestChanges, .createReply, .merge, .approve: true
         default: false
         }
     }
@@ -30,6 +32,7 @@ public enum Capability: String, Codable, Sendable, CaseIterable, CodingKeyRepres
         case .fetchHead: "Fetch head for local checkout"
         case .deepLink: "Deep links"
         case .listInvolved: "List change requests you reviewed or commented on"
+        case .approve: "Approve"
         }
     }
 }

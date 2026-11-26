@@ -35,8 +35,18 @@ public protocol ReviewProvider: Sendable {
     func resolveThread(_ thread: ThreadKey, resolved: Bool) async throws
     func requestChanges(on changeRequest: ChangeRequestKey, body: String) async throws
     func merge(_ changeRequest: ChangeRequestKey, expectedHeadSHA: String) async throws
+    /// Approves the change request as the user, for the head they saw (`expectedHeadSHA`): a moved head throws
+    /// `ProviderError.conflict` instead of approving commits they have not seen (D59).
+    func approve(_ changeRequest: ChangeRequestKey, expectedHeadSHA: String) async throws
     func fetchHeadSpec(for snapshot: ChangeRequestSnapshot) -> FetchHeadSpec?
     func deepLink(to target: DeepLinkTarget) -> URL?
+}
+
+extension ReviewProvider {
+    /// Providers without approval support (test doubles, older adapters).
+    public func approve(_ changeRequest: ChangeRequestKey, expectedHeadSHA: String) async throws {
+        throw ProviderError.unsupported(.approve, reason: "Approving is not available for this provider. Approve it in the browser.")
+    }
 }
 
 extension ReviewProvider {

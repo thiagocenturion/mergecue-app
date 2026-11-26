@@ -35,6 +35,7 @@ public struct GitHubProvider: ReviewProvider {
             .resolveThread: .requiresWriteAccess(scope: writeScope),
             .requestChanges: .requiresWriteAccess(scope: writeScope),
             .merge: .requiresWriteAccess(scope: writeScope),
+            .approve: .requiresWriteAccess(scope: writeScope),
         ]
     )
 

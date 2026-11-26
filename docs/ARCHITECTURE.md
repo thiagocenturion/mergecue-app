@@ -199,7 +199,8 @@ public struct ChangeRequestQuery: Sendable, Hashable { var scope: ChangeRequestS
 ### 2.4 Capabilities and the `ReviewProvider` protocol (§3, §5)
 ```swift
 public enum Capability: String, Codable, Sendable, CaseIterable { case listAuthored, listReviewRequested, readThreads, resolveThread, readChecks, readFailureLog, requestChanges, createReply, merge, fetchHead, deepLink,
-    listInvolved /* additive: open CRs of others the user reviewed/commented on; providers without it are not asked */ }
+    listInvolved /* additive: open CRs of others the user reviewed/commented on; providers without it are not asked */,
+    approve /* write (D59): approve as the user, pinned to the reviewed head */ }
 public enum CapabilitySupport: Codable, Sendable, Hashable { case supported; case requiresWriteAccess(scope: String); case partial(note: String); case unsupported(reason: String)
     var isUsable: Bool /* supported, partial */; var userFacingDescription: String }
 public struct CapabilityManifest: Codable, Sendable, Hashable { var provider: ProviderKind; var manifestVersion: Int; var entries: [Capability: CapabilitySupport]
@@ -238,6 +239,7 @@ public protocol ReviewProvider: Sendable {
     func resolveThread(_ thread: ThreadKey, resolved: Bool) async throws
     func requestChanges(on changeRequest: ChangeRequestKey, body: String) async throws
     func merge(_ changeRequest: ChangeRequestKey, expectedHeadSHA: String) async throws
+    func approve(_ changeRequest: ChangeRequestKey, expectedHeadSHA: String) async throws   // D59; default: unsupported
     func fetchHeadSpec(for snapshot: ChangeRequestSnapshot) -> FetchHeadSpec?
     func deepLink(to target: DeepLinkTarget) -> URL?
 }

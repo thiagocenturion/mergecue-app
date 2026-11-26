@@ -86,7 +86,7 @@ struct ConnectAccountForm: View {
                 Button {
                     Task { await model.send(.openURL(url)) }
                 } label: {
-                    Label(kind == .github ? "Create token (repo, read:org)" : "Create token", systemImage: "safari")
+                    OutsideLinkLabel(title: kind == .github ? "Create token (repo, read:org)" : "Create token")
                 }
                 .buttonStyle(.link)
                 .help(url.absoluteString)

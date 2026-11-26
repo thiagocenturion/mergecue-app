@@ -29,6 +29,9 @@ extension BitbucketCloudProvider {
             ),
             .requestChanges: .supported,
             .createReply: .supported,
+            .approve: .partial(
+                note: "Bitbucket's approve endpoint has no head-SHA guard: MergeCue re-checks the head right before approving."
+            ),
             .merge: .partial(
                 note: "Bitbucket's merge endpoint has no head-SHA guard: MergeCue re-checks the head right before "
                     + "merging, but a push in the remaining window can still be merged. Merge checks that need admin "

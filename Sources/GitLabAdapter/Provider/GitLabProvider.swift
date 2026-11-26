@@ -32,6 +32,7 @@ public struct GitLabProvider: ReviewProvider {
             ),
             .createReply: .supported,
             .merge: .supported,
+            .approve: .supported,
             .fetchHead: .supported,
             .deepLink: .supported,
         ]

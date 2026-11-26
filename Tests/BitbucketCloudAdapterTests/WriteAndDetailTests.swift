@@ -84,6 +84,20 @@ struct WriteAndDetailTests {
         #expect(harness.requests("POST", containing: "/merge").isEmpty)
     }
 
+    /// D59: Bitbucket's approve takes no head, so the head is re-read first and a moved head approves nothing.
+    @Test func approveRechecksTheHeadImmediatelyBefore() async throws {
+        let harness = try await primed(step: 2)
+        try await harness.provider.approve(Fx.prKey(42), expectedHeadSHA: BitbucketFixtures.IDs.head42)
+        let methods = harness.transport.requests.map { "\($0.method) \($0.url.lastPathComponent)" }
+        #expect(methods == ["GET 42", "POST approve"])
+
+        let moved = try await primed()
+        await #expect(throws: ProviderError.self) {
+            try await moved.provider.approve(Fx.prKey(42), expectedHeadSHA: "0000000000000000000000000000000000000000")
+        }
+        #expect(moved.requests("POST", containing: "/approve").isEmpty)
+    }
+
     @Test func mergeConflictFromBitbucketIsReported() async throws {
         let conflict = StubTransport.json(#"{"type":"error","error":{"message":"A ref changed while merging"}}"#, status: 409)
         let harness = try await primed(extraRoutes: [

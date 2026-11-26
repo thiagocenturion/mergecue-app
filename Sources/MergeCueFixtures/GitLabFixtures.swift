@@ -203,6 +203,9 @@ public enum GitLabFixtures {
             Route(method: "PUT", pathPattern: "/projects/{project}/merge_requests/{iid}/merge") { request, match in
                 merge(request: request, match: match, step: step)
             },
+            Route(method: "POST", pathPattern: "/projects/{project}/merge_requests/{iid}/approve") { request, match in
+                approve(request: request, match: match, step: step)
+            },
             Route(method: "POST", pathPattern: "/projects/{project}/merge_requests/{iid}/draft_notes/bulk_publish") { request, match in
                 if (request.jsonBody?["reviewer_state"]?.stringValue) == "requested_changes" {
                     state.requestChanges(mr: mrName(match))
@@ -346,6 +349,18 @@ public enum GitLabFixtures {
         state.setResolved(resolved, discussion: match["discussion"] ?? "", mr: mrName(match))
         guard let discussion = findDiscussion(match: match, step: step, state: state) else { return notFound() }
         return respond(json: discussion, request: request)
+    }
+
+    /// `POST …/approve`: 409 when `sha` is not the head, else the approval state.
+    private static func approve(request: HTTPRequest, match: StubTransport.Match, step: Int) -> HTTPResponse {
+        guard let data = data(mrName(match), step: step),
+              let mr = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return notFound() }
+        let head = mr["sha"] as? String
+        guard let sha = request.jsonBody?["sha"]?.stringValue, sha == head else {
+            return StubTransport.json(#"{"message":"SHA does not match HEAD of source branch: \#(head ?? "")"}"#, status: 409)
+        }
+        return StubTransport.json(#"{"approved":true,"approvals_left":0,"approved_by":[{"user":{"id":9120334,"username":"mona-dev"}}]}"#)
     }
 
     private static func merge(request: HTTPRequest, match: StubTransport.Match, step: Int) -> HTTPResponse {

@@ -52,7 +52,9 @@ struct TaskActionsMenu: View {
             if task.state == .readyForReview { Button("Mark Done Without Changes") { send(.markTaskDone(task.id)) } }
             mergeSection
             Button("Show \(task.origin.providerKind.changeRequestAbbreviation) Details") { model.showChangeRequest(task.origin.changeRequest, thread: task.origin.thread) }
-            Button("Open in \(task.origin.providerKind.displayName)") { send(.openURL(task.origin.webURL)) }
+            Button { send(.openURL(task.origin.webURL)) } label: {
+                Label("Open in \(task.origin.providerKind.displayName)", systemImage: OutsideLinkGlyph.symbol)
+            }
             Divider()
             if task.state.isTerminal {
                 Button("Reopen") { send(.reopenTask(task.id)) }

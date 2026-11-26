@@ -19,6 +19,14 @@ extension PreviewBackend {
             try updateAttention(id) { $0.disposition = .dismissed; $0.isUnread = false }
             return AppCommandResult(message: "Dismissed")
 
+        case .approveChangeRequest(let key):
+            for index in state.attention.indices where state.attention[index].changeRequest == key
+                && [.reviewRequested, .reapprovalNeeded, .updatedSinceReview].contains(state.attention[index].reason) {
+                state.attention[index].disposition = .resolved
+                state.attention[index].isUnread = false
+            }
+            return AppCommandResult(message: "Approved \(key.kind.formattedNumber(key.number)) (preview data, nothing was sent)", tone: .success)
+
         case .createTask(let attentionID, let type):
             return try createTask(attentionID: attentionID, type: type)
         case .cancelTask(let id):

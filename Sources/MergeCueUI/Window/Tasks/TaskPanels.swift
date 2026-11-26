@@ -91,12 +91,26 @@ struct ApprovalSheet: View {
                 }
                 .buttonStyle(SecondaryButtonStyle())
                 .keyboardShortcut(.cancelAction)
-                Button("Approve \(preview.action.displayName)") {
-                    Task { await model.send(.approvePreview(preview)) }
+                if !preview.canApprove, let fallback = model.browserFallback(for: preview) {
+                    // The app may not write here (D59): same place, done on the provider page instead.
+                    Button {
+                        model.performInBrowser(fallback)
+                        model.pendingPreview = nil
+                        dismiss()
+                    } label: {
+                        OutsideLinkLabel(title: fallback.title)
+                    }
+                    .buttonStyle(GradientButtonStyle())
+                    .keyboardShortcut(.defaultAction)
+                    .help(fallback.textToCopy == nil ? "Opens the page in your browser" : "Copies the text, then opens the page in your browser to paste it")
+                } else {
+                    Button("Approve \(preview.action.displayName)") {
+                        Task { await model.send(.approvePreview(preview)) }
+                    }
+                    .buttonStyle(GradientButtonStyle())
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!preview.canApprove)
                 }
-                .buttonStyle(GradientButtonStyle())
-                .keyboardShortcut(.defaultAction)
-                .disabled(!preview.canApprove)
             }
         }
         .padding(24)

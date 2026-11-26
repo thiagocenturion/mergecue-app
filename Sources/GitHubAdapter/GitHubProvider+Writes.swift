@@ -70,6 +70,23 @@ extension GitHubProvider {
         )
     }
 
+    /// `POST /repos/{o}/{r}/pulls/{n}/reviews` with `event: APPROVE` and `commit_id` = the head the user saw. GitHub
+    /// answers 422 when that commit is no longer the head (→ `ProviderError.conflict`, nothing approved) (D59).
+    public func approve(_ changeRequest: ChangeRequestKey, expectedHeadSHA: String) async throws {
+        guard !expectedHeadSHA.isEmpty else {
+            throw ProviderError.invalidRequest("Approving needs the head commit you reviewed.")
+        }
+        let repo = try Self.repoAPIPath(try await repositoryPath(changeRequest.repo))
+        do {
+            _ = try await client.send(
+                "POST", "\(repo)/pulls/\(changeRequest.number)/reviews",
+                json: RESTApprovePayload(event: "APPROVE", commitID: expectedHeadSHA)
+            )
+        } catch ProviderError.invalidRequest {
+            throw ProviderError.conflict("The pull request changed since you looked at it. Refresh and review the new commits.")
+        }
+    }
+
     /// `PUT /repos/{o}/{r}/pulls/{n}/merge` with `sha` = `expectedHeadSHA`; GitHub answers 409 when the head moved
     /// (→ `ProviderError.conflict`).
     public func merge(_ changeRequest: ChangeRequestKey, expectedHeadSHA: String) async throws {
