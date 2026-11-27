@@ -38,6 +38,8 @@ struct ApproveButton: View {
     let model: AppModel
     let changeRequest: ChangeRequestKey
     var fullWidth = true
+    /// The primary (gradient) style; false draws it as a secondary button beside another primary action.
+    var prominent = true
 
     var body: some View {
         let route = model.approvalRoute(changeRequest)
@@ -50,7 +52,7 @@ struct ApproveButton: View {
                 if route?.opensBrowser == true { OutsideLinkGlyph(size: 12) }
             }
         }
-        .buttonStyle(GradientButtonStyle(size: fullWidth ? .large : .regular, fullWidth: fullWidth))
+        .modifier(ApproveButtonStyle(prominent: prominent, size: prominent && !fullWidth ? .regular : .large, fullWidth: fullWidth))
         .help(Self.help(route, kind: changeRequest.kind))
         .accessibilityLabel(route?.opensBrowser == true ? "Approve in \(changeRequest.kind.displayName)" : "Approve")
         .accessibilityHint(Self.help(route, kind: changeRequest.kind))
@@ -60,6 +62,21 @@ struct ApproveButton: View {
         switch route {
         case .browser(_, let reason)?: reason
         default: "Approve as you on \(kind.displayName), for the commits you see now"
+        }
+    }
+}
+
+/// Gradient when Approve is the primary action, the secondary glass capsule otherwise.
+private struct ApproveButtonStyle: ViewModifier {
+    var prominent: Bool
+    var size: ButtonSize
+    var fullWidth: Bool
+
+    func body(content: Content) -> some View {
+        if prominent {
+            content.buttonStyle(GradientButtonStyle(size: size, fullWidth: fullWidth))
+        } else {
+            content.buttonStyle(SecondaryButtonStyle(size: size, fullWidth: fullWidth))
         }
     }
 }

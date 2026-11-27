@@ -42,7 +42,7 @@ enum ButtonSize {
 }
 
 /// Primary action (CTA): a capsule of the text-safe brand gradient (#087EA3 → #1B6DF5 → #8452F5, ≥ 4.5:1 with
-/// white) under interactive Liquid Glass (D41), white text, no stroke. A soft sheen sweeps across it now and then.
+/// white) under interactive Liquid Glass (D41), white text, no stroke, no moving highlight.
 struct GradientButtonStyle: ButtonStyle {
     var size: ButtonSize = .regular
     var fullWidth = false
@@ -57,7 +57,6 @@ struct GradientButtonStyle: ButtonStyle {
             .frame(minHeight: size.height)
             .frame(maxWidth: fullWidth ? .infinity : nil)
             .background(Capsule().fill(isEnabled ? AnyShapeStyle(Theme.actionGradient) : AnyShapeStyle(Color.clear)))
-            .sheen(active: isEnabled, shape: Capsule())
             .glassShape(Capsule(), tint: isEnabled ? Theme.blue : nil, fallback: isEnabled ? .clear : Theme.surfaceRaised)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .animation(Motion.press, value: configuration.isPressed)

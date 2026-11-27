@@ -49,7 +49,6 @@ struct AISplitButton<MenuContent: View>: View {
         }
         .fixedSize(horizontal: false, vertical: true)
         .background(Capsule().fill(Theme.actionGradient))
-        .sheen(shape: Capsule())
         .glassShape(Capsule(), tint: Theme.blue, fallback: .clear)
         .contentShape(Capsule())
     }

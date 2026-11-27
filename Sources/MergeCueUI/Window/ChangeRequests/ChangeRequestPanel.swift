@@ -54,12 +54,14 @@ struct ChangeRequestPanel: View {
             }
             }
             if focus == nil, model.showsReviewWithAI(changeRequest) || model.showsApprove(changeRequest) {
-                VStack(spacing: 10) {
+                // One primary action: Review with AI when it applies, Approve beside it as a secondary button.
+                HStack(spacing: 10) {
                     if model.showsReviewWithAI(changeRequest) {
                         AIReviewSplitButton(model: model, changeRequest: changeRequest)
                     }
                     if model.showsApprove(changeRequest) {
-                        ApproveButton(model: model, changeRequest: changeRequest)
+                        let secondary = model.showsReviewWithAI(changeRequest)
+                        ApproveButton(model: model, changeRequest: changeRequest, fullWidth: !secondary, prominent: !secondary)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -465,15 +467,11 @@ struct FocusActionBar: View {
         } else if case .createTask(let attentionID, let type) = PopoverDerivation.primaryAction(for: item) {
             AITaskSplitButton(model: model, attentionID: attentionID, defaultType: type)
         } else if Self.reviewReasons.contains(item.reason), model.showsReviewWithAI(item.changeRequest) {
-            // Reviews (D59, D60): Review with AI on top, Approve and Acknowledge below.
-            VStack(spacing: 10) {
-                AIReviewSplitButton(model: model, changeRequest: item.changeRequest)
-                HStack(spacing: 10) {
-                    if model.showsApprove(item.changeRequest) {
-                        ApproveButton(model: model, changeRequest: item.changeRequest)
-                    }
-                    acknowledge
-                }
+            // Reviews (D59, D60): one primary action, Review with AI; Approve and Acknowledge beside it as secondary
+            // buttons. A narrow panel shows Acknowledge as an icon.
+            ViewThatFits(in: .horizontal) {
+                reviewRow(compactAcknowledge: false)
+                reviewRow(compactAcknowledge: true)
             }
         } else if Self.reviewReasons.contains(item.reason), model.showsApprove(item.changeRequest) {
             // Reviews (D59): Approve first, Acknowledge beside it.
@@ -483,6 +481,37 @@ struct FocusActionBar: View {
             }
         } else {
             acknowledge
+        }
+    }
+
+    private func reviewRow(compactAcknowledge: Bool) -> some View {
+        HStack(spacing: 10) {
+            AIReviewSplitButton(model: model, changeRequest: item.changeRequest)
+                .frame(minWidth: 220)
+            if model.showsApprove(item.changeRequest) {
+                ApproveButton(model: model, changeRequest: item.changeRequest, fullWidth: false, prominent: false)
+                    .fixedSize()
+            }
+            if compactAcknowledge {
+                Button {
+                    Task { await model.send(.acknowledge(attentionID: item.id)) }
+                } label: {
+                    Image(systemName: "checkmark")
+                }
+                .buttonStyle(IconButtonStyle(size: 50))
+                .disabled(!item.isActionable(now: model.now))
+                .help("Acknowledge")
+                .accessibilityLabel("Acknowledge")
+            } else {
+                Button {
+                    Task { await model.send(.acknowledge(attentionID: item.id)) }
+                } label: {
+                    Label("Acknowledge", systemImage: "checkmark")
+                }
+                .buttonStyle(SecondaryButtonStyle(size: .large))
+                .fixedSize()
+                .disabled(!item.isActionable(now: model.now))
+            }
         }
     }
 
