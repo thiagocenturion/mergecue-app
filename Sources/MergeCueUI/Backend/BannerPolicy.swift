@@ -9,7 +9,7 @@ extension AppCommand {
     /// Whether a success or neutral result message of this command is shown as a banner.
     nonisolated var announcesSuccess: Bool {
         switch self {
-        case .copyHandoffCommand, .openURL, .approvePreview, .approveChangeRequest, .cleanUpWorktrees, .disconnectAccount,
+        case .copyHandoffCommand, .openPromptInAgent, .openReviewInAgent, .openURL, .approvePreview, .approveChangeRequest, .cleanUpWorktrees, .disconnectAccount,
              .applyAgentRegistration, .deleteAgentConfigBackups, .findCheckouts, .sendTestNotification,
              .exportDatabase, .resetAllData:
             true

@@ -201,6 +201,17 @@ extension EngineBackend {
             let place = handoff.workingDirectory.map(UIFormat.abbreviatedPath) ?? "the task checkout"
             return AppCommandResult(message: "Opened \(kind.displayName) in a new Terminal window at \(place). The task stays “Task ready to start” until the agent claims it.",
                                     tone: .success)
+        case .openPromptInAgent(let id, let kind, let prompt):
+            let handoff = try await engine.handoff(for: id)
+            _ = try await runtime.openPromptInAgent(taskID: id, agent: try detected(kind), prompt: prompt)
+            let place = handoff.workingDirectory.map(UIFormat.abbreviatedPath) ?? "the task checkout"
+            return AppCommandResult(message: "Opened \(kind.displayName) in a new Terminal window at \(place) with the full context. "
+                                        + "Without MCP the task doesn't track the agent: mark it done when it's finished.",
+                                    tone: .success)
+        case .openReviewInAgent(let key, let kind, let prompt):
+            _ = try await runtime.openReviewInAgent(changeRequest: key, agent: try detected(kind), prompt: prompt)
+            return AppCommandResult(message: "Opened \(kind.displayName) in a new Terminal window to review \(key.kind.formattedNumber(key.number)).",
+                                    tone: .success)
         case .loadCheckLog(let check):
             return AppCommandResult(logExcerpt: try await engine.loadCheckLog(check))
         case .loadDiff(let key):

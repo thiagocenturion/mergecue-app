@@ -103,6 +103,7 @@ struct PopoverRowView: View {
             } label: {
                 HStack(spacing: 6) {
                     if case .createTask(_, let type) = action, type != .investigateCI { SparkleIcon(size: 12) }
+                    if case .reviewWithAI = action { SparkleIcon(size: 12) }
                     Text(title).lineLimit(1)
                     if case .approve(let key) = action, model.approvalRoute(key)?.opensBrowser == true { OutsideLinkGlyph() }
                 }
@@ -112,6 +113,8 @@ struct PopoverRowView: View {
             .accessibilityLabel("\(action.title), \(item.refText)")
             switch action {
             case .createTask(_, let type) where type != .investigateCI:
+                button.buttonStyle(OutlinedGradientButtonStyle(size: .compact))
+            case .reviewWithAI:
                 button.buttonStyle(OutlinedGradientButtonStyle(size: .compact))
             case .openTask(_, let title) where item.section == .ready && title == "Review":
                 button.buttonStyle(TintedOutlineButtonStyle(color: Theme.mint, textColor: Theme.mintText, size: .compact))
@@ -128,6 +131,7 @@ struct PopoverRowView: View {
         case .openAttention, .openTask: "Open details in the MergeCue window"
         case .retryTask: "Put the task back in the queue for an agent"
         case .approve(let key): ApproveButton.help(model.approvalRoute(key), kind: key.kind)
+        case .reviewWithAI(let key): "Hand this \(key.kind.changeRequestNoun) to your coding agent for a review"
         }
     }
 }

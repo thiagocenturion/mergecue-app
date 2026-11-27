@@ -103,7 +103,7 @@ struct ScreenContent: View {
     let model: AppModel
 
     var body: some View {
-        let key = "\(model.screen)|\(model.selectedTaskID?.rawValue ?? "")"
+        let key = "\(model.screen)|\(model.selectedTaskID?.rawValue ?? "")|\(model.reviewHandoff?.changeRequestID ?? "")"
         ZStack {
             screen
                 .id(key)
@@ -118,10 +118,14 @@ struct ScreenContent: View {
         case .inbox:
             InboxScreen(model: model)
         case .reviews:
-            TwoColumnScreen(model: model, key: "reviews", listWidth: 400, minListWidth: 380) {
-                ReviewList(model: model)
-            } detail: {
-                ChangeRequestDetail(model: model)
+            if let request = model.reviewHandoff, let snapshot = model.snapshot(id: request.changeRequestID) {
+                ReviewHandoffScreen(model: model, snapshot: snapshot, focus: request.focus)
+            } else {
+                TwoColumnScreen(model: model, key: "reviews", listWidth: 400, minListWidth: 380) {
+                    ReviewList(model: model)
+                } detail: {
+                    ChangeRequestDetail(model: model)
+                }
             }
         case .changeRequests:
             TwoColumnScreen(model: model, key: "pullRequests", listWidth: 380, minListWidth: 380) {

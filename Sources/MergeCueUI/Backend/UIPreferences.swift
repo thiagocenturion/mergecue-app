@@ -48,6 +48,8 @@ public nonisolated enum UIPreferenceKeys {
     public static let avatarAccount = "MergeCueAvatarAccount"
     public static let detailTabs = "MergeCueDetailTabs"
     public static let splitWidths = "MergeCueSplitWidths"
+    /// "With MCP" / "Without MCP" in agent handoffs (D60).
+    public static let agentPromptMode = "MergeCueAgentPromptMode"
     /// JSON `{changeRequestID: [approverRemoteID]}` of approvals already seen (D47).
     public static let seenApprovals = "MergeCueSeenApprovals"
 }

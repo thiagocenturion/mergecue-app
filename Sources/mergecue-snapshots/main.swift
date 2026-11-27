@@ -218,6 +218,31 @@ func d53Scenes() -> [Scene] {
     return list
 }
 
+/// D60: handoffs without MCP (one item, and a task covering several) and "Review with AI" in both modes.
+func d60Scenes() -> [Scene] {
+    let reviewRequested: (AppModel) -> ChangeRequestKey? = { model in
+        model.state.attention.first { $0.reason == .reviewRequested && $0.providerKind == .github }?.changeRequest
+    }
+    return [
+        Scene(name: "window-task-handoff-prompt", size: windowSize, configure: { model in
+            showTask(.waitingForAgent)(model)
+            model.agentPromptMode = .standalone
+        }, kind: window),
+        Scene(name: "window-task-merged-prompt", size: NSSize(width: windowSize.width, height: 1500), configure: { model in
+            showCITask(model)
+            model.agentPromptMode = .standalone
+        }, kind: window, prepare: attachReviewToCITask),
+        Scene(name: "window-review-handoff", size: windowSize, configure: { model in
+            model.agentPromptMode = .standalone
+            if let key = reviewRequested(model) { model.startReview(key) }
+        }, kind: window),
+        Scene(name: "window-review-handoff-mcp", size: windowSize, configure: { model in
+            model.agentPromptMode = .mcp
+            if let key = reviewRequested(model) { model.startReview(key, focus: .logic) }
+        }, kind: window),
+    ]
+}
+
 let scenes: [Scene] = [
     // The four mockup screens.
     Scene(name: "1-main-inbox", size: windowSize, configure: { model in
@@ -639,7 +664,7 @@ if !arguments.contains("--no-engine-demo"), filter.map({ $0.hasPrefix("engine") 
     written += renderEngineDemo()
 }
 
-for scene in scenes + d48Scenes() + d53Scenes() where filter.map({ !$0.hasPrefix("engine") && scene.name.contains($0) }) ?? true {
+for scene in scenes + d48Scenes() + d53Scenes() + d60Scenes() where filter.map({ !$0.hasPrefix("engine") && scene.name.contains($0) }) ?? true {
     for (suffix, appearance) in [("dark", NSAppearance.Name.darkAqua), ("light", NSAppearance.Name.aqua)] {
         let model: AppModel
         if let prepare = scene.prepare {

@@ -19,6 +19,8 @@ extension AppModel {
             await send(.retryTask(taskID))
         case .approve(let key):
             approve(key, fromPopover: true)
+        case .reviewWithAI(let key):
+            startReview(key)
         }
     }
 
@@ -69,6 +71,7 @@ extension AppModel {
         // Your own PRs/MRs live on Pull requests, others' on Reviews (D54).
         let isMine = snapshot(key).map { $0.summary.involvement.contains(.authored) || $0.summary.author.remoteID == key.account.remoteUserID } ?? true
         screen = isMine ? .changeRequests : .reviews
+        reviewHandoff = nil
         selectedChangeRequestID = key.id
         changeRequestFilter.includeClosed = changeRequestFilter.includeClosed || snapshot(key)?.summary.state != .open
         openMainWindow()

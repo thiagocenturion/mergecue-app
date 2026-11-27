@@ -216,7 +216,11 @@ public final class AppModel {
     private(set) var indexes: Indexes
 
     // MARK: Navigation and selection
-    public var screen: MainScreen = .inbox
+    public var screen: MainScreen = .inbox {
+        didSet { if screen != oldValue { reviewHandoff = nil } }
+    }
+    /// "Review with AI" open on the Reviews screen (D60); cleared when the screen changes.
+    public var reviewHandoff: ReviewHandoffRequest?
     public var selectedAttentionID: String? {
         didSet {
             guard let selectedAttentionID, selectedAttentionID != oldValue else { return }
@@ -351,6 +355,10 @@ public final class AppModel {
     public var handoffCollapsed = false {
         didSet { environment.preferences.save(UIPreferenceKeys.handoffCollapsed, handoffCollapsed ? "1" : nil) }
     }
+    /// Agent handoffs: through MergeCue MCP or with a self-contained prompt (D60, persisted).
+    public var agentPromptMode: AgentPromptMode = .mcp {
+        didSet { environment.preferences.save(UIPreferenceKeys.agentPromptMode, agentPromptMode == .mcp ? nil : agentPromptMode.rawValue) }
+    }
     /// Settings › General › Global shortcut that opens the popover from anywhere (persisted).
     public var globalHotKey: HotKeyPreset = .defaultPreset {
         didSet { environment.preferences.save(UIPreferenceKeys.globalHotKey, globalHotKey.rawValue) }
@@ -394,6 +402,7 @@ public final class AppModel {
         DarkStyle.current = darkStyle
         environment.applyAppearance(appearance)
         self.handoffCollapsed = environment.preferences.load(UIPreferenceKeys.handoffCollapsed) == "1"
+        self.agentPromptMode = environment.preferences.load(UIPreferenceKeys.agentPromptMode).flatMap(AgentPromptMode.init(rawValue:)) ?? .mcp
         self.sidebarCollapsed = environment.preferences.load(UIPreferenceKeys.sidebarCollapsed) == "1"
         self.detailTabsEnabled = environment.preferences.load(UIPreferenceKeys.detailTabs).map { $0 == "1" }
         if let stored = environment.preferences.load(UIPreferenceKeys.splitWidths)?.data(using: .utf8),

@@ -71,6 +71,7 @@ extension AppModel {
         }
         switch PopoverDerivation.primaryAction(for: item) {
         case .createTask(let id, let type): await createTaskAndShow(attentionID: id, type: type)
+        case .reviewWithAI(let key): startReview(key)
         default: openInboxItem(item.id)
         }
     }

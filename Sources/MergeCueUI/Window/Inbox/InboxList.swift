@@ -611,18 +611,20 @@ struct InboxItemCard: View {
             let button = Button {
                 if case .createTask(let id, let type) = action {
                     Task { await model.createTaskAndShow(attentionID: id, type: type) }
+                } else if case .reviewWithAI(let key) = action {
+                    model.startReview(key)
                 } else {
                     select()
                 }
             } label: {
                 HStack(spacing: 7) {
-                    if case .createTask = action, isSelected { SparkleIcon(size: 13) }
+                    if action.isAI, isSelected { SparkleIcon(size: 13) }
                     Text(title)
                 }
             }
             .fixedSize()
             .accessibilityLabel("\(action.title), \(item.repoFullPath) \(item.providerKind.formattedNumber(item.number))")
-            if isSelected, case .createTask = action {
+            if isSelected, action.isAI {
                 button.buttonStyle(GradientButtonStyle(size: .regular))
             } else {
                 button.buttonStyle(SecondaryButtonStyle(size: .regular))

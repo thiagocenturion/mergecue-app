@@ -89,6 +89,8 @@ public nonisolated enum PrimaryAction: Sendable, Hashable {
     case retryTask(TaskID)
     /// Approve someone else's PR/MR (D59): in the app after a confirmation, or on the provider page.
     case approve(ChangeRequestKey)
+    /// Hand someone else's PR/MR to a coding agent for a review (D60).
+    case reviewWithAI(ChangeRequestKey)
 
     public var title: String {
         switch self {
@@ -98,13 +100,22 @@ public nonisolated enum PrimaryAction: Sendable, Hashable {
         case .openTask(_, let title): title
         case .retryTask: "Retry"
         case .approve: "Approve"
+        case .reviewWithAI: ReviewFocus.full.title
+        }
+    }
+
+    /// Hands work to a coding agent (a task, or a review).
+    public var isAI: Bool {
+        switch self {
+        case .createTask, .reviewWithAI: true
+        default: false
         }
     }
 
     /// Whether the action deserves the prominent (filled) button style.
     public var isProminent: Bool {
         switch self {
-        case .createTask: true
+        case .createTask, .reviewWithAI: true
         case .openTask(_, let title): title == "Review"
         case .openAttention, .copyCommand, .retryTask, .approve: false
         }
@@ -267,7 +278,8 @@ public nonisolated enum PopoverDerivation {
         if let action = item.suggestedActions.first(where: aiActions.contains), let type = TaskType(attentionAction: action) {
             return .createTask(attentionID: item.id, type: type)
         }
-        return .openAttention(attentionID: item.id, title: item.reason == .reviewRequested ? "Review" : "Open")
+        if item.reason == .reviewRequested || item.reason == .updatedSinceReview { return .reviewWithAI(item.changeRequest) }
+        return .openAttention(attentionID: item.id, title: "Open")
     }
 
     static func row(for record: TaskRecord, section: PopoverSection, state: AppState, now: Date) -> PopoverItem {

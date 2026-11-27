@@ -114,7 +114,8 @@ struct SectionDerivationTests {
         #expect(try action(.github, 42, .changesRequested).title == "Fix now")
         #expect(try action(.gitlab, 42, .ciFailed).title == "Investigate with AI")
         #expect(try action(.bitbucketCloud, 42, .reviewerQuestion).title == "Draft reply")
-        #expect(try action(.github, 318, .reviewRequested).title == "Review")
+        #expect(try action(.github, 318, .reviewRequested).title == "Review with AI")
+        #expect(try action(.github, 318, .reviewRequested).isAI)
         #expect(sections.inProgress.first { $0.reason == "Awaiting agent connection" }?.primaryAction.title == "Copy command")
         #expect(sections.ready.first?.primaryAction.title == "Review")
         #expect(PopoverDerivation.primaryAction(for: AttentionItem(

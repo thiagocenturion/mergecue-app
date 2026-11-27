@@ -279,6 +279,16 @@ struct PopoverPullRequestRow: View {
             }
             .labelStyle(.titleAndIcon)
             .fixedSize()
+            if review != nil, model.showsReviewWithAI(summary.key) {
+                Button {
+                    model.startReview(summary.key)
+                } label: {
+                    SparkleIcon(size: 13)
+                }
+                .buttonStyle(IconButtonStyle(size: 24, filled: false))
+                .help("Review with AI: hand this \(summary.key.kind.changeRequestNoun) to your coding agent")
+                .accessibilityLabel("Review with AI")
+            }
             Button {
                 Task { await model.send(.openURL(summary.webURL)) }
             } label: {

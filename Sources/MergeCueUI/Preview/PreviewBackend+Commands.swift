@@ -180,6 +180,12 @@ extension PreviewBackend {
             }
             let place = record.task.checkout?.worktreePath ?? record.task.checkout?.mappedCheckoutPath ?? "the task checkout"
             return AppCommandResult(message: "Preview: MergeCue would open \(agent.displayName) in \(place). Nothing was launched.")
+        case .openPromptInAgent(let id, let agent, _):
+            guard let record = state.tasks.first(where: { $0.id == id }) else { throw AppBackendError.notFound("Task \(id)") }
+            let place = record.task.checkout?.worktreePath ?? record.task.checkout?.mappedCheckoutPath ?? "the task checkout"
+            return AppCommandResult(message: "Preview: MergeCue would open \(agent.displayName) in \(place) with the prompt. Nothing was launched.")
+        case .openReviewInAgent(_, let agent, _):
+            return AppCommandResult(message: "Preview: MergeCue would open \(agent.displayName) with the review prompt. Nothing was launched.")
         case .loadCheckLog(let check):
             let excerpt = logs[check.id] ?? LogExcerpt(text: "No log excerpt for this check in the preview data.", truncated: false)
             return AppCommandResult(logExcerpt: excerpt)

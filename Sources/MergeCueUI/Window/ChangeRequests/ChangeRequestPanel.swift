@@ -53,11 +53,18 @@ struct ChangeRequestPanel: View {
                 await consumeFocusRequest(snapshot, proxy: proxy)
             }
             }
-            if focus == nil, model.showsApprove(changeRequest) {
-                ApproveButton(model: model, changeRequest: changeRequest)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
-                    .padding(.top, 4)
+            if focus == nil, model.showsReviewWithAI(changeRequest) || model.showsApprove(changeRequest) {
+                VStack(spacing: 10) {
+                    if model.showsReviewWithAI(changeRequest) {
+                        AIReviewSplitButton(model: model, changeRequest: changeRequest)
+                    }
+                    if model.showsApprove(changeRequest) {
+                        ApproveButton(model: model, changeRequest: changeRequest)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
+                .padding(.top, 4)
             }
             if let focus {
                 RelatedTaskBanner(model: model, item: focus)
@@ -457,6 +464,17 @@ struct FocusActionBar: View {
             .buttonStyle(SecondaryButtonStyle(size: .large, fullWidth: true))
         } else if case .createTask(let attentionID, let type) = PopoverDerivation.primaryAction(for: item) {
             AITaskSplitButton(model: model, attentionID: attentionID, defaultType: type)
+        } else if Self.reviewReasons.contains(item.reason), model.showsReviewWithAI(item.changeRequest) {
+            // Reviews (D59, D60): Review with AI on top, Approve and Acknowledge below.
+            VStack(spacing: 10) {
+                AIReviewSplitButton(model: model, changeRequest: item.changeRequest)
+                HStack(spacing: 10) {
+                    if model.showsApprove(item.changeRequest) {
+                        ApproveButton(model: model, changeRequest: item.changeRequest)
+                    }
+                    acknowledge
+                }
+            }
         } else if Self.reviewReasons.contains(item.reason), model.showsApprove(item.changeRequest) {
             // Reviews (D59): Approve first, Acknowledge beside it.
             HStack(spacing: 10) {
@@ -480,85 +498,6 @@ struct FocusActionBar: View {
 
     /// Items about the owner's review of someone else's PR/MR, where Approve is the answer.
     static let reviewReasons: Set<AttentionReason> = [.reviewRequested, .reapprovalNeeded, .updatedSinceReview]
-}
-
-/// "✦ Fix now | ⌄": the main part creates the default task; the menu picks another task type or the agent.
-struct AITaskSplitButton: View {
-    @Bindable var model: AppModel
-    let attentionID: String
-    let defaultType: TaskType
-
-    var body: some View {
-        HStack(spacing: 0) {
-            Button {
-                start(defaultType)
-            } label: {
-                HStack(spacing: 10) {
-                    SparkleIcon(size: 16)
-                        .symbolEffect(.bounce, options: .repeat(.periodic(delay: 4)))
-                    Text(defaultType.actionTitle)
-                }
-                .scaledFont(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .frame(minHeight: 50)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(PressScaleButtonStyle())
-            .keyboardShortcut(.return, modifiers: .command)
-            .help("\(defaultType.actionTitle): creates a task for your agent (⌘↩)")
-            .accessibilityHint("Creates a task for your agent. Command-Return")
-            Rectangle().fill(.white.opacity(0.3)).frame(width: 1, height: 26).accessibilityHidden(true)
-            Menu {
-                Section("Task") {
-                    ForEach(TaskType.allCases, id: \.self) { type in
-                        Button(type.menuTitle) { start(type) }
-                    }
-                }
-                Section("Agent") {
-                    ForEach(AgentKind.allCases, id: \.self) { kind in
-                        Toggle(isOn: Binding(get: { model.effectiveAgentKind == kind }, set: { if $0 { model.selectedAgentKind = kind } })) {
-                            Text(model.state.agents.contains { $0.kind == kind } ? kind.shortName : "\(kind.shortName) (not detected)")
-                        }
-                    }
-                }
-            } label: {
-                // A plain menu draws the label exactly as laid out, so the chevron sits in the middle of its segment.
-                Image(systemName: "chevron.down")
-                    .scaledFont(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 54, height: 50)
-                    .contentShape(Rectangle())
-            }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .accessibilityLabel("More AI actions")
-        }
-        .fixedSize(horizontal: false, vertical: true)
-        .background(Capsule().fill(Theme.actionGradient))
-        .sheen(shape: Capsule())
-        .glassShape(Capsule(), tint: Theme.blue, fallback: .clear)
-        .contentShape(Capsule())
-    }
-
-    private func start(_ type: TaskType) {
-        Task { await model.createTaskAndShow(attentionID: attentionID, type: type) }
-    }
-}
-
-extension TaskType {
-    /// Menu wording (Fix now / Address with AI / Draft reply / Investigate CI).
-    var menuTitle: String {
-        switch self {
-        case .fixReview: "Fix now"
-        case .addressSuggestion: "Address with AI"
-        case .draftReply: "Draft reply"
-        case .investigateCI: "Investigate CI"
-        }
-    }
 }
 
 // MARK: - Tabs
