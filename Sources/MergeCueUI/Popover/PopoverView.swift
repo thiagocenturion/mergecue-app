@@ -516,14 +516,15 @@ struct HandoffCallout: View {
                 .buttonStyle(PlainRowButtonStyle())
                 .accessibilityLabel("Dismiss")
             }
-            Text("Paste the command into your agent, or open the agent at the task checkout. The status changes only after it connects.")
+            Text("Paste the command into your agent, or open the agent in the repository's folder. The status changes only after it connects.")
                 .scaledFont(.system(size: 12))
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
-                if let agent = model.preferredAgent, agent.canOpenTasks {
+                if let agent = model.preferredAgent, agent.canOpenTasks, let record = model.task(offer.taskID),
+                   let directory = model.localCheckout(for: record.task.origin.changeRequest, task: record) {
                     Button {
-                        Task { await model.send(.openInAgent(offer.taskID, agent: agent.kind)) }
+                        Task { await model.send(.openInAgent(offer.taskID, agent: agent.kind, directory: directory)) }
                     } label: {
                         HStack(spacing: 6) {
                             AgentMark(kind: agent.kind, size: 13, monochrome: .white)

@@ -194,23 +194,26 @@ extension EngineBackend {
             let target = agent?.displayName ?? "your agent"
             return AppCommandResult(message: "Command copied. Paste it into \(target). The task stays “\(handoff.statusText)” until the agent claims it.",
                                     handoffCommand: handoff.command)
-        case .openInAgent(let id, let kind):
+        case .openInAgent(let id, let kind, let directory):
+            // The agent starts in the repository's own folder (D61); MergeCue MCP hands it the task.
             let agent = try detected(kind)
             let handoff = try await engine.handoff(for: id)
-            _ = try await runtime.openInAgent(taskID: id, agent: agent)
-            let place = handoff.workingDirectory.map(UIFormat.abbreviatedPath) ?? "the task checkout"
-            return AppCommandResult(message: "Opened \(kind.displayName) in a new Terminal window at \(place). The task stays “Task ready to start” until the agent claims it.",
+            let prompt = HandoffCommandBuilder.prompt(for: id, handoffCode: handoff.handoffCode)
+            _ = try await runtime.openPromptInAgent(agent: agent, label: id.rawValue, directory: directory, prompt: prompt)
+            try await engine.recordHandoffCopied(id, agentName: kind.displayName)
+            return AppCommandResult(message: "Opened \(kind.displayName) in a new Terminal window at \(UIFormat.abbreviatedPath(directory)). "
+                                        + "The task stays “\(handoff.statusText)” until the agent claims it.",
                                     tone: .success)
-        case .openPromptInAgent(let id, let kind, let prompt):
-            let handoff = try await engine.handoff(for: id)
-            _ = try await runtime.openPromptInAgent(taskID: id, agent: try detected(kind), prompt: prompt)
-            let place = handoff.workingDirectory.map(UIFormat.abbreviatedPath) ?? "the task checkout"
-            return AppCommandResult(message: "Opened \(kind.displayName) in a new Terminal window at \(place) with the full context. "
+        case .openPromptInAgent(let id, let kind, let directory, let prompt):
+            _ = try await runtime.openPromptInAgent(agent: try detected(kind), label: id.rawValue, directory: directory, prompt: prompt)
+            return AppCommandResult(message: "Opened \(kind.displayName) in a new Terminal window at \(UIFormat.abbreviatedPath(directory)). "
                                         + "Without MCP the task doesn't track the agent: mark it done when it's finished.",
                                     tone: .success)
-        case .openReviewInAgent(let key, let kind, let prompt):
-            _ = try await runtime.openReviewInAgent(changeRequest: key, agent: try detected(kind), prompt: prompt)
-            return AppCommandResult(message: "Opened \(kind.displayName) in a new Terminal window to review \(key.kind.formattedNumber(key.number)).",
+        case .openReviewInAgent(let key, let kind, let directory, let prompt):
+            _ = try await runtime.openPromptInAgent(agent: try detected(kind), label: "review-" + key.shortID.lowercased(),
+                                                    directory: directory, prompt: prompt)
+            return AppCommandResult(message: "Opened \(kind.displayName) in a new Terminal window at \(UIFormat.abbreviatedPath(directory)) "
+                                        + "to review \(key.kind.formattedNumber(key.number)).",
                                     tone: .success)
         case .loadCheckLog(let check):
             return AppCommandResult(logExcerpt: try await engine.loadCheckLog(check))

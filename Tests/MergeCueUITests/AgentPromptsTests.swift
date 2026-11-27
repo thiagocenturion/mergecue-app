@@ -28,7 +28,7 @@ struct AgentPromptsTests {
 
         #expect(prompt.hasPrefix("Address the open feedback on this GitHub pull request."))
         #expect(prompt.contains("URL: \(snapshot.summary.webURL.absoluteString)"))
-        #expect(prompt.contains("Branch: \(snapshot.summary.sourceBranch) into \(snapshot.summary.targetBranch)"))
+        #expect(prompt.contains("Branch: \(snapshot.summary.sourceBranch)"))
         #expect(prompt.contains(AgentPrompts.dataNotice))
         // The CI failure (main item) and the attached requested change, each numbered.
         #expect(prompt.contains("## 1. CI failed:"))
@@ -40,9 +40,10 @@ struct AgentPromptsTests {
             #expect(prompt.contains("```diff"))
             #expect(prompt.contains(String(last)))
         }
-        #expect(prompt.contains("following the codebase's existing patterns, architecture and conventions"))
-        #expect(prompt.contains("no over-engineering"))
+        #expect(prompt.hasSuffix("Address each item above, following the project's existing patterns and conventions, without "
+            + "over-engineering. For questions, draft a reply instead. Don't push or post anything."))
         #expect(!prompt.contains("MergeCue MCP"))
+        Self.expectNoToolingSteps(prompt)
     }
 
     @Test func ourOwnWordingHasNoEmDashes() {
@@ -70,28 +71,54 @@ struct AgentPromptsTests {
         let key = try #require(state.attention(.github, number: 318, reason: .reviewRequested)?.changeRequest)
         let snapshot = try #require(state.changeRequests.first { $0.key == key })
 
-        let standalone = AgentPrompts.review(snapshot, focus: .full, checkoutPath: "/Users/me/web dashboard")
+        let standalone = AgentPrompts.review(snapshot, focus: .full)
         #expect(standalone.hasPrefix("Review this GitHub pull request by "))
-        #expect(standalone.contains("Don't change any files and don't publish anything"))
         #expect(standalone.contains(snapshot.summary.title))
-        #expect(standalone.contains("`gh pr diff \(snapshot.summary.webURL.absoluteString)`"))
-        #expect(standalone.contains("Local checkout: /Users/me/web dashboard"))
-        #expect(standalone.contains("Files changed (\(snapshot.changedFiles.count)"))
-        #expect(standalone.contains(ReviewFocus.full.goal))
-        #expect(standalone.contains("without over-engineering"))
+        #expect(standalone.contains("URL: \(snapshot.summary.webURL.absoluteString)"))
+        #expect(standalone.contains("Files changed (\(snapshot.changedFiles.count)):"))
+        #expect(standalone.hasSuffix(AgentPrompts.reviewInstruction(.full)))
         #expect(!standalone.contains("MergeCue MCP"))
+        Self.expectNoToolingSteps(standalone)
 
         let mcp = AgentPrompts.reviewWithMCP(snapshot, focus: .conventions)
-        #expect(mcp.contains("change_ref \"\(snapshot.summary.ref.description)\""))
-        #expect(mcp.contains("get_change_context") && mcp.contains("get_diff"))
-        #expect(mcp.contains(ReviewFocus.conventions.goal))
-        #expect(!mcp.contains(ReviewFocus.logic.goal))
+        #expect(mcp.contains(snapshot.summary.ref.description))
+        #expect(mcp.contains("using MergeCue MCP for its context"))
+        #expect(mcp.hasSuffix(AgentPrompts.reviewInstruction(.conventions)))
+        #expect(!mcp.contains("get_diff"))
+        Self.expectNoToolingSteps(mcp)
     }
 
-    @Test func branchNamesAreQuotedForTheShell() {
-        #expect(AgentPrompts.shellWord("feature/apple-pay") == "feature/apple-pay")
-        #expect(AgentPrompts.shellWord("fix it's $(rm)") == #"'fix it'\''s $(rm)'"#)
-        #expect(AgentPrompts.shellWord("--upload-pack=x") == "'--upload-pack=x'")
+    /// D61: prompts state the goal; how to get there (git, CLIs, branches, tests to run) is the agent's call.
+    static func expectNoToolingSteps(_ prompt: String) {
+        for phrase in ["git ", "gh pr", "glab", "checkout", "switch", "fetch", "Run the"] {
+            #expect(!prompt.contains(phrase), "prompt mentions \(phrase)")
+        }
+    }
+
+    @Test func agentsOpenInTheRepositoryFolder() async throws {
+        let model = await makeModel()
+        let record = try #require(model.state.tasks.first { $0.task.checkout?.mappedCheckoutPath != nil })
+        // A task opens where its repository is checked out, never in MergeCue's worktree or data folder.
+        let path = try #require(model.localCheckout(for: record.task.origin.changeRequest, task: record))
+        #expect(path == record.task.checkout?.mappedCheckoutPath)
+        #expect(!path.contains("MergeCue/worktrees") && !path.contains("Application Support"))
+
+        // Reviews use the repository mapping: confirmed or exact first, never a mismatch.
+        let key = try #require(model.state.attention(.github, number: 318, reason: .reviewRequested)?.changeRequest)
+        func mapping(_ path: String, _ confidence: MappingConfidence) -> RepoMapping {
+            RepoMapping(id: path, repo: key.repo, repoFullPath: "acme/web-dashboard", checkoutPath: path, confidence: confidence, createdAt: testNow)
+        }
+        func checkout(_ mappings: [RepoMapping]) -> String? {
+            var state = previewState()
+            state.mappings.removeAll { $0.repo == key.repo }
+            state.mappings += mappings
+            return AppModel(backend: MergeCuePreview.makeBackend(variant: .standard, now: testNow), initialState: state,
+                            environment: EnvironmentRecorder().environment).localCheckout(for: key)
+        }
+        #expect(checkout([]) == nil)
+        #expect(checkout([mapping("/Users/me/elsewhere", .mismatch)]) == nil)
+        #expect(checkout([mapping("/Users/me/guess", .probable)]) == "/Users/me/guess")
+        #expect(checkout([mapping("/Users/me/guess", .probable), mapping("/Users/me/web-dashboard", .exact)]) == "/Users/me/web-dashboard")
     }
 
     @Test func reviewRequestsOpenTheReviewHandoff() async throws {
@@ -127,7 +154,7 @@ struct AgentPromptsTests {
     @Test func previewBackendNeverLaunchesAnything() async throws {
         let model = await makeModel()
         let key = try #require(model.state.attention(.github, number: 318, reason: .reviewRequested)?.changeRequest)
-        let result = await model.send(.openReviewInAgent(key, agent: .codex, prompt: "Review it"))
+        let result = await model.send(.openReviewInAgent(key, agent: .codex, directory: "/Users/me/web-dashboard", prompt: "Review it"))
         #expect(result?.message?.contains("Nothing was launched") == true)
     }
 }

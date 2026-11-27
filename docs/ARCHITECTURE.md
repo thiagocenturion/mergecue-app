@@ -1003,10 +1003,10 @@ unique-constraint violations.
   (waiting for an agent or being worked on) / Ready (top 3 each + counts), main window (Inbox, PRs & MRs, Tasks, Rules, Settings), onboarding,
   agent wizard, task detail, diff and CI excerpt viewers, action previews. See §4 of PLAN.
 - Agent prompts (D60): `AgentPromptMode` (`.mcp` / `.standalone`, persisted as `AppModel.agentPromptMode`), `ReviewFocus`,
-  `AgentPrompts.investigate(_:snapshot:)`, `.review(_:focus:checkoutPath:)`, `.reviewWithMCP(_:focus:)` (pure, redacted, bounded).
+  `AgentPrompts.investigate(_:snapshot:)`, `.review(_:focus:)`, `.reviewWithMCP(_:focus:)` (pure, redacted, bounded; goal only, D61).
   `HandoffStepView(model:target:…)` serves `HandoffTarget.task` and `.review`; `ReviewHandoffScreen` shows on Reviews while
-  `AppModel.reviewHandoff` is set (`startReview(_:focus:)`). `PrimaryAction.reviewWithAI`, `AppCommand.openPromptInAgent` /
-  `.openReviewInAgent`. AgentHandoff: `PromptHandoffCommand`, `HandoffCommandBuilder.promptCommand(agent:label:directory:prompt:executable:)`
+  `AppModel.reviewHandoff` is set (`startReview(_:focus:)`). `PrimaryAction.reviewWithAI`; `AppCommand.openInAgent` /
+  `.openPromptInAgent` / `.openReviewInAgent` carry the `directory` from `AppModel.localCheckout(for:task:)` (D61). AgentHandoff: `PromptHandoffCommand`, `HandoffCommandBuilder.promptCommand(agent:label:directory:prompt:executable:)`
   (label `[a-z0-9_-]{1,48}`, prompt ≤ `maxPromptBytes`), `AgentLauncher.openInTerminal(prompt:handoffDir:)` (rebuild-checked).
 - Avatars (D58): `PersonAvatar(person:size:)` / `AvatarStack` / `.avatarBadge(_:size:)` draw `Person.avatarURL` through
   `public final class AvatarImageStore` (`shared`; `init(directory:loader:maxDiskBytes:freshFor:keepFor:now:)`,
@@ -1031,7 +1031,7 @@ Implemented runtime surface (stage C; doc comments in `Sources/MergeCueRuntime`)
   `importGitHubCLIToken(hostname:)`, `connectGitHubFromCLI(label:)`, `detectAgents()`,
   `registrationPlan(for:action:)`, `registrationStatus(for:)`, `applyRegistration(_:consent:)`,
   `verifyMCPHelper(probe:)`, `handoffCommand(for:agent:)`, `openInAgent(taskID:agent:)`,
-  `openPromptInAgent(taskID:agent:prompt:)` / `openReviewInAgent(changeRequest:agent:prompt:)` (D60), `loginItemStatus()`,
+  `openPromptInAgent(agent:label:directory:prompt:)` (D60, D61: any prompt, in the repository's mapped folder), `loginItemStatus()`,
   `setLaunchAtLogin(_:)`, `userDidReturn()` (UI: popover open / main window key → Sync, never advances the demo).
   `RuntimeOptions` injects clock, sync configuration, lease/monitor periods, notifier,
   credential store, IPC on/off, `PeerValidationPolicy`, helper override, git environment, mapping search roots.

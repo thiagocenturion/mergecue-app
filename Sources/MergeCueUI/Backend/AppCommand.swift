@@ -186,11 +186,12 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
 
     // MARK: Handoff and links
     case copyHandoffCommand(TaskID, agent: AgentKind?)
-    case openInAgent(TaskID, agent: AgentKind)
-    /// "Without MCP" (D60): opens the agent in the task's checkout with a self-contained prompt.
-    case openPromptInAgent(TaskID, agent: AgentKind, prompt: String)
-    /// "Review with AI" (D60): opens the agent with a review prompt in a private scratch folder.
-    case openReviewInAgent(ChangeRequestKey, agent: AgentKind, prompt: String)
+    /// Opens the agent with the MCP handoff prompt in `directory`, the repository's local checkout (D61).
+    case openInAgent(TaskID, agent: AgentKind, directory: String)
+    /// "Without MCP" (D60): opens the agent in `directory` with a self-contained prompt.
+    case openPromptInAgent(TaskID, agent: AgentKind, directory: String, prompt: String)
+    /// "Review with AI" (D60): opens the agent in `directory` with a review prompt.
+    case openReviewInAgent(ChangeRequestKey, agent: AgentKind, directory: String, prompt: String)
     /// On-demand CI log excerpt for a failing check (bounded, redacted).
     case loadCheckLog(CheckKey)
     /// On-demand unified diff of a change request (bounded, redacted): code context for comments whose provider
@@ -280,9 +281,9 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
         case .confirmMapping: "confirmMapping"
         case .removeMapping: "removeMapping"
         case .copyHandoffCommand: "copyHandoffCommand"
-        case .openInAgent(_, let agent): "openInAgent(\(agent.rawValue))"
-        case .openPromptInAgent(_, let agent, _): "openPromptInAgent(\(agent.rawValue))"
-        case .openReviewInAgent(_, let agent, _): "openReviewInAgent(\(agent.rawValue))"
+        case .openInAgent(_, let agent, _): "openInAgent(\(agent.rawValue))"
+        case .openPromptInAgent(_, let agent, _, _): "openPromptInAgent(\(agent.rawValue))"
+        case .openReviewInAgent(_, let agent, _, _): "openReviewInAgent(\(agent.rawValue))"
         case .loadCheckLog: "loadCheckLog"
         case .loadDiff: "loadDiff"
         case .openURL: "openURL"

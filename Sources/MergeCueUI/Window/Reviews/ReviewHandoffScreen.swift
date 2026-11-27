@@ -3,7 +3,7 @@ import SwiftUI
 
 /// "Review with AI" (D60): someone else's pull/merge request summarized on the left, and on the right the same
 /// "Open in your coding agent" panel a task has, with a review prompt (With MCP / Without MCP). No task is created:
-/// the agent reports its findings in its own session and nothing is posted.
+/// the agent opens in the repository's folder (D61), reports its findings in its own session and nothing is posted.
 struct ReviewHandoffScreen: View {
     @Bindable var model: AppModel
     let snapshot: ChangeRequestSnapshot

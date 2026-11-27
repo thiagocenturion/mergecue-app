@@ -28,9 +28,13 @@ extension AppModel {
         return !ViewerReview.isAuthored(snapshot, userID: key.account.remoteUserID)
     }
 
-    /// The mapped local checkout of a change request's repository, if any (the review prompt names it).
-    func checkoutPath(for key: ChangeRequestKey) -> String? {
-        state.mappings.first { $0.repo == key.repo }?.checkoutPath
+    /// Where "Open in <agent>" starts the agent (D61): the repository's own folder on this Mac, as mapped during
+    /// setup. A task's mapped checkout first; then a confirmed or exact mapping, then a probable one; never a
+    /// mapping whose remotes point elsewhere. nil when the repository isn't mapped (copy instead).
+    public func localCheckout(for key: ChangeRequestKey, task: TaskRecord? = nil) -> String? {
+        if let path = task?.task.checkout?.mappedCheckoutPath { return path }
+        let mappings = state.mappings.filter { $0.repo == key.repo && $0.confidence != .mismatch }
+        return (mappings.first { $0.confirmedAt != nil || $0.confidence == .exact } ?? mappings.first)?.checkoutPath
     }
 
     /// The prompt a task's handoff copies or opens in `mode`.
@@ -45,7 +49,7 @@ extension AppModel {
     func reviewPrompt(_ snapshot: ChangeRequestSnapshot, focus: ReviewFocus, mode: AgentPromptMode) -> String {
         switch mode {
         case .mcp: AgentPrompts.reviewWithMCP(snapshot, focus: focus)
-        case .standalone: AgentPrompts.review(snapshot, focus: focus, checkoutPath: checkoutPath(for: snapshot.key))
+        case .standalone: AgentPrompts.review(snapshot, focus: focus)
         }
     }
 

@@ -173,19 +173,17 @@ extension PreviewBackend {
             let target = agent?.displayName ?? "your agent"
             return AppCommandResult(message: "Command copied — paste it into \(target). The task stays “Waiting for agent” until the agent claims it.",
                                     handoffCommand: HandoffText.command(for: id, handoffCode: record.task.handoffCode))
-        case .openInAgent(let id, let agent):
-            guard let record = state.tasks.first(where: { $0.id == id }) else { throw AppBackendError.notFound("Task \(id)") }
+        case .openInAgent(let id, let agent, let directory):
+            guard state.tasks.contains(where: { $0.id == id }) else { throw AppBackendError.notFound("Task \(id)") }
             guard state.agents.first(where: { $0.kind == agent })?.canOpenTasks == true else {
-                throw AppBackendError.unsupported("Opening tasks in \(agent.displayName) isn't verified yet — use Copy command instead.")
+                throw AppBackendError.unsupported("Opening tasks in \(agent.displayName) isn't verified yet. Use Copy command instead.")
             }
-            let place = record.task.checkout?.worktreePath ?? record.task.checkout?.mappedCheckoutPath ?? "the task checkout"
-            return AppCommandResult(message: "Preview: MergeCue would open \(agent.displayName) in \(place). Nothing was launched.")
-        case .openPromptInAgent(let id, let agent, _):
-            guard let record = state.tasks.first(where: { $0.id == id }) else { throw AppBackendError.notFound("Task \(id)") }
-            let place = record.task.checkout?.worktreePath ?? record.task.checkout?.mappedCheckoutPath ?? "the task checkout"
-            return AppCommandResult(message: "Preview: MergeCue would open \(agent.displayName) in \(place) with the prompt. Nothing was launched.")
-        case .openReviewInAgent(_, let agent, _):
-            return AppCommandResult(message: "Preview: MergeCue would open \(agent.displayName) with the review prompt. Nothing was launched.")
+            return AppCommandResult(message: "Preview: MergeCue would open \(agent.displayName) in \(directory). Nothing was launched.")
+        case .openPromptInAgent(let id, let agent, let directory, _):
+            guard state.tasks.contains(where: { $0.id == id }) else { throw AppBackendError.notFound("Task \(id)") }
+            return AppCommandResult(message: "Preview: MergeCue would open \(agent.displayName) in \(directory) with the prompt. Nothing was launched.")
+        case .openReviewInAgent(_, let agent, let directory, _):
+            return AppCommandResult(message: "Preview: MergeCue would open \(agent.displayName) in \(directory) with the review prompt. Nothing was launched.")
         case .loadCheckLog(let check):
             let excerpt = logs[check.id] ?? LogExcerpt(text: "No log excerpt for this check in the preview data.", truncated: false)
             return AppCommandResult(logExcerpt: excerpt)

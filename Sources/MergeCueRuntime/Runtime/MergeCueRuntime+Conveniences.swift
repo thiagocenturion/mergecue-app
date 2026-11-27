@@ -117,31 +117,17 @@ extension MergeCueRuntime {
         return script
     }
 
-    /// "Without MCP" handoff of a task (D60): opens the agent in the task's checkout with a self-contained prompt.
-    /// The task stays where it is; without MCP the agent never claims it.
+    /// "Open in <agent>" (D60, D61): opens the agent in a new Terminal window in `directory` (the repository's local
+    /// checkout the owner mapped) with `prompt`. `label` names the launch script (a task id, `review-cr_…`).
     @discardableResult
-    public func openPromptInAgent(taskID: TaskID, agent: DetectedAgent, prompt: String) async throws -> URL {
-        let handoff = try await engine.handoff(for: taskID)
-        guard let directory = handoff.workingDirectory else {
-            throw RuntimeError.failed(handoff.blockedReason ?? "The task has no checkout to open the agent in yet.")
+    public func openPromptInAgent(agent: DetectedAgent, label: String, directory: String, prompt: String) async throws -> URL {
+        var isDirectory: ObjCBool = false
+        guard directory.hasPrefix("/"), FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw RuntimeError.failed("\(directory) isn't a folder on this Mac. Map the repository again in Settings › Repositories.")
         }
         let command = try HandoffCommandBuilder.promptCommand(
-            for: agent, label: taskID.rawValue, directory: URL(filePath: directory, directoryHint: .isDirectory), prompt: prompt
+            for: agent, label: label, directory: URL(filePath: directory, directoryHint: .isDirectory), prompt: prompt
         )
-        return try await AgentLauncher().openInTerminal(prompt: command, handoffDir: dataPaths.handoff)
-    }
-
-    /// "Review with AI" (D60): opens the agent with a review prompt in a private scratch folder
-    /// (`<root>/handoff/scratch/review-<cr short id>`, 0700). Like read-only tasks, a review never starts in the
-    /// owner's checkout; the prompt names that checkout so the agent can read it.
-    @discardableResult
-    public func openReviewInAgent(changeRequest: ChangeRequestKey, agent: DetectedAgent, prompt: String) async throws -> URL {
-        let label = "review-" + changeRequest.shortID.lowercased()
-        let directory = dataPaths.handoff
-            .appending(path: "scratch", directoryHint: .isDirectory)
-            .appending(path: label, directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        let command = try HandoffCommandBuilder.promptCommand(for: agent, label: label, directory: directory, prompt: prompt)
         return try await AgentLauncher().openInTerminal(prompt: command, handoffDir: dataPaths.handoff)
     }
 

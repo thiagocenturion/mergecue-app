@@ -34,6 +34,21 @@ struct HandoffStepView: View {
     private var detected: AgentStatus? { model.state.agents.first { $0.kind == agentKind } }
     private var mode: AgentPromptMode { model.agentPromptMode }
 
+    /// The repository's folder on this Mac, where Open starts the agent (D61); nil when it isn't mapped.
+    private var directory: String? {
+        switch target {
+        case .task(let record): model.localCheckout(for: record.task.origin.changeRequest, task: record)
+        case .review(let snapshot, _): model.localCheckout(for: snapshot.key)
+        }
+    }
+
+    private var repoFullPath: String {
+        switch target {
+        case .task(let record): record.task.origin.changeRequestRef.repoFullPath
+        case .review(let snapshot, _): snapshot.summary.repository.fullPath
+        }
+    }
+
     /// The exact text Copy puts on the clipboard and Open hands to the agent.
     private var promptText: String {
         switch target {
@@ -114,7 +129,7 @@ struct HandoffStepView: View {
             }
             .lineLimit(1)
         }
-        .disabled(!(detected?.canOpenTasks ?? false))
+        .disabled(!(detected?.canOpenTasks ?? false) || directory == nil)
         .help(openHelp)
     }
 
@@ -122,7 +137,7 @@ struct HandoffStepView: View {
         Button(action: copy) {
             HStack(spacing: 8) {
                 Image(systemName: "doc.on.doc")
-                Text(mode == .mcp ? "Copy command" : "Copy prompt")
+                Text(copyTitle)
             }
             .lineLimit(1)
         }
@@ -175,28 +190,39 @@ struct HandoffStepView: View {
     }
 
     private func open() {
+        guard let directory else { return }
         let prompt = promptText
         let kind = agentKind
         switch (target, mode) {
-        case (.task(let record), .mcp): Task { await model.send(.openInAgent(record.id, agent: kind)) }
-        case (.task(let record), .standalone): Task { await model.send(.openPromptInAgent(record.id, agent: kind, prompt: prompt)) }
-        case (.review(let snapshot, _), _): Task { await model.send(.openReviewInAgent(snapshot.key, agent: kind, prompt: prompt)) }
+        case (.task(let record), .mcp): Task { await model.send(.openInAgent(record.id, agent: kind, directory: directory)) }
+        case (.task(let record), .standalone): Task { await model.send(.openPromptInAgent(record.id, agent: kind, directory: directory, prompt: prompt)) }
+        case (.review(let snapshot, _), _): Task { await model.send(.openReviewInAgent(snapshot.key, agent: kind, directory: directory, prompt: prompt)) }
         }
     }
 
+    private var copyTitle: String { mode == .mcp ? "Copy command" : "Copy prompt" }
+
     private var openHelp: String {
-        guard let detected else { return "\(agentKind.shortName) wasn't found on this Mac. Use \(mode == .mcp ? "Copy command" : "Copy prompt")." }
-        guard detected.canOpenTasks else { return "Opening \(detected.name) isn't verified yet. Use \(mode == .mcp ? "Copy command" : "Copy prompt")." }
-        switch target {
-        case .task: return "Opens \(detected.name) in the task checkout"
-        case .review: return "Opens \(detected.name) in a private scratch folder to review"
-        }
+        guard let detected else { return "\(agentKind.shortName) wasn't found on this Mac. Use \(copyTitle)." }
+        guard detected.canOpenTasks else { return "Opening \(detected.name) isn't verified yet. Use \(copyTitle)." }
+        guard let directory else { return "Map \(repoFullPath) to its folder in Settings › Repositories to open \(detected.name) there." }
+        return "Opens \(detected.name) in \(UIFormat.abbreviatedPath(directory))"
     }
 
     // MARK: Notes
 
     @ViewBuilder
     private var agentNote: some View {
+        if directory == nil {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                note(symbol: "folder.badge.questionmark", color: Theme.waitingText,
+                     text: "MergeCue doesn't know where \(repoFullPath) is on this Mac, so it can't open your agent there. Map it, or use \(copyTitle).")
+                Button("Map…") { model.showSettings(.repositories) }
+                    .buttonStyle(SecondaryButtonStyle(size: .small))
+                    .fixedSize()
+            }
+            .padding(.bottom, 4)
+        }
         switch mode {
         case .standalone:
             note(symbol: "info.circle", color: Theme.textSecondary, text: standaloneNote)
@@ -220,7 +246,7 @@ struct HandoffStepView: View {
     private var standaloneNote: String {
         switch target {
         case .task: "Everything is in the prompt, no MCP setup needed. MergeCue won't see the agent's progress: mark the task done when it's finished."
-        case .review: "Everything is in the prompt, no MCP setup needed. The agent reads the diff with git or the provider's CLI."
+        case .review: "Everything is in the prompt, no MCP setup needed."
         }
     }
 
