@@ -5,19 +5,33 @@ import SwiftUI
 /// the change request panel of the selected item.
 struct InboxScreen: View {
     let model: AppModel
+    /// The detail width while the split line is being dragged (saved when the drag ends).
+    @State private var dragWidth: CGFloat?
 
     var body: some View {
         GeometryReader { proxy in
-            let detailWidth = min(620, max(440, proxy.size.width * 0.47))
+            // The inbox column keeps 500 pt, the detail 400 pt; the owner's dragged width wins over the default (D49).
+            let range = CGFloat(400)...max(400, proxy.size.width - 500)
+            let preferred = dragWidth ?? model.splitWidth("inbox") ?? min(620, max(440, proxy.size.width * 0.47))
+            let detailWidth = min(max(preferred, range.lowerBound), range.upperBound)
             HStack(spacing: 0) {
                 InboxColumn(model: model)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                InboxDetail(model: model)
+                SplitDivider(
+                    width: Binding(get: { detailWidth }, set: { dragWidth = $0 }), range: range, controlsLeadingPane: false,
+                    onReset: { model.setSplitWidth("inbox", nil) },
+                    onCommit: {
+                        if let dragWidth { model.setSplitWidth("inbox", dragWidth) }
+                        dragWidth = nil
+                    }
+                )
+                Group {
+                    if model.inboxFilter.scope == .reviewing { ChangeRequestDetail(model: model) } else { InboxDetail(model: model) }
+                }
                     .frame(width: detailWidth)
                     .frame(maxHeight: .infinity)
             }
         }
-        .background(Theme.contentBackground)
     }
 }
 
@@ -34,32 +48,41 @@ struct InboxColumn: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             HStack(spacing: 10) {
-                FilterChips(options: [(InboxScope.all, "All"), (.mine, "Mine"), (.reviewing, "Reviewing")], selection: $model.inboxFilter.scope)
+                FilterChips(options: [(InboxScope.all, "All"), (.mine, "Mine"), (.reviewing, "Reviews")], selection: $model.inboxFilter.scope)
                 Spacer(minLength: 8)
                 InboxFilterMenu(model: model)
             }
             .padding(.top, 22)
             InboxSummaryCards(model: model)
                 .padding(.top, 18)
-            if result.groups.isEmpty {
+            // New approvals on your pull/merge requests (D47); not under the Reviews filter (others' PRs, D56).
+            if model.inboxFilter.scope != .reviewing {
+                ApprovalHighlights(model: model)
+                    .padding(.top, 14)
+            }
+            if model.isLoaded, model.inboxFilter.scope == .reviewing {
+                reviewLanes
+            } else if !model.isLoaded {
+                // First load: shimmering placeholders instead of an empty column.
+                VStack(spacing: 12) {
+                    ForEach(0..<4, id: \.self) { index in SkeletonCard(lines: index == 0 ? 3 : 2).appearStaggered(index) }
+                    Spacer(minLength: 0)
+                }
+                .padding(.top, 16)
+                .frame(maxHeight: .infinity)
+            } else if result.groups.isEmpty {
                 emptyState(result)
+                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
                     .frame(maxHeight: .infinity)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 12) {
-                            ForEach(InboxDayGroup.make(result.visibleItems, now: model.now)) { group in
-                                Text(group.title)
-                                    .scaledFont(.system(size: 14, weight: .medium))
-                                    .foregroundStyle(Theme.textSecondary)
-                                    .padding(.top, 10)
-                                    .padding(.leading, 2)
-                                    .accessibilityAddTraits(.isHeader)
-                                ForEach(group.items) { item in
-                                    InboxItemCard(model: model, item: item, isSelected: model.selectedAttentionID == item.id,
-                                                  showsKeyboardFocus: listFocused) { listFocused = true }
-                                        .id(item.id)
-                                }
+                            // One collapsible group per pull/merge request (D46), expanded by default.
+                            ForEach(Array(result.prGroups(now: model.now).enumerated()), id: \.element.id) { index, group in
+                                InboxPRGroupView(model: model, group: group, listFocused: $listFocused)
+                                    .transition(Motion.listTransition)
+                                    .appearStaggered(index)
                             }
                             readToggle(result)
                         }
@@ -68,6 +91,7 @@ struct InboxColumn: View {
                         .padding(.horizontal, 4)
                     }
                     .scrollIndicators(.automatic)
+                    .shadowRoom()
                     .keyboardList(isFocused: $listFocused, hasSelection: model.selectedAttentionID != nil,
                                   onMove: { model.moveInboxSelection(by: $0) },
                                   onOpen: { model.openInboxSelection() },
@@ -90,6 +114,41 @@ struct InboxColumn: View {
                 .hidden()
                 .accessibilityHidden(true)
         }
+    }
+
+    /// The Reviews filter's list (D56): To review / Changes requested / Approved, the rows of the Reviews screen.
+    private var reviewLanes: some View {
+        let queue = model.inboxReviewQueue
+        return ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ReviewTrackingPrompt(model: model)
+                    if queue.isEmpty {
+                        NothingSelected(title: "Nothing to review", symbol: "checkmark.bubble",
+                                        message: "Pull and merge requests that request your review, or that you commented on or approved, appear here.")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 40)
+                    } else {
+                        ReviewLanes(model: model, queue: queue, listFocused: $listFocused)
+                    }
+                }
+                .padding(.top, 8)
+                .padding(.bottom, 24)
+                .padding(.horizontal, 4)
+            }
+            .scrollIndicators(.automatic)
+            .shadowRoom()
+            .keyboardList(isFocused: $listFocused, hasSelection: model.selectedChangeRequestID != nil,
+                          onMove: { model.moveReviewSelection(by: $0, in: queue) },
+                          onOpen: { if let id = model.selectedChangeRequestID { model.openChangeRequest(id) } },
+                          onPrimary: { model.performChangeRequestPrimaryAction() })
+            .onChange(of: model.selectedChangeRequestID) { _, id in
+                guard listFocused, let id else { return }
+                proxy.scrollTo(id)
+            }
+            .accessibilityLabel("Pull and merge requests you review")
+        }
+        .padding(.top, 8)
     }
 
     /// Greeting and search side by side; stacked when the column is narrow or the text is large.
@@ -138,7 +197,7 @@ struct InboxColumn: View {
             Button {
                 model.showReadInInbox = true
             } label: {
-                Label("Show \(result.hiddenReadCount) read item\(result.hiddenReadCount == 1 ? "" : "s")", systemImage: "chevron.down.circle")
+                Label("Show \(result.hiddenReadCount) cleared item\(result.hiddenReadCount == 1 ? "" : "s")", systemImage: "chevron.down.circle")
                     .scaledFont(.system(size: 13))
                     .foregroundStyle(Theme.accentText)
             }
@@ -148,7 +207,7 @@ struct InboxColumn: View {
             Button {
                 model.showReadInInbox = false
             } label: {
-                Label("Collapse read items", systemImage: "chevron.up.circle")
+                Label("Collapse cleared items", systemImage: "chevron.up.circle")
                     .scaledFont(.system(size: 13))
                     .foregroundStyle(Theme.accentText)
             }
@@ -175,8 +234,8 @@ struct InboxColumn: View {
         } else if result.hiddenReadCount > 0 {
             VStack(spacing: 12) {
                 NothingSelected(title: "No new activity", symbol: "checkmark.circle",
-                                message: "You're all caught up. \(result.hiddenReadCount) read item\(result.hiddenReadCount == 1 ? " is" : "s are") collapsed.")
-                Button("Show Read Items") { model.showReadInInbox = true }
+                                message: "You're all caught up. \(result.hiddenReadCount) cleared item\(result.hiddenReadCount == 1 ? " is" : "s are") collapsed.")
+                Button("Show Cleared Items") { model.showReadInInbox = true }
                     .buttonStyle(SecondaryButtonStyle())
             }
         } else {
@@ -193,8 +252,8 @@ struct InboxDayGroup: Identifiable {
 
     static func make(_ items: [AttentionItem], now: Date, calendar: Calendar = .current) -> [InboxDayGroup] {
         let sorted = items.sorted { lhs, rhs in
-            let lhsActive = lhs.isUnread || lhs.isActionable(now: now)
-            let rhsActive = rhs.isUnread || rhs.isActionable(now: now)
+            let lhsActive = lhs.isActionable(now: now)
+            let rhsActive = rhs.isActionable(now: now)
             if lhsActive != rhsActive { return lhsActive }
             return lhs.updatedAt > rhs.updatedAt
         }
@@ -211,7 +270,7 @@ struct InboxDayGroup: Identifiable {
     }
 }
 
-/// Provider, account, repository and status filters plus "Hide read", behind one control.
+/// Provider, account, repository and status filters plus "Hide cleared", behind one control.
 struct InboxFilterMenu: View {
     @Bindable var model: AppModel
 
@@ -239,7 +298,7 @@ struct InboxFilterMenu: View {
                 ForEach(InboxStatusFilter.allCases) { Text($0.title).tag($0) }
             }
             Divider()
-            Toggle("Hide Read Items", isOn: $model.inboxFilter.collapseRead)
+            Toggle("Hide Cleared Items", isOn: $model.inboxFilter.collapseRead)
             if active {
                 Divider()
                 Button("Clear Filters") {
@@ -251,10 +310,11 @@ struct InboxFilterMenu: View {
                 .scaledFont(.system(size: 13, weight: .medium))
                 .foregroundStyle(active ? Theme.accent : Theme.textSecondary)
                 .frame(width: 32, height: 32)
-                .background(Circle().fill(Theme.surfaceRaised))
-                .overlay(Circle().strokeBorder(active ? Theme.accent : Theme.controlBorder, lineWidth: 1))
+                .glassShape(Circle(), tint: active ? Theme.accent : nil)
+                .contentShape(Circle())
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
         .help("Filter by provider, account, repository or status")
@@ -262,63 +322,115 @@ struct InboxFilterMenu: View {
     }
 }
 
-/// Needs you / AI working / Ready counters.
+/// Needs you / In progress / Ready counters.
 struct InboxSummaryCards: View {
     let model: AppModel
     @Environment(\.textScale) private var textScale
+    @Environment(\.glassEffectsEnabled) private var glassEnabled
 
     var body: some View {
-        // The icon circles drop out when the column is too narrow (small window or large text).
+        // The icons always show (owner preference); narrow columns get smaller icons, then shrinking labels.
         ViewThatFits(in: .horizontal) {
-            cards(showsIcons: true)
-            cards(showsIcons: false)
+            cards(iconSize: 44, flexibleText: false)
+            cards(iconSize: 34, flexibleText: false)
+            cards(iconSize: 30, flexibleText: true)
         }
     }
 
-    private func cards(showsIcons: Bool) -> some View {
-        HStack(spacing: 14) {
-            card(.needsYou, title: "Needs you", symbol: "exclamationmark", showsIcon: showsIcons) {
-                model.inboxFilter.status = .needsAction
-            }
-            card(.aiWorking, title: "AI working", symbol: "sparkles", showsIcon: showsIcons) { model.showAll(.aiWorking) }
-            card(.ready, title: "Ready", symbol: "checkmark", showsIcon: showsIcons) { model.showAll(.ready) }
-        }
-    }
-
-    private func card(_ section: PopoverSection, title: String, symbol: String, showsIcon: Bool, action: @escaping () -> Void) -> some View {
-        let count = model.sections.count(section)
-        let color = section == .aiWorking ? Theme.violet : Theme.color(section)
-        return Button(action: action) {
-            HStack(spacing: 14) {
-                if showsIcon {
-                    Image(systemName: symbol)
-                        .scaledFont(.system(size: 17, weight: .bold))
-                        .foregroundStyle(section == .aiWorking ? AnyShapeStyle(LinearGradient(colors: [Theme.violet, Theme.cyan], startPoint: .bottomLeading, endPoint: .topTrailing)) : AnyShapeStyle(color))
-                        .frame(width: 44 * textScale, height: 44 * textScale)
-                        .background(Circle().fill(color.opacity(0.16)))
-                        .overlay(Circle().strokeBorder(color.opacity(0.4), lineWidth: 1))
-                        .accessibilityHidden(true)
+    @ViewBuilder
+    private func cards(iconSize: CGFloat, flexibleText: Bool) -> some View {
+        HStack(spacing: flexibleText ? 10 : 14) {
+            if model.inboxFilter.scope == .reviewing {
+                // Reviews filter (D56): the review lanes; a card opens its lane.
+                let queue = model.inboxReviewQueue
+                ForEach(ReviewQueue.lanes, id: \.self) { lane in
+                    card(title: Self.cardTitle(lane), spokenTitle: lane.title, symbol: Self.symbol(lane), count: queue.entries(lane).count,
+                         color: Self.color(lane), iconSize: iconSize, flexibleText: flexibleText, hint: "Shows this group") {
+                        withAnimation(Motion.smooth) { model.collapsedReviewLanes.remove(lane) }
+                        model.selectedChangeRequestID = queue.entries(lane).first?.id ?? model.selectedChangeRequestID
+                    }
                 }
+            } else {
+                card(.needsYou, title: "Needs you", symbol: "exclamationmark", iconSize: iconSize, flexibleText: flexibleText) {
+                    model.inboxFilter.status = .needsAction
+                }
+                card(.inProgress, title: "In progress", symbol: "progress.indicator", iconSize: iconSize, flexibleText: flexibleText) { model.showAll(.inProgress) }
+                card(.ready, title: "Ready", symbol: "checkmark", iconSize: iconSize, flexibleText: flexibleText) { model.showAll(.ready) }
+            }
+        }
+    }
+
+    /// Short enough for a third of the Inbox column; the lane header below spells it out.
+    static func cardTitle(_ lane: ReviewLane) -> String {
+        switch lane {
+        case .toReview: "To review"
+        case .changesRequested: "Changes"
+        case .approved, .closed: "Approved"
+        }
+    }
+
+    static func symbol(_ lane: ReviewLane) -> String {
+        switch lane {
+        case .toReview: "eye"
+        case .changesRequested: "exclamationmark.bubble"
+        case .approved, .closed: "checkmark.seal"
+        }
+    }
+
+    static func color(_ lane: ReviewLane) -> Color {
+        switch lane {
+        case .toReview: Theme.color(.needsYou)
+        case .changesRequested: Theme.violet
+        case .approved, .closed: Theme.color(.ready)
+        }
+    }
+
+    /// Calculus's glass card with the tile's tighter padding (fallback where glass is off).
+    private var tileStyle: any CardViewStyle {
+        if #available(macOS 26.0, *), glassEnabled { return LiquidGlassCardViewStyle(padding: 14) }
+        return FlatCardViewStyle(padding: 14)
+    }
+
+    private func card(_ section: PopoverSection, title: String, symbol: String, iconSize: CGFloat, flexibleText: Bool,
+                      action: @escaping () -> Void) -> some View {
+        card(title: title, symbol: symbol, count: model.sections.count(section),
+             color: section == .inProgress ? Theme.violet : Theme.color(section), isProgress: section == .inProgress,
+             iconSize: iconSize, flexibleText: flexibleText,
+             hint: section == .needsYou ? "Shows only items that need action" : "Shows these tasks", action: action)
+    }
+
+    private func card(title: String, spokenTitle: String? = nil, symbol: String, count: Int, color: Color, isProgress: Bool = false, iconSize: CGFloat,
+                      flexibleText: Bool, hint: String, action: @escaping () -> Void) -> some View {
+        CardView(style: tileStyle, action: action) {
+            HStack(spacing: iconSize >= 44 ? 14 : 10) {
+                Image(systemName: symbol)
+                    .scaledFont(.system(size: iconSize * 0.39, weight: .bold))
+                    .foregroundStyle(isProgress ? AnyShapeStyle(LinearGradient(colors: [Theme.violet, Theme.cyan], startPoint: .bottomLeading, endPoint: .topTrailing)) : AnyShapeStyle(color))
+                    .symbolEffect(.variableColor.iterative.reversing, options: .repeating, isActive: isProgress && count > 0)
+                    .symbolEffect(.bounce, value: count)
+                    .frame(width: iconSize * textScale, height: iconSize * textScale)
+                    .background(Circle().fill(color.opacity(0.16)))
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .scaledFont(.system(size: 13))
                         .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                     Text("\(count)")
                         .scaledFont(.system(size: 22, weight: .semibold).monospacedDigit())
                         .foregroundStyle(Theme.textPrimary)
+                        .contentTransition(.numericText(value: Double(count)))
+                        .animation(Motion.snappy, value: count)
                 }
-                .fixedSize()
+                .fixedSize(horizontal: !flexibleText, vertical: true)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .frame(minHeight: 78)
+            .frame(minHeight: 58)
             .frame(maxWidth: .infinity)
-            .cardBackground()
         }
-        .buttonStyle(PlainRowButtonStyle(cornerRadius: Theme.cardRadius))
-        .accessibilityLabel("\(title): \(count)")
-        .accessibilityHint(section == .needsYou ? "Shows only items that need action" : "Shows these tasks")
+        .accessibilityLabel("\(spokenTitle ?? title): \(count)")
+        .accessibilityHint(hint)
     }
 }
 
@@ -329,9 +441,9 @@ extension Theme {
         case .changesRequested, .ciFailed: needsText
         case .reviewerQuestion, .codeSuggestion: violetText
         case .reviewComment, .reply: accentText
-        case .reviewRequested: cyanText
+        case .reviewRequested, .updatedSinceReview: cyanText
         case .readyToMerge: mintText
-        case .mergeConflict: waitingText
+        case .mergeConflict, .reapprovalNeeded: waitingText
         }
     }
 
@@ -344,6 +456,8 @@ extension Theme {
         case .reviewRequested: "eye.fill"
         case .readyToMerge: "checkmark.circle.fill"
         case .mergeConflict: "exclamationmark.triangle.fill"
+        case .reapprovalNeeded: "arrow.counterclockwise.circle.fill"
+        case .updatedSinceReview: "arrow.triangle.2.circlepath.circle.fill"
         }
     }
 
@@ -353,9 +467,9 @@ extension Theme {
         case .changesRequested, .ciFailed: needs
         case .reviewerQuestion, .codeSuggestion: violet
         case .reviewComment, .reply: accent
-        case .reviewRequested: cyan
+        case .reviewRequested, .updatedSinceReview: cyan
         case .readyToMerge: mint
-        case .mergeConflict: waiting
+        case .mergeConflict, .reapprovalNeeded: waiting
         }
     }
 }
@@ -370,24 +484,37 @@ struct InboxItemCard: View {
     var showsKeyboardFocus = false
     /// Called when the card is clicked (the list takes keyboard focus).
     var onSelect: () -> Void = {}
+    /// Inside a change request group: the group header already shows the provider, repository and number.
+    var inGroup = false
     @State private var isHovering = false
 
     /// Unread or actionable items are set in a heavier weight (read, settled items used to be dimmed to 72 %).
-    private var isActive: Bool { item.isActionable(now: model.now) || item.isUnread }
+    private var isActive: Bool { item.isActionable(now: model.now) || isUnread }
+    /// The card stands for its whole conversation: unread while any of its items is.
+    private var isUnread: Bool { model.conversationIsUnread(item) }
+    private var activeTask: TaskRecord? { model.activeConversationTask(for: item) }
 
     var body: some View {
         let snapshot = model.snapshot(item.changeRequest)
         let text = Presentation.attentionText(item, snapshot: snapshot)
+        let commentCount = model.conversationThread(for: item)?.comments.count ?? text.commentCount
+        let actor = Presentation.actor(item, snapshot: snapshot)
         HStack(alignment: .top, spacing: 16) {
-            ProviderBadge(kind: item.providerKind, size: 42, style: .circle)
-                .padding(.top, 2)
+            if !inGroup {
+                ProviderBadge(kind: item.providerKind, size: 42, style: .circle)
+                    .avatarBadge(actor, size: 20)
+                    .padding(.top, 2)
+            }
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 6) {
-                    if item.isUnread {
+                    if isUnread {
                         Circle().fill(Theme.accent).frame(width: 7, height: 7)
                             .accessibilityHidden(true)
                     }
-                    Text("\(item.providerKind.shortName)  •  \(item.repoFullPath)  \(item.providerKind.formattedNumber(item.number))")
+                    if inGroup, let actor {
+                        PersonAvatar(person: actor, size: 16)
+                    }
+                    Text(inGroup ? item.reason.displayName : "\(item.providerKind.shortName)  •  \(item.repoFullPath)  \(item.providerKind.formattedNumber(item.number))")
                         .scaledFont(.system(size: 13))
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
@@ -397,6 +524,11 @@ struct InboxItemCard: View {
                         .scaledFont(.system(size: 12.5))
                         .foregroundStyle(Theme.textSecondary)
                         .help(UIFormat.dateTime(item.updatedAt))
+                    InboxQuickActions(model: model, item: item)
+                        .padding(.vertical, -4)
+                    ItemActionsMenu(model: model, item: item, size: 24)
+                        .padding(.vertical, -4)
+                        .padding(.trailing, -6)
                 }
                 HStack(alignment: .center, spacing: 12) {
                     VStack(alignment: .leading, spacing: 6) {
@@ -420,37 +552,32 @@ struct InboxItemCard: View {
                 }
                 .padding(.top, 10)
                 HStack(spacing: 10) {
-                    Label("\(text.commentCount)", systemImage: "bubble.left")
+                    Label("\(commentCount)", systemImage: "bubble.left")
                         .scaledFont(.system(size: 12))
                         .foregroundStyle(Theme.textSecondary)
                         .labelStyle(.titleAndIcon)
-                        .accessibilityLabel("\(text.commentCount) comments")
-                    if let task = model.activeTask(for: item) {
+                        .accessibilityLabel("\(commentCount) comment\(commentCount == 1 ? "" : "s")")
+                    if let task = activeTask {
                         TaskStateChip(record: task)
                     }
                 }
                 .padding(.top, 10)
             }
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous)
-                .fill(isSelected ? Theme.surfaceSelected : (isHovering ? Theme.surfaceHover : Theme.surface))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous)
-                .strokeBorder(isSelected ? Theme.accent.opacity(0.75) : Theme.border, lineWidth: isSelected ? 1.3 : 1)
-        )
-        .keyboardSelectionRing(isSelected && showsKeyboardFocus, cornerRadius: Theme.cardRadius)
-        .shadow(color: isSelected ? Theme.accent.opacity(0.18) : .clear, radius: 12)
-        .contentShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
+        .padding(Theme.cardPadding)
+        .selectableGlass(isSelected: isSelected, isHovering: isHovering)
+        .keyboardSelectionRing(isSelected && showsKeyboardFocus, cornerRadius: Theme.radius)
+        .contentShape(SmoothRect())
         .onHover { isHovering = $0 }
         .onTapGesture {
             select()
             onSelect()
         }
+        .contextMenu {
+            ItemActionsMenuContent(model: model, item: item, includesOpen: true)
+        }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(item.isUnread ? "Unread. " : "")\(text.headline). \(text.subtitle). \(item.providerKind.displayName) \(item.repoFullPath) \(item.providerKind.formattedNumber(item.number)). \(UIFormat.spokenAge(from: item.updatedAt, now: model.now))")
+        .accessibilityLabel("\(isUnread ? "Unread. " : "")\(text.headline). \(text.subtitle). \(item.providerKind.displayName) \(item.repoFullPath) \(item.providerKind.formattedNumber(item.number)). \(UIFormat.spokenAge(from: item.updatedAt, now: model.now))")
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .accessibilityAction { select() }
         .accessibilityAction(named: "Show details") { select() }
@@ -462,7 +589,7 @@ struct InboxItemCard: View {
     }
 
     private var primaryActionName: String {
-        if model.activeTask(for: item) != nil { return "View task" }
+        if activeTask != nil { return "View task" }
         return PopoverDerivation.primaryAction(for: item).title
     }
 
@@ -473,7 +600,7 @@ struct InboxItemCard: View {
 
     @ViewBuilder
     private var actionButton: some View {
-        if let task = model.activeTask(for: item) {
+        if let task = activeTask {
             Button("View task") { model.showTask(task.id) }
                 .buttonStyle(SecondaryButtonStyle(size: .regular))
                 .fixedSize()
@@ -484,18 +611,20 @@ struct InboxItemCard: View {
             let button = Button {
                 if case .createTask(let id, let type) = action {
                     Task { await model.createTaskAndShow(attentionID: id, type: type) }
+                } else if case .reviewWithAI(let key) = action {
+                    model.startReview(key)
                 } else {
                     select()
                 }
             } label: {
                 HStack(spacing: 7) {
-                    if case .createTask = action, isSelected { SparkleIcon(size: 13) }
+                    if action.isAI, isSelected { SparkleIcon(size: 13) }
                     Text(title)
                 }
             }
             .fixedSize()
             .accessibilityLabel("\(action.title), \(item.repoFullPath) \(item.providerKind.formattedNumber(item.number))")
-            if isSelected, case .createTask = action {
+            if isSelected, action.isAI {
                 button.buttonStyle(GradientButtonStyle(size: .regular))
             } else {
                 button.buttonStyle(SecondaryButtonStyle(size: .regular))
@@ -524,12 +653,12 @@ struct TaskStateChip: View {
     }
 }
 
-/// Colour and label of a task state, honest about claims (only a real claim reads "AI working").
+/// Colour and label of a task state, honest about claims: "In progress" only with an agent claim or when you started it by hand.
 enum TaskStateStyle {
     static func color(_ record: TaskRecord) -> Color {
         switch record.task.state {
         case .waitingForAgent: Theme.waiting
-        case .working: record.hasRealClaim ? Theme.violet : Theme.waiting
+        case .working: record.hasRealClaim ? Theme.violet : record.isManuallyInProgress ? Theme.cyan : Theme.waiting
         case .readyForReview, .done: Theme.mint
         case .blocked, .stale: Theme.waiting
         case .failed: Theme.critical
@@ -542,7 +671,7 @@ enum TaskStateStyle {
     static func textColor(_ record: TaskRecord) -> Color {
         switch record.task.state {
         case .waitingForAgent: Theme.waitingText
-        case .working: record.hasRealClaim ? Theme.violetText : Theme.waitingText
+        case .working: record.hasRealClaim ? Theme.violetText : record.isManuallyInProgress ? Theme.cyanText : Theme.waitingText
         case .readyForReview, .done: Theme.mintText
         case .blocked, .stale: Theme.waitingText
         case .failed: Theme.criticalText
@@ -555,7 +684,7 @@ enum TaskStateStyle {
     static func symbol(_ record: TaskRecord) -> String {
         switch record.task.state {
         case .waitingForAgent: "clock.fill"
-        case .working: record.hasRealClaim ? "sparkles" : "clock.fill"
+        case .working: record.hasRealClaim ? "sparkles" : record.isManuallyInProgress ? "hammer.fill" : "clock.fill"
         case .readyForReview, .done: "checkmark.circle.fill"
         case .blocked, .stale: "exclamationmark.triangle.fill"
         case .failed: "xmark.octagon.fill"
@@ -566,9 +695,81 @@ enum TaskStateStyle {
 
     static func label(_ record: TaskRecord) -> String {
         switch record.task.state {
-        case .working: record.hasRealClaim ? "AI working" : "Waiting for agent"
+        case .working: record.hasRealClaim || record.isManuallyInProgress ? "In progress" : "Waiting for agent"
         case .readyForReview: "Ready"
         default: record.task.state.displayName
+        }
+    }
+}
+
+/// One change request's cards in the Inbox under a collapsible header (D46).
+struct InboxPRGroupView: View {
+    let model: AppModel
+    let group: InboxGroup
+    var listFocused: FocusState<Bool>.Binding
+
+    var body: some View {
+        let unread = group.items.filter { model.conversationIsUnread($0) }.count
+        PRGroupView(
+            providerKind: group.changeRequest.kind, repoFullPath: group.repoFullPath, number: group.changeRequest.number,
+            title: model.snapshot(group.changeRequest)?.summary.title ?? group.title, count: group.items.count,
+            unreadCount: unread, marks: marks, latest: group.items.map(\.updatedAt).max(), now: model.now,
+            isCollapsed: model.isInboxGroupCollapsed(group.changeRequest),
+            approval: model.approvalSummary(group.changeRequest),
+            onOpenExternal: model.snapshot(group.changeRequest).map { snapshot in { Task { await model.send(.openURL(snapshot.summary.webURL)) } } },
+            toggle: { model.toggleInboxGroup(group.changeRequest) }
+        ) {
+            VStack(spacing: 10) {
+                ForEach(group.items) { item in
+                    InboxItemCard(model: model, item: item, isSelected: model.selectedAttentionID == item.id,
+                                  showsKeyboardFocus: listFocused.wrappedValue, onSelect: { listFocused.wrappedValue = true }, inGroup: true)
+                        .id(item.id)
+                        .transition(Motion.listTransition)
+                }
+            }
+        }
+    }
+
+    /// One mark per distinct reason, most urgent first.
+    private var marks: [PRGroupMark] {
+        var seen: Set<AttentionReason> = []
+        return group.items.sorted { $0.priority > $1.priority }.compactMap { item in
+            guard seen.insert(item.reason).inserted else { return nil }
+            return PRGroupMark(symbol: Presentation.attentionText(item, snapshot: model.snapshot(item.changeRequest)).symbol,
+                               color: Theme.reasonColor(item.reason))
+        }
+    }
+}
+
+/// The most used actions as icons next to the ••• menu (D48): Acknowledge (while it needs you) and open the
+/// comment, thread or PR/MR in the provider.
+struct InboxQuickActions: View {
+    let model: AppModel
+    let item: AttentionItem
+
+    var body: some View {
+        HStack(spacing: 2) {
+            if model.conversationItems(for: item).contains(where: { $0.isActionable(now: model.now) }) {
+                Button {
+                    Task { await model.acknowledgeConversation(item) }
+                } label: {
+                    Image(systemName: "checkmark.circle")
+                }
+                .buttonStyle(IconButtonStyle(size: 24, filled: false))
+                .help("Acknowledge")
+                .accessibilityLabel("Acknowledge")
+                .transition(.opacity.combined(with: .scale(scale: 0.8)))
+            }
+            if let url = model.providerURL(for: item) {
+                Button {
+                    Task { await model.send(.openURL(url)) }
+                } label: {
+                    Image(systemName: "arrow.up.right.square")
+                }
+                .buttonStyle(IconButtonStyle(size: 24, filled: false))
+                .help(item.thread == nil ? "Open in \(item.providerKind.displayName)" : "Open the comment in \(item.providerKind.displayName)")
+                .accessibilityLabel("Open in \(item.providerKind.displayName)")
+            }
         }
     }
 }

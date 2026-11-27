@@ -26,6 +26,7 @@ struct TaskReviewScreen: View {
                     ReviewCenterCard(model: model, record: record)
                     ScrollView {
                         VStack(spacing: 14) {
+                            CoveredItemsCard(model: model, record: record)
                             WhatChangedCard(record: record)
                             TestsCard(record: record, now: model.now)
                             ProposedReplyCard(model: model, record: record)
@@ -39,7 +40,6 @@ struct TaskReviewScreen: View {
                 .padding(.top, 18)
                 ReviewGateBar(model: model, record: record)
             }
-            .background(Theme.contentBackground)
         }
     }
 
@@ -54,7 +54,7 @@ struct TaskReviewScreen: View {
                         .scaledFont(Theme.screenTitle)
                         .foregroundStyle(Theme.textPrimary)
                         .accessibilityAddTraits(.isHeader)
-                    StatusPill(text: "Ready", color: Theme.mint, textColor: Theme.mintText, showsDot: true, size: 14, cueSymbol: "checkmark.circle.fill")
+                    TaskStatusPillMenu(model: model, record: record, symbol: "checkmark.circle.fill")
                 }
                 Text("\(task.origin.providerKind.shortName)  ·  \(task.origin.changeRequestRef.repoFullPath) \(task.origin.providerKind.formattedNumber(task.origin.changeRequest.number))  ·  \(Presentation.taskOriginPhrase(record, snapshot: snapshot))")
                     .scaledFont(.system(size: 15))
@@ -63,7 +63,7 @@ struct TaskReviewScreen: View {
             }
             Spacer(minLength: 12)
             Button {
-                model.showChangeRequest(task.origin.changeRequest)
+                model.showChangeRequest(task.origin.changeRequest, thread: task.origin.thread)
             } label: {
                 Image(systemName: "book")
             }
@@ -145,7 +145,7 @@ struct ReviewMilestonesColumn: View {
                     Spacer(minLength: 0)
                 }
                 .padding(14)
-                .cardBackground(Theme.surfaceSelected, radius: 12, border: Theme.accent.opacity(0.45))
+                .glassCard(tint: Theme.accent)
                 .padding(.horizontal, 8)
                 .accessibilityElement(children: .combine)
             }
@@ -268,8 +268,8 @@ struct ReviewCenterCard: View {
                         .padding(.horizontal, 14)
                         .padding(.vertical, 4)
                         .frame(minHeight: 40)
-                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(isSelected ? Theme.surfaceSelected : .clear))
-                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(isSelected ? Theme.accent.opacity(0.7) : .clear, lineWidth: 1.2))
+                        .background(SmoothRect().fill(isSelected ? Theme.surfaceSelected : .clear))
+                        .overlay(SmoothRect().strokeBorder(isSelected ? Theme.accent.opacity(0.7) : .clear, lineWidth: 1.2))
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(PlainRowButtonStyle())
@@ -376,7 +376,7 @@ struct DiffFileCard: View {
             .onGeometryChange(for: CGSize.self) { $0.size } action: { viewport = $0 }
         }
         .cardBackground(Theme.surface, radius: 12)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(SmoothRect())
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Diff of \(file.path)")
     }
@@ -680,10 +680,11 @@ struct ReviewGateBar: View {
                     .padding(.horizontal, 22)
                     .padding(.vertical, 4)
                     .frame(minHeight: 40)
-                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.surfaceRaised.opacity(canPublish ? 1 : 0.5)))
-                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.border, lineWidth: 1))
+                    .glassShape(Capsule(), fallback: Theme.surfaceRaised.opacity(canPublish ? 1 : 0.5))
+                    .contentShape(Capsule())
                 }
-                .menuStyle(.borderlessButton)
+                .menuStyle(.button)
+                .buttonStyle(.plain)
                 .menuIndicator(.hidden)
                 .fixedSize()
                 .disabled(!canPublish)

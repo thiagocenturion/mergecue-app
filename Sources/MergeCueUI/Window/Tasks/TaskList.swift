@@ -1,21 +1,43 @@
 import MergeCueCore
 import SwiftUI
 
-/// Tasks grouped by what they need: ready for review, a decision, active, finished. Selecting one opens its
+/// Open tasks grouped by what they need: ready for review, a decision, active. Finished tasks (done, cancelled,
+/// dismissed) are hidden here and listed on their own screen (`FinishedTaskList`). Selecting one opens its
 /// handoff / progress / review screen.
 struct TaskList: View {
     @Bindable var model: AppModel
 
     var body: some View {
-        let groups = TaskGroup.allCases.map { group in
+        if model.showsFinishedTasks {
+            FinishedTaskList(model: model)
+        } else {
+            openTasks
+        }
+    }
+
+    private var openTasks: some View {
+        let groups = TaskGroup.allCases.filter { $0 != .finished }.map { group in
             (group, model.state.tasks.filter { TaskGroup.group(for: $0.task.state) == group }.sorted { $0.task.updatedAt > $1.task.updatedAt })
         }
-        VStack(alignment: .leading, spacing: 0) {
+        let finishedCount = model.state.tasks.filter(FinishedTasks.isFinished).count
+        let hasOpenTasks = groups.contains { !$0.1.isEmpty }
+        return VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Tasks")
-                    .scaledFont(Theme.largeTitle)
-                    .foregroundStyle(Theme.textPrimary)
-                    .accessibilityAddTraits(.isHeader)
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Tasks")
+                        .scaledFont(Theme.largeTitle)
+                        .foregroundStyle(Theme.textPrimary)
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: 12)
+                    if finishedCount > 0 {
+                        Button {
+                            model.showsFinishedTasks = true
+                        } label: {
+                            Label("Finished  ·  \(finishedCount)", systemImage: "checkmark.circle")
+                        }
+                        .help("Show done, cancelled and dismissed tasks, grouped by pull request")
+                    }
+                }
                 Text("\(model.state.tasks.filter { !$0.task.isTerminal }.count) active · handed to your agent through MergeCue MCP")
                     .scaledFont(.system(size: 15))
                     .foregroundStyle(Theme.textSecondary)
@@ -24,7 +46,10 @@ struct TaskList: View {
             .padding(.top, MainWindowMetrics.contentTopInset)
             if model.state.tasks.isEmpty {
                 NothingSelected(title: "No tasks yet", symbol: "sparkles",
-                                message: "Use Fix with AI, Investigate, Draft reply or Address with AI on an inbox item to create one.")
+                                message: "Use Fix now, Investigate, Draft reply or Address with AI on an inbox item to create one.")
+            } else if !hasOpenTasks {
+                NothingSelected(title: "No open tasks", symbol: "checkmark.circle",
+                                message: "Everything is finished. Finished tasks are under Finished, at the top right.")
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
@@ -49,7 +74,6 @@ struct TaskList: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Theme.contentBackground)
     }
 }
 
@@ -82,6 +106,10 @@ struct TaskCard: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
+                if !task.attachments.isEmpty {
+                    Chip(text: "\(task.coveredAttentionIDs.count) items", symbol: "link")
+                        .help("This task covers \(task.coveredAttentionIDs.count) inbox items from this \(task.origin.providerKind.changeRequestNoun)")
+                }
                 if record.hasRealClaim { WorkingSpinner(size: 22) }
                 StatusPill(text: TaskStateStyle.label(record), color: color, textColor: TaskStateStyle.textColor(record), showsDot: true, size: 11.5, cueSymbol: TaskStateStyle.symbol(record))
                 Text(UIFormat.compactAge(from: task.updatedAt, now: model.now))
@@ -92,12 +120,17 @@ struct TaskCard: View {
                     .scaledFont(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.textTertiary)
             }
-            .padding(14)
-            .background(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).fill(isHovering ? Theme.surfaceHover : Theme.surface))
-            .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).strokeBorder(Theme.border, lineWidth: 1))
+            .padding(Theme.cardPadding)
+            .selectableGlass(isSelected: false, isHovering: isHovering)
         }
         .buttonStyle(PlainRowButtonStyle())
         .onHover { isHovering = $0 }
+        .contextMenu {
+            Button("Open") { model.selectedTaskID = task.id }
+            Section("Set Status") { TaskStatusMenuItems(model: model, task: task) }
+            Divider()
+            Button("Show \(task.origin.providerKind.changeRequestAbbreviation) Details") { model.showChangeRequest(task.origin.changeRequest, thread: task.origin.thread) }
+        }
         .accessibilityLabel("Task \(task.id.rawValue), \(Presentation.taskTitle(record, snapshot: snapshot)), \(TaskStateStyle.label(record))")
     }
 }

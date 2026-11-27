@@ -50,7 +50,8 @@ public nonisolated struct InboxFilter: Sendable, Hashable {
     public var repo: RepoKey?
     public var status: InboxStatusFilter = .all
     public var searchText: String = ""
-    /// Hide already-read activity behind a "Show read" row.
+    /// Show only conversations that still need you (open, or snoozed past its time) and fold the rest
+    /// (acknowledged, resolved by the provider, snoozed) behind a "Show cleared" row, read or not (D55).
     public var collapseRead: Bool = true
 
     public init(scope: InboxScope = .all, provider: ProviderKind? = nil, account: AccountKey? = nil, repo: RepoKey? = nil,
@@ -76,7 +77,11 @@ public nonisolated struct InboxGroup: Sendable, Hashable, Identifiable {
     public var changeRequest: ChangeRequestKey
     public var repoFullPath: String
     public var title: String
+    /// One item per conversation (the item that represents it: unread first, then actionable, then newest).
     public var items: [AttentionItem]
+    /// Every item of each conversation, keyed by the representing item's id (itself included).
+    public var members: [String: [AttentionItem]] = [:]
+    /// Cleared conversations (nothing actionable) hidden by `collapseRead`.
     public var hiddenReadCount: Int
     public var latest: Date
 
@@ -87,11 +92,27 @@ public nonisolated struct InboxGroup: Sendable, Hashable, Identifiable {
 
 public nonisolated struct InboxResult: Sendable, Hashable {
     public var groups: [InboxGroup]
-    /// Read items hidden by `collapseRead` across all groups.
+    /// Cleared conversations hidden by `collapseRead` across all groups.
     public var hiddenReadCount: Int
     public var totalCount: Int
 
     public var visibleItems: [AttentionItem] { groups.flatMap(\.items) }
+
+    /// Id of the card that shows item `id` (itself, or the item representing its conversation).
+    public func containingCard(of id: String) -> String? {
+        for group in groups {
+            for (card, members) in group.members where members.contains(where: { $0.id == id }) { return card }
+        }
+        return nil
+    }
+
+    /// Every item of the conversation represented by `id` (just that item when it stands alone).
+    public func members(of id: String) -> [AttentionItem] {
+        for group in groups {
+            if let members = group.members[id] { return members }
+        }
+        return []
+    }
 }
 
 /// Pure inbox filtering and grouping.
@@ -112,18 +133,28 @@ public nonisolated enum InboxQuery {
 
         var hiddenTotal = 0
         var groups: [InboxGroup] = []
+        let byPriority = itemOrder(now: now)
         for key in order {
-            let items = (buckets[key] ?? []).sorted(by: itemOrder(now: now))
+            let items = (buckets[key] ?? []).sorted(by: byPriority)
+            // One card per conversation: replies, threads on the same line and top-level comments read as one.
+            let conversations = ConversationGrouping.group(items, snapshots: snapshots, order: byPriority)
             let collapse = filter.collapseRead && !showRead && filter.status != .done
-            let visible = collapse ? items.filter { $0.isUnread || $0.isActionable(now: now) } : items
-            let hidden = items.count - visible.count
+            // Unread alone does not keep a card: an item the provider resolved while unread (you approved on the
+            // website, CI recovered, the thread was resolved) no longer needs you and has nothing to acknowledge (D55).
+            let visible = collapse
+                ? conversations.filter { $0.contains { $0.isActionable(now: now) } }
+                : conversations
+            let hidden = conversations.count - visible.count
             hiddenTotal += hidden
             guard !visible.isEmpty, let first = items.first else { continue }
+            let representatives = visible.compactMap(\.first)
             groups.append(InboxGroup(
                 changeRequest: key,
                 repoFullPath: first.repoFullPath,
                 title: snapshots[key]?.summary.title ?? first.title,
-                items: visible,
+                items: representatives,
+                members: Dictionary(visible.compactMap { group in group.first.map { ($0.id, group) } },
+                                    uniquingKeysWith: { first, _ in first }),
                 hiddenReadCount: hidden,
                 latest: items.map(\.updatedAt).max() ?? first.updatedAt
             ))
@@ -151,7 +182,8 @@ public nonisolated enum InboxQuery {
         case .all:
             if case .dismissed = item.disposition { return false }
         case .needsAction:
-            guard item.isActionable(now: now) else { return false }
+            // Ready to merge is the Ready section, not Needs you (D56).
+            guard item.isActionable(now: now), item.reason != .readyToMerge else { return false }
             if let task = item.linkedTaskID, activeTaskIDs.contains(task) { return false }
         case .unread:
             guard item.isUnread else { return false }
@@ -191,13 +223,17 @@ public nonisolated enum AccountListState: Sendable, Hashable {
     case rateLimited(until: Date?)
     case unsupportedPermission(String)
     case error(String)
+    /// The account synced but none of its change requests could be loaded (never shown as a healthy empty list).
+    case changeRequestsFailed(count: Int)
 
     public init(status: AccountSyncStatus, hasItems: Bool) {
+        let failed = status.changeRequestErrors.count
         switch status.state {
         case .idle, .syncing:
-            self = status.lastSuccessAt == nil ? .loading : (hasItems ? .ok : .empty)
+            if status.lastSuccessAt == nil { self = .loading }
+            else { self = hasItems ? .ok : (failed > 0 ? .changeRequestsFailed(count: failed) : .empty) }
         case .ok, .paused:
-            self = hasItems ? .ok : .empty
+            self = hasItems ? .ok : (failed > 0 ? .changeRequestsFailed(count: failed) : .empty)
         case .offline: self = .offline(lastSuccess: status.lastSuccessAt)
         case .authExpired: self = .credentialsExpired
         case .rateLimited(let until): self = .rateLimited(until: until)
@@ -235,7 +271,20 @@ public nonisolated struct AccountChangeRequests: Sendable, Hashable, Identifiabl
     public var account: AccountState
     public var listState: AccountListState
     public var items: [ChangeRequestSnapshot]
+    /// Change requests whose details could not be loaded (per-CR sync errors, filtered like the items).
+    public var failures: [ChangeRequestSyncError] = []
     public var id: String { account.id.id }
+
+    /// Failures of change requests that have no row of their own (never loaded, or filtered out as items).
+    public var failuresWithoutRow: [ChangeRequestSyncError] {
+        let shown = Set(items.map(\.key))
+        return failures.filter { !shown.contains($0.changeRequest) }
+    }
+
+    /// The sync error of a listed change request, if its last refresh failed.
+    public func failure(for key: ChangeRequestKey) -> ChangeRequestSyncError? {
+        failures.first { $0.changeRequest == key }
+    }
 }
 
 public nonisolated enum ChangeRequestQueryUI {
@@ -243,14 +292,24 @@ public nonisolated enum ChangeRequestQueryUI {
         state.accounts.compactMap { account in
             if let provider = filter.provider, account.kind != provider { return nil }
             if let only = filter.account, account.id != only { return nil }
-            let all = state.changeRequests.filter { $0.key.account == account.id }
+            let all = state.changeRequests.filter {
+                $0.key.account == account.id && filter.scope.includes($0.summary.involvement)
+            }
             let items = all.filter { snapshot in
-                guard filter.scope.includes(snapshot.summary.involvement) else { return false }
                 guard filter.includeClosed || snapshot.summary.state == .open else { return false }
                 return matchesSearch(snapshot, text: filter.searchText)
             }
             .sorted { $0.summary.updatedAt > $1.summary.updatedAt }
-            return AccountChangeRequests(account: account, listState: AccountListState(status: account.status, hasItems: !all.isEmpty), items: items)
+            let failures = account.status.changeRequestErrors.filter { error in
+                let needle = filter.searchText.trimmingCharacters(in: .whitespaces).lowercased()
+                guard !needle.isEmpty else { return true }
+                let haystack = "\(error.title)\n\(error.repoFullPath)\n\(account.kind.formattedNumber(error.changeRequest.number))".lowercased()
+                return needle.split(separator: " ").allSatisfy { haystack.contains($0) }
+            }
+            return AccountChangeRequests(
+                account: account, listState: AccountListState(status: account.status, hasItems: !all.isEmpty), items: items,
+                failures: failures
+            )
         }
     }
 
@@ -274,7 +333,7 @@ public nonisolated enum TaskGroup: String, Sendable, Hashable, CaseIterable, Ide
         switch self {
         case .ready: "Ready for review"
         case .needsAttention: "Needs your decision"
-        case .active: "Active"
+        case .active: "In progress"
         case .finished: "Finished"
         }
     }

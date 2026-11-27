@@ -41,105 +41,114 @@ enum ButtonSize {
     var verticalPadding: CGFloat { 5 }
 }
 
-/// Primary action: the text-safe brand gradient (#087EA3 → #1B6DF5 → #8452F5, ≥ 4.5:1 with white) with white text.
+/// Primary action (CTA): a capsule of the text-safe brand gradient (#087EA3 → #1B6DF5 → #8452F5, ≥ 4.5:1 with
+/// white) under interactive Liquid Glass (D41), white text, no stroke, no moving highlight.
 struct GradientButtonStyle: ButtonStyle {
     var size: ButtonSize = .regular
     var fullWidth = false
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
-        let shape = RoundedRectangle(cornerRadius: Theme.controlRadius + (size == .large ? 2 : 0), style: .continuous)
         configuration.label
             .scaledFont(size.font)
             .foregroundStyle(isEnabled ? Color.white : Theme.textSecondary)
-            .padding(.horizontal, size.horizontalPadding)
+            .padding(.horizontal, size.horizontalPadding + 6)
             .padding(.vertical, size.verticalPadding)
             .frame(minHeight: size.height)
             .frame(maxWidth: fullWidth ? .infinity : nil)
-            .background(shape.fill(isEnabled ? AnyShapeStyle(Theme.actionGradient) : AnyShapeStyle(Theme.surfaceRaised)))
-            .overlay(shape.strokeBorder(isEnabled ? AnyShapeStyle(Color.white.opacity(0.22)) : AnyShapeStyle(Theme.controlBorder), lineWidth: 1))
-            .shadow(color: Color(hex: 0x3B82F6).opacity(isEnabled ? 0.28 : 0), radius: 10, y: 3)
-            .opacity(configuration.isPressed ? 0.82 : 1)
-            .contentShape(shape)
+            .background(Capsule().fill(isEnabled ? AnyShapeStyle(Theme.actionGradient) : AnyShapeStyle(Color.clear)))
+            .glassShape(Capsule(), tint: isEnabled ? Theme.blue : nil, fallback: isEnabled ? .clear : Theme.surfaceRaised)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(Motion.press, value: configuration.isPressed)
+            .contentShape(Capsule())
     }
 }
 
-/// Secondary action: a filled neutral control with a visible (≥ 3:1) boundary.
+/// Secondary action: an interactive Liquid Glass capsule, no stroke.
 struct SecondaryButtonStyle: ButtonStyle {
     var size: ButtonSize = .regular
     var fullWidth = false
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
-        let shape = RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
         configuration.label
             .scaledFont(size.font)
             .foregroundStyle(isEnabled ? Theme.textPrimary : Theme.textSecondary)
-            .padding(.horizontal, size.horizontalPadding)
+            .padding(.horizontal, size.horizontalPadding + 4)
             .padding(.vertical, size.verticalPadding)
             .frame(minHeight: size.height)
             .frame(maxWidth: fullWidth ? .infinity : nil)
-            .background(shape.fill(configuration.isPressed ? Theme.surfaceHover : Theme.surfaceRaised))
-            .overlay(shape.strokeBorder(Theme.controlBorder.opacity(isEnabled ? 1 : 0.5), lineWidth: 1))
-            .contentShape(shape)
+            .glassShape(Capsule(), fallback: configuration.isPressed ? Theme.surfaceHover : Theme.surfaceRaised)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(Motion.press, value: configuration.isPressed)
+            .contentShape(Capsule())
     }
 }
 
-/// Outlined gradient action ("✦ Fix with AI" in the popover): tinted fill, gradient border and text-safe gradient text.
+/// Gradient-text action ("✦ Fix now" in the popover): a glass capsule lightly tinted blue, no stroke.
 struct OutlinedGradientButtonStyle: ButtonStyle {
     var size: ButtonSize = .small
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
-        let shape = RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
         configuration.label
             .scaledFont(size.font)
             .foregroundStyle(isEnabled ? AnyShapeStyle(Theme.actionTextGradient) : AnyShapeStyle(Theme.textSecondary))
-            .padding(.horizontal, size.horizontalPadding)
+            .padding(.horizontal, size.horizontalPadding + 4)
             .padding(.vertical, size.verticalPadding)
             .frame(minHeight: size.height)
-            .background(shape.fill(Theme.blue.opacity(configuration.isPressed ? 0.18 : 0.08)))
-            .overlay(shape.strokeBorder(Theme.brandGradient, lineWidth: 1.2).opacity(isEnabled ? 1 : 0.4))
-            .contentShape(shape)
+            .glassShape(Capsule(), tint: Theme.blue.opacity(0.5), fallback: Theme.blue.opacity(configuration.isPressed ? 0.18 : 0.1))
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(Motion.press, value: configuration.isPressed)
+            .contentShape(Capsule())
     }
 }
 
-/// Tinted outline ("Review patch" in mint): the status colour for the border and fill, its text variant for the label.
+/// Status-tinted action ("Review patch" in mint): a glass capsule tinted with the status colour, its text variant
+/// for the label, no stroke.
 struct TintedOutlineButtonStyle: ButtonStyle {
     var color: Color
     var textColor: Color
     var size: ButtonSize = .small
 
     func makeBody(configuration: Configuration) -> some View {
-        let shape = RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
         configuration.label
             .scaledFont(size.font)
             .foregroundStyle(textColor)
-            .padding(.horizontal, size.horizontalPadding)
+            .padding(.horizontal, size.horizontalPadding + 4)
             .padding(.vertical, size.verticalPadding)
             .frame(minHeight: size.height)
-            .background(shape.fill(color.opacity(configuration.isPressed ? 0.2 : 0.09)))
-            .overlay(shape.strokeBorder(color, lineWidth: 1.1))
-            .contentShape(shape)
+            .glassShape(Capsule(), tint: color.opacity(0.6), fallback: color.opacity(configuration.isPressed ? 0.2 : 0.12))
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(Motion.press, value: configuration.isPressed)
+            .contentShape(Capsule())
     }
 }
 
-/// Square icon button (external link, •••, copy).
+/// Round icon button (external link, •••, copy): a glass circle when `filled`, a bare icon otherwise.
 struct IconButtonStyle: ButtonStyle {
     var size: CGFloat = 30
     var filled = true
     @Environment(\.textScale) private var textScale
+    @State private var isHovering = false
 
     func makeBody(configuration: Configuration) -> some View {
         let side = size * max(1, textScale)
-        let shape = RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-        configuration.label
+        let label = configuration.label
             .scaledFont(.system(size: size * 0.45, weight: .medium))
             .foregroundStyle(Theme.textSecondary)
             .frame(width: side, height: side)
-            .background(shape.fill(filled ? (configuration.isPressed ? Theme.surfaceHover : Theme.surfaceRaised) : (configuration.isPressed ? Theme.surfaceHover : .clear)))
-            .overlay(shape.strokeBorder(filled ? Theme.controlBorder : .clear, lineWidth: 1))
-            .contentShape(Rectangle())
+        return Group {
+            if filled {
+                label.glassShape(Circle(), fallback: configuration.isPressed ? Theme.surfaceHover : Theme.surfaceRaised)
+            } else {
+                label.background(Circle().fill(configuration.isPressed || isHovering ? Theme.surfaceHover : .clear))
+            }
+        }
+        .scaleEffect(configuration.isPressed ? 0.92 : 1)
+        .animation(Motion.press, value: configuration.isPressed)
+        .contentShape(Circle())
+        .onHover { hovering in withAnimation(Motion.hover) { isHovering = hovering } }
     }
 }
 
@@ -150,7 +159,7 @@ struct PlainRowButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .contentShape(SmoothRect(radius: cornerRadius))
             .opacity(configuration.isPressed ? 0.7 : 1)
     }
 }
@@ -223,9 +232,9 @@ struct CountBadge: View {
             .foregroundStyle(highlighted ? Theme.textPrimary : Theme.textSecondary)
             .padding(.horizontal, 7)
             .frame(minWidth: 22, minHeight: 20)
-            .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(highlighted ? Theme.accent.opacity(0.28) : Theme.surfaceRaised))
-            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Theme.border, lineWidth: 1))
+            .background(Capsule().fill(highlighted ? Theme.accent.opacity(0.28) : Theme.surfaceRaised))
+            .contentTransition(.numericText())
+            .animation(Motion.snappy, value: count)
     }
 }
 
@@ -248,7 +257,7 @@ struct StatusGlyph: View {
     }
 }
 
-/// A thin circular progress ring (AI working). Spins in the app; static in snapshots and with Reduce Motion.
+/// A thin circular progress ring (In progress). Spins in the app; static in snapshots and with Reduce Motion.
 struct WorkingSpinner: View {
     var size: CGFloat = 26
     @State private var rotation: Double = 0
@@ -305,32 +314,51 @@ struct SectionMarker: View {
 
 // MARK: - Segmented controls and tabs
 
-/// Capsule filter chips ("All", "Mine", "Reviewing").
+/// Capsule filter chips ("All", "Mine", "Reviewing"): Liquid Glass, the selected one tinted with the accent and
+/// marked by a sliding highlight. No strokes or shadows (they drew hairlines at the capsule ends).
 struct FilterChips<Value: Hashable>: View {
     var options: [(Value, String)]
     @Binding var selection: Value
+    /// Smaller chips for the menu bar popover.
+    var compact = false
+    @Namespace private var highlight
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: compact ? 6 : 10) {
             ForEach(Array(options.enumerated()), id: \.offset) { _, option in
                 let isSelected = option.0 == selection
                 Button {
-                    selection = option.0
+                    withAnimation(Motion.snappy) { selection = option.0 }
                 } label: {
                     Text(option.1)
-                        .scaledFont(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                        .scaledFont(.system(size: compact ? 12 : 13, weight: isSelected ? .semibold : .medium))
                         .foregroundStyle(isSelected ? Color.white : Theme.textSecondary)
-                        .padding(.horizontal, isSelected ? 22 : 18)
-                        .padding(.vertical, 4)
-                        .frame(minHeight: 32)
-                        .background(Capsule().fill(isSelected ? AnyShapeStyle(LinearGradient(colors: Palette.selectedChipStops.map { Color(hex: $0) }, startPoint: .top, endPoint: .bottom)) : AnyShapeStyle(Theme.surfaceRaised)))
-                        .overlay(Capsule().strokeBorder(isSelected ? Color(hex: 0x69A2FF).opacity(0.9) : Theme.controlBorder, lineWidth: 1))
-                        .shadow(color: isSelected ? Color(hex: 0x3B82F6).opacity(0.35) : .clear, radius: 8)
+                        .padding(.horizontal, compact ? 13 : 20)
+                        .padding(.vertical, compact ? 2 : 4)
+                        .frame(minHeight: compact ? 26 : 32)
+                        .background {
+                            if isSelected {
+                                Capsule()
+                                    .fill(LinearGradient(colors: Palette.selectedChipStops.map { Color(hex: $0) }, startPoint: .top, endPoint: .bottom))
+                                    .matchedGeometryEffect(id: "chip", in: highlight)
+                            }
+                        }
+                        .glassShape(Capsule(), tint: isSelected ? Theme.accent : nil, fallback: isSelected ? .clear : Theme.surfaceRaised)
+                        .contentShape(Capsule())
                 }
-                .buttonStyle(PlainRowButtonStyle(cornerRadius: 16))
+                .buttonStyle(PressScaleButtonStyle())
                 .accessibilityAddTraits(isSelected ? [.isSelected] : [])
             }
         }
+    }
+}
+
+/// No chrome; shrinks a little while pressed.
+struct PressScaleButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .animation(Motion.press, value: configuration.isPressed)
     }
 }
 
@@ -341,36 +369,34 @@ struct SegmentedTrack<Value: Hashable, Label: View>: View {
     var height: CGFloat = 34
     var equalWidths = true
     @ViewBuilder var label: (Value, Bool) -> Label
+    @Namespace private var highlight
 
     var body: some View {
         HStack(spacing: 4) {
             ForEach(options, id: \.self) { option in
                 let isSelected = option == selection
                 Button {
-                    selection = option
+                    withAnimation(Motion.snappy) { selection = option }
                 } label: {
                     label(option, isSelected)
                         .frame(maxWidth: equalWidths ? .infinity : nil)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 4)
                         .frame(minHeight: height)
-                        .background(
-                            RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
-                                .fill(isSelected ? Theme.surfaceSelected : .clear)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
-                                .strokeBorder(isSelected ? AnyShapeStyle(Theme.brandGradient) : AnyShapeStyle(Color.clear), lineWidth: 1.2)
-                        )
-                        .contentShape(Rectangle())
+                        .background {
+                            if isSelected {
+                                Capsule().fill(Theme.surfaceSelected)
+                                    .matchedGeometryEffect(id: "segment", in: highlight)
+                            }
+                        }
+                        .contentShape(Capsule())
                 }
-                .buttonStyle(PlainRowButtonStyle())
+                .buttonStyle(PressScaleButtonStyle())
                 .accessibilityAddTraits(isSelected ? [.isSelected] : [])
             }
         }
         .padding(4)
-        .background(RoundedRectangle(cornerRadius: Theme.controlRadius + 3, style: .continuous).fill(Theme.surfaceSunken))
-        .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius + 3, style: .continuous).strokeBorder(Theme.border, lineWidth: 1))
+        .glassShape(Capsule(), interactive: false, fallback: Theme.surfaceSunken)
     }
 }
 
@@ -428,7 +454,7 @@ struct SearchField: View {
     private var isFieldFocused: Bool { focus?.wrappedValue ?? ownFocus }
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: Theme.controlRadius + 1, style: .continuous)
+        let shape = SmoothRect()
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .scaledFont(.system(size: 13, weight: .medium))
@@ -455,8 +481,7 @@ struct SearchField: View {
         .padding(.horizontal, 11)
         .padding(.vertical, 6)
         .frame(minHeight: 36)
-        .background(shape.fill(Theme.surfaceRaised))
-        .overlay(shape.strokeBorder(Theme.controlBorder, lineWidth: 1))
+        .glassShape(Capsule(), interactive: false)
         .overlay {
             if isFieldFocused {
                 shape.inset(by: -3).strokeBorder(Theme.focusRing, lineWidth: 2).allowsHitTesting(false)
@@ -487,8 +512,7 @@ struct KeyCap: View {
             .scaledFont(.system(size: 10.5, weight: .medium))
             .foregroundStyle(Theme.textSecondary)
             .frame(minWidth: 18, minHeight: 18)
-            .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(Theme.surfaceSunken))
-            .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(Theme.border, lineWidth: 1))
+            .glassShape(Capsule(), interactive: false, fallback: Theme.surfaceSunken)
     }
 }
 
@@ -518,10 +542,10 @@ struct FilterMenu<Content: View>: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 3)
             .frame(minHeight: 26)
-            .background(Capsule().fill(isActive ? Theme.accent.opacity(0.12) : Theme.surfaceRaised))
-            .overlay(Capsule().strokeBorder(isActive ? Theme.accent : Theme.controlBorder, lineWidth: 1))
+            .glassShape(Capsule(), tint: isActive ? Theme.accent : nil, fallback: isActive ? Theme.accent.opacity(0.12) : Theme.surfaceRaised)
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
         .accessibilityLabel("\(title) filter")

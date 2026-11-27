@@ -15,12 +15,19 @@ nonisolated struct PreviewCatalog {
     var bbCheckout128: ChangeRequestSnapshot
     var bbRisk9: ChangeRequestSnapshot
     var bbCheckout131: ChangeRequestSnapshot
+    /// Reviews of others' PRs/MRs, one per Reviews state (D53).
+    var bbRisk12: ChangeRequestSnapshot
+    var glLedger322: ChangeRequestSnapshot
+    var ghPayments64: ChangeRequestSnapshot
+    var bbCheckout133: ChangeRequestSnapshot
+    var ghDashboard310: ChangeRequestSnapshot
     var logs: [String: LogExcerpt]
 
     var all: [ChangeRequestSnapshot] {
         [ghPayments42, ghPayments61, ghDashboard318, ghPayments57,
          glPayments42, glLedger318, glIOS77, glPayments39,
-         bbPayments42, bbCheckout128, bbRisk9, bbCheckout131]
+         bbPayments42, bbCheckout128, bbRisk9, bbCheckout131,
+         bbRisk12, glLedger322, ghPayments64, bbCheckout133, ghDashboard310]
     }
 }
 
@@ -43,6 +50,11 @@ nonisolated extension PreviewWorld {
             bbCheckout128: bitbucketCheckout128(),
             bbRisk9: bitbucketRisk9(),
             bbCheckout131: bb131,
+            bbRisk12: bitbucketRisk12(),
+            glLedger322: gitlabLedger322(),
+            ghPayments64: githubPayments64(),
+            bbCheckout133: bitbucketCheckout133(),
+            ghDashboard310: githubDashboard310(),
             logs: logs
         )
     }

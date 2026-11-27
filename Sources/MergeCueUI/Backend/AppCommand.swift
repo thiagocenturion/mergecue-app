@@ -111,8 +111,13 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
     case snooze(attentionID: String, until: Date)
     case dismissAttention(attentionID: String)
 
+    // MARK: Reviews
+    /// Approves someone else's PR/MR as the owner from the app (D59), after their confirmation. Only sent when
+    /// `AppModel.approvalRoute` is `.inApp`; otherwise the provider page opens instead.
+    case approveChangeRequest(ChangeRequestKey)
+
     // MARK: Tasks
-    /// "Fix with AI" / "Investigate with AI" / "Draft reply" / "Address with AI". Creates `waiting_for_agent` only.
+    /// "Fix now" / "Investigate with AI" / "Draft reply" / "Address with AI". Creates `waiting_for_agent` only.
     case createTask(attentionID: String, type: TaskType)
     case cancelTask(TaskID)
     case retryTask(TaskID)
@@ -120,6 +125,14 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
     case dismissTask(TaskID)
     case unblockTask(TaskID)
     case markTaskDone(TaskID)
+    /// "In progress" set by hand (D40).
+    case startTaskManually(TaskID)
+    /// Adds inbox items (same change request) to an active task; an item attached elsewhere moves (D38).
+    case attachToTask(TaskID, attentionIDs: [String])
+    /// Removes an attached item from a task; the item returns to the inbox without a task.
+    case detachFromTask(TaskID, attentionID: String)
+    /// Merges the first task into the second (same change request); the first is dismissed.
+    case mergeTask(TaskID, into: TaskID)
     /// "Discard and retry": rejects the submitted result and returns the task to `waiting_for_agent`.
     case rejectResult(TaskID, note: String?)
     /// Builds the exact preview of an action for the review gate.
@@ -155,17 +168,35 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
     case connectAccount(ConnectAccountRequest)
     case disconnectAccount(AccountKey)
     case setWritesEnabled(AccountKey, Bool)
+    /// Settings ▸ Accounts ▸ "Repositories to watch": only these repositories are synced (nil follows the
+    /// mapped checkouts again; an empty list syncs every repository).
+    case setWatchedRepositories(AccountKey, [RepoKey]?)
+    /// Settings ▸ Accounts ▸ "Check for updates".
+    case setRefreshInterval(AccountKey, RefreshInterval)
 
     // MARK: Repository mappings
     case addMapping(repo: RepoKey, repoFullPath: String, checkoutPath: String)
+    /// "Choose Folder…": inspects the folder (a subfolder maps its checkout's top level) and matches its remotes.
+    /// Exact → saved and confirmed; probable → saved, needs Confirm; mismatch or not a checkout → nothing saved,
+    /// the result carries `mappingPreview` (remotes found vs expected). `mapAnyway` saves a mismatched checkout
+    /// confirmed (only offered when `MappingPreview.canMapAnyway`).
+    case mapCheckoutFolder(repo: RepoKey, repoFullPath: String, checkoutPath: String, mapAnyway: Bool)
     case confirmMapping(id: String)
     case removeMapping(id: String)
 
     // MARK: Handoff and links
     case copyHandoffCommand(TaskID, agent: AgentKind?)
-    case openInAgent(TaskID, agent: AgentKind)
+    /// Opens the agent with the MCP handoff prompt in `directory`, the repository's local checkout (D61).
+    case openInAgent(TaskID, agent: AgentKind, directory: String)
+    /// "Without MCP" (D60): opens the agent in `directory` with a self-contained prompt.
+    case openPromptInAgent(TaskID, agent: AgentKind, directory: String, prompt: String)
+    /// "Review with AI" (D60): opens the agent in `directory` with a review prompt.
+    case openReviewInAgent(ChangeRequestKey, agent: AgentKind, directory: String, prompt: String)
     /// On-demand CI log excerpt for a failing check (bounded, redacted).
     case loadCheckLog(CheckKey)
+    /// On-demand unified diff of a change request (bounded, redacted): code context for comments whose provider
+    /// sends no diff hunk (Bitbucket, GitLab).
+    case loadDiff(ChangeRequestKey)
     case openURL(URL)
 
     // MARK: Agent setup (wizard)
@@ -189,11 +220,17 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
     /// Searches the default folders for checkouts of these (unmapped) repositories, in order, bounded; exact remote
     /// matches are mapped automatically. Runs in the background; progress is in `AppState.checkoutScan`.
     case scanCheckouts([RepoKey])
+    /// Stops the running checkout scan (nothing is mapped by a cancelled scan).
+    case cancelCheckoutScan
+    /// Settings ▸ Repositories ▸ Search folders (nil restores the defaults).
+    case setCheckoutSearchFolders([String]?)
 
     // MARK: App and data
     case setLaunchAtLogin(Bool)
     /// Asks macOS for notification permission (onboarding; never silently at launch).
     case requestNotificationPermission
+    /// Settings › Notifications › Send Test Notification.
+    case sendTestNotification
     /// Writes a copy of the local database (no credentials) to a file the owner picked.
     case exportDatabase(to: URL)
     /// Deletes every stored credential and record (after the owner confirmed).
@@ -206,6 +243,7 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
         case .acknowledge: "acknowledge"
         case .snooze: "snooze"
         case .dismissAttention: "dismissAttention"
+        case .approveChangeRequest: "approveChangeRequest"
         case .createTask(_, let type): "createTask(\(type.rawValue))"
         case .cancelTask: "cancelTask"
         case .retryTask: "retryTask"
@@ -213,6 +251,10 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
         case .dismissTask: "dismissTask"
         case .unblockTask: "unblockTask"
         case .markTaskDone: "markTaskDone"
+        case .startTaskManually: "startTaskManually"
+        case .attachToTask(_, let ids): "attachToTask(\(ids.count))"
+        case .detachFromTask: "detachFromTask"
+        case .mergeTask: "mergeTask"
         case .rejectResult: "rejectResult"
         case .requestActionPreview(_, let kind): "requestActionPreview(\(kind.rawValue))"
         case .approvePreview: "approvePreview"
@@ -230,12 +272,20 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
         case .connectAccount(let request): "connectAccount(\(request.kind.rawValue))"
         case .disconnectAccount: "disconnectAccount"
         case .setWritesEnabled: "setWritesEnabled"
+        case .setWatchedRepositories(_, let repos): "setWatchedRepositories(\(repos?.count ?? -1))"
+        case .setRefreshInterval(_, let interval): "setRefreshInterval(\(interval.rawValue))"
         case .addMapping: "addMapping"
+        case .mapCheckoutFolder(_, _, _, let anyway): "mapCheckoutFolder(anyway: \(anyway))"
+        case .cancelCheckoutScan: "cancelCheckoutScan"
+        case .setCheckoutSearchFolders(let folders): "setCheckoutSearchFolders(\(folders?.count ?? -1))"
         case .confirmMapping: "confirmMapping"
         case .removeMapping: "removeMapping"
         case .copyHandoffCommand: "copyHandoffCommand"
-        case .openInAgent(_, let agent): "openInAgent(\(agent.rawValue))"
+        case .openInAgent(_, let agent, _): "openInAgent(\(agent.rawValue))"
+        case .openPromptInAgent(_, let agent, _, _): "openPromptInAgent(\(agent.rawValue))"
+        case .openReviewInAgent(_, let agent, _, _): "openReviewInAgent(\(agent.rawValue))"
         case .loadCheckLog: "loadCheckLog"
+        case .loadDiff: "loadDiff"
         case .openURL: "openURL"
         case .refreshAgents: "refreshAgents"
         case .prepareAgentRegistration(let kind, let action): "prepareAgentRegistration(\(kind.rawValue), \(action.rawValue))"
@@ -247,6 +297,7 @@ public nonisolated enum AppCommand: Sendable, CustomStringConvertible {
         case .scanCheckouts(let repos): "scanCheckouts(\(repos.count))"
         case .setLaunchAtLogin(let enabled): "setLaunchAtLogin(\(enabled))"
         case .requestNotificationPermission: "requestNotificationPermission"
+        case .sendTestNotification: "sendTestNotification"
         case .exportDatabase: "exportDatabase"
         case .resetAllData: "resetAllData"
         }
@@ -267,12 +318,18 @@ public nonisolated struct AppCommandResult: Sendable {
     public var createdTaskID: TaskID?
     /// Set by `.loadCheckLog`.
     public var logExcerpt: LogExcerpt?
+    /// Set by `.loadDiff`.
+    public var diff: DiffPayload?
     /// Set by `.prepareAgentRegistration`: shown in full before the owner consents.
     public var registrationPlan: MCPRegistrationPlan?
     /// Set by `.verifyAgent`.
     public var verification: AgentVerification?
     /// Set by `.findCheckouts`.
     public var mappingSuggestions: [MappingSuggestion]?
+    /// Set by `.mapCheckoutFolder` when nothing was saved (mismatch / not a checkout): what was found vs expected.
+    public var mappingPreview: MappingPreview?
+    /// Set by `.mapCheckoutFolder` when a mapping was saved.
+    public var savedMapping: RepoMapping?
     /// Banner tone for `message` (nil = derived: success for handoffs/new tasks, neutral otherwise). Recorded
     /// refusals (an approved action blocked by fresh state, a failed write) use `.critical`.
     public var tone: Tone?
@@ -284,17 +341,23 @@ public nonisolated struct AppCommandResult: Sendable {
         urlToOpen: URL? = nil,
         createdTaskID: TaskID? = nil,
         logExcerpt: LogExcerpt? = nil,
+        diff: DiffPayload? = nil,
         registrationPlan: MCPRegistrationPlan? = nil,
         verification: AgentVerification? = nil,
         mappingSuggestions: [MappingSuggestion]? = nil,
+        mappingPreview: MappingPreview? = nil,
+        savedMapping: RepoMapping? = nil,
         tone: Tone? = nil
     ) {
+        self.mappingPreview = mappingPreview
+        self.savedMapping = savedMapping
         self.message = message
         self.preview = preview
         self.handoffCommand = handoffCommand
         self.urlToOpen = urlToOpen
         self.createdTaskID = createdTaskID
         self.logExcerpt = logExcerpt
+        self.diff = diff
         self.registrationPlan = registrationPlan
         self.verification = verification
         self.mappingSuggestions = mappingSuggestions

@@ -123,6 +123,32 @@ public enum BitbucketFixtures {
             }
         }
 
+        /// The pull request whose source commit (or source..destination spec) a repository-level commits /
+        /// diffstat / diff request names (the adapter reads those instead of the redirecting PR endpoints).
+        @Sendable func prID(repo: String, revision: String) -> String? {
+            let source = revision.split(separator: ".").first.map(String.init) ?? revision
+            for id in ["42", "12", "7"] {
+                guard let name = prFile(repo: repo, id: id, "detail"), let data = try? data(name),
+                      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let hash = ((object["source"] as? [String: Any])?["commit"] as? [String: Any])?["hash"] as? String
+                else { continue }
+                let (a, b) = (hash.lowercased(), source.lowercased())
+                if a.count >= 7, b.count >= 7, a.hasPrefix(b) || b.hasPrefix(a) { return id }
+            }
+            return nil
+        }
+
+        func repositoryRoute(_ resource: String, suffix: String) -> StubTransport.Route {
+            Route(method: "GET", pathPattern: "/repositories/acme/{repo}/\(resource)/{revision}") { _, match in
+                let repo = match["repo"] ?? ""
+                guard let id = prID(repo: repo, revision: match["revision"] ?? "") else { return respond(nil) }
+                if suffix == "diff" {
+                    return respond(text: "pr_\(id).diff", when: true)
+                }
+                return respond(prFile(repo: repo, id: id, suffix))
+            }
+        }
+
         func prRoute(_ suffix: String) -> StubTransport.Route {
             Route(method: "GET", pathPattern: "/repositories/acme/{repo}/pullrequests/{id}/\(suffix)") { _, match in
                 respond(prFile(repo: match["repo"] ?? "", id: match["id"] ?? "", suffix))
@@ -182,6 +208,8 @@ public enum BitbucketFixtures {
                 return respond(prFile(repo: match["repo"] ?? "", id: match["id"] ?? "", "comments"))
             },
             prRoute("tasks"), prRoute("statuses"), prRoute("commits"), prRoute("diffstat"),
+            repositoryRoute("commits", suffix: "commits"), repositoryRoute("diffstat", suffix: "diffstat"),
+            repositoryRoute("diff", suffix: "diff"),
             Route(method: "GET", pathPattern: "/repositories/acme/{repo}/pullrequests/{id}/diff") { _, match in
                 respond(text: "pr_\(match["id"] ?? "").diff", when: prFile(repo: match["repo"] ?? "", id: match["id"] ?? "", "detail") != nil)
             },
@@ -206,6 +234,8 @@ public enum BitbucketFixtures {
             .fixed("POST", "/repositories/acme/{repo}/pullrequests/{id}/comments/{comment}/resolve", response: file("comment_resolution.json")),
             .fixed("DELETE", "/repositories/acme/{repo}/pullrequests/{id}/comments/{comment}/resolve", response: StubTransport.empty(status: 204)),
             .fixed("POST", "/repositories/acme/{repo}/pullrequests/{id}/request-changes", response: file("request_changes_participant.json")),
+            .fixed("POST", "/repositories/acme/{repo}/pullrequests/{id}/approve",
+                   response: StubTransport.json(#"{"type":"participant","role":"REVIEWER","approved":true,"state":"approved"}"#)),
             Route(method: "POST", pathPattern: "/repositories/acme/{repo}/pullrequests/{id}/merge") { _, match in
                 respond(match["repo"] == "payments-api" && match["id"] == "42" ? "pr_42_merged.json" : nil)
             },

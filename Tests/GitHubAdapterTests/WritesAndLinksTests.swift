@@ -73,6 +73,21 @@ struct WriteTests {
         #expect(posts.first?.jsonBody == ["body": "Please mask the card number.", "event": "REQUEST_CHANGES"])
     }
 
+    /// D59: an approval names the head the user saw; a moved head is a conflict, not an approval of unseen commits.
+    @Test func approvePostsAnApprovalPinnedToTheHead() async throws {
+        let (provider, transport) = GH.provider()
+        let snapshot = try await GH.snapshot(provider)
+        try await provider.approve(snapshot.key, expectedHeadSHA: GH.IDs.head42)
+        let posts = transport.requests("POST", path: "/repos/acme/payments-api/pulls/42/reviews")
+        #expect(posts.first?.jsonBody == ["event": "APPROVE", "commit_id": .string(GH.IDs.head42)])
+
+        await #expect(throws: ProviderError.conflict("The pull request changed since you looked at it. Refresh and review the new commits.")) {
+            try await provider.approve(snapshot.key, expectedHeadSHA: "0000000000000000000000000000000000000000")
+        }
+        #expect(GitHubProvider.capabilityManifest.support(for: .approve).isUsable == false, "needs write access")
+        #expect(GitHubProvider.capabilities(grantedScopes: ["repo"]).support(for: .approve) == .supported)
+    }
+
     @Test func mergeSendsExpectedSHAAndMapsConflict() async throws {
         let (provider, transport) = GH.provider()
         let snapshot = try await GH.snapshot(provider, number: 12)

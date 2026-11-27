@@ -118,7 +118,7 @@ nonisolated extension PreviewWorld {
         let gh57 = catalog.ghPayments57
         ids.ghNioReady = add(gh57, dedupe: AttentionItem.dedupeKey(changeRequest: gh57.key, reason: .readyToMerge), reason: .readyToMerge,
                              summary: "Approved by @rkoval · required checks green", created: ago(hours: 2), updated: ago(hours: 2),
-                             unread: false, disposition: .acknowledged)
+                             unread: false)
 
         let gl42 = catalog.glPayments42
         ids.glPaymentsCI = add(gl42, dedupe: AttentionItem.dedupeKey(changeRequest: gl42.key, checkName: gl42.checks[1].name), reason: .ciFailed,
@@ -157,6 +157,15 @@ nonisolated extension PreviewWorld {
         ids.bbCheckoutCI = add(bb131, dedupe: AttentionItem.dedupeKey(changeRequest: bb131.key, checkName: bb131.checks[0].name), reason: .ciFailed,
                                summary: "e2e / safari failed · 1 of 38 tests", check: bb131.checks[0].key,
                                created: ago(minutes: 95), updated: ago(minutes: 95), unread: false, task: PreviewTaskIDs.failed)
+        // Reviews (D53): acknowledged, so the owner's mockup scenes keep their Needs you rows and counts.
+        let bb12 = catalog.bbRisk12
+        _ = add(bb12, dedupe: AttentionItem.dedupeKey(changeRequest: bb12.key, reason: .reapprovalNeeded), reason: .reapprovalNeeded,
+                summary: "Your approval was reset by new commits", created: ago(minutes: 18), updated: ago(minutes: 18), unread: false,
+                disposition: .acknowledged)
+        let gl322 = catalog.glLedger322
+        _ = add(gl322, dedupe: AttentionItem.dedupeKey(changeRequest: gl322.key, reason: .updatedSinceReview), reason: .updatedSinceReview,
+                summary: "New commits since your review", created: ago(minutes: 40), updated: ago(minutes: 40), unread: false,
+                disposition: .acknowledged)
         return (items, ids)
     }
 
@@ -173,16 +182,17 @@ nonisolated extension PreviewWorld {
         return [
             AccountState(account: github,
                          status: AccountSyncStatus(account: gh, state: .ok, lastAttemptAt: ago(minutes: 2), lastSuccessAt: ago(minutes: 2),
-                                                   nextRunAt: later(minutes: 1.5)),
+                                                   nextRunAt: later(minutes: 1.5), requestsLastHour: 142, requestBudget: 1_500),
                          capabilities: Self.manifest(.github)),
             AccountState(account: gitlab,
                          status: AccountSyncStatus(account: gl, state: .rateLimited(until: later(minutes: 20)), lastAttemptAt: ago(minutes: 1),
                                                    lastSuccessAt: ago(minutes: 11), nextRunAt: later(minutes: 20), consecutiveFailures: 1,
-                                                   message: "429 Too Many Requests"),
+                                                   message: "GitLab rate limit reached for @mona-dev. MergeCue waits for the reset time GitLab sent.",
+                                                   requestsLastHour: 1_012, requestBudget: 1_000),
                          capabilities: Self.manifest(.gitlab)),
             AccountState(account: bitbucket,
                          status: AccountSyncStatus(account: bb, state: .ok, lastAttemptAt: ago(minutes: 4), lastSuccessAt: ago(minutes: 4),
-                                                   nextRunAt: later(minutes: 1)),
+                                                   nextRunAt: later(minutes: 1), requestsLastHour: 64, requestBudget: 500),
                          capabilities: Self.manifest(.bitbucketCloud)),
         ]
     }
@@ -194,13 +204,14 @@ nonisolated extension PreviewWorld {
         case .github:
             break
         case .gitlab:
-            for capability in [Capability.createReply, .resolveThread, .merge] {
+            for capability in [Capability.createReply, .resolveThread, .merge, .approve] {
                 entries[capability] = .requiresWriteAccess(scope: "api")
             }
             entries[.requestChanges] = .partial(note: "GitLab has no request-changes review; MergeCue posts a blocking thread")
         case .bitbucketCloud:
             entries[.createReply] = .requiresWriteAccess(scope: "write:pullrequest:bitbucket")
             entries[.merge] = .requiresWriteAccess(scope: "write:pullrequest:bitbucket")
+            entries[.approve] = .requiresWriteAccess(scope: "write:pullrequest:bitbucket")
             entries[.resolveThread] = .partial(note: "Only inline comments can be resolved")
         }
         return CapabilityManifest(provider: kind, entries: entries)

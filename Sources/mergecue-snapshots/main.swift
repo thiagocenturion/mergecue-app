@@ -58,6 +58,8 @@ struct Scene {
     var size: NSSize?
     var configure: (AppModel) -> Void = { _ in }
     var kind: SceneKind
+    /// Edits the preview state before the model is built (scenes render synchronously).
+    var prepare: ((inout AppState) -> Void)?
 }
 
 let now = MergeCuePreview.referenceDate()
@@ -87,11 +89,158 @@ func samplePreview(_ model: AppModel, _ action: RemoteActionKind) -> ActionPrevi
         createdAt: now, isSimulated: true)
 }
 
+/// GitHub #42: the "changes requested" review added to the CI failure task (one task for both, D38).
+func attachReviewToCITask(_ state: inout AppState) {
+    guard let review = state.attention.first(where: { $0.providerKind == .github && $0.number == 42 && $0.reason == .changesRequested }),
+          let ci = state.attention.first(where: { $0.providerKind == .github && $0.number == 42 && $0.reason == .ciFailed }),
+          let taskIndex = state.tasks.firstIndex(where: { $0.task.coveredAttentionIDs.contains(ci.id) || $0.id == ci.linkedTaskID }),
+          let reviewIndex = state.attention.firstIndex(where: { $0.id == review.id })
+    else { return }
+    let snapshot = state.changeRequests.first { $0.key == review.changeRequest }
+    let thread = review.thread.flatMap { snapshot?.thread($0) }
+    let quoted = (thread?.comments ?? []).suffix(2).map {
+        UntrustedText.bounded(source: UntrustedText.Source.reviewComment, author: $0.author.username, createdAt: $0.createdAt, text: $0.body, maxBytes: 4_096)
+    }
+    state.tasks[taskIndex].task.attachments.append(TaskAttachment(
+        attentionItemID: review.id, reason: review.reason, thread: review.thread, attachedAt: now.addingTimeInterval(-6 * 60),
+        headSHA: snapshot?.summary.headSHA, quoted: quoted, anchor: thread?.anchor
+    ))
+    state.attention[reviewIndex].linkedTaskID = state.tasks[taskIndex].id
+    state.attention[reviewIndex].isUnread = false
+}
+
+func showCITask(_ model: AppModel) {
+    model.screen = .tasks
+    let ci = model.state.attention.first { $0.providerKind == .github && $0.number == 42 && $0.reason == .ciFailed }
+    model.selectedTaskID = ci.flatMap { model.activeTask(for: $0)?.id }
+}
+
+/// Marks one approved pull request's approvals unseen, so its highlight shows.
+func forgetOneApproval(_ model: AppModel) {
+    if let approved = model.state.changeRequests.first(where: {
+        $0.summary.state == .open && $0.summary.involvement.contains(.authored) && !ApprovalDerivation.approvers($0).people.isEmpty
+    }) {
+        model.seenApprovals[approved.key.id] = []
+    }
+}
+
 func showTask(_ state: TaskState) -> (AppModel) -> Void {
     { model in
         model.screen = .tasks
         model.selectedTaskID = model.state.tasks.first { $0.task.state == state }?.id
     }
+}
+
+/// D48–D49 scenes, kept apart so the main array stays quick to type-check.
+func d48Scenes() -> [Scene] {
+    var list: [Scene] = []
+    list.append(
+        Scene(name: "window-inbox-tabs", size: windowSize, configure: { model in
+            model.screen = .inbox
+            model.detailTabsEnabled = true
+            for item in model.state.attention.filter({ $0.disposition == .open }).prefix(3) { model.selectedAttentionID = item.id }
+        }, kind: window)
+    )
+    list.append(
+        Scene(name: "window-sidebar-collapsed", size: windowSize, configure: { model in
+            model.screen = .inbox
+            model.sidebarCollapsed = true
+            model.detailTabsEnabled = false
+            model.selectedAttentionID = model.state.attention.first { $0.providerKind == .github && $0.number == 42 && $0.reason == .changesRequested }?.id
+        }, kind: window)
+    )
+    list.append(
+        Scene(name: "popover-pull-requests", configure: { $0.popoverTab = .pullRequests }, kind: popover),
+        // D49: a dragged split (wide Inbox detail) and the roomier card padding.
+    )
+    list.append(
+        Scene(name: "window-inbox-wide-detail", size: windowSize, configure: { model in
+            model.screen = .inbox
+            model.detailTabsEnabled = false
+            model.setSplitWidth("inbox", 760)
+            model.selectedAttentionID = model.state.attention.first { $0.providerKind == .github && $0.number == 42 && $0.reason == .changesRequested }?.id
+        }, kind: window)
+    )
+    // D50: a list dragged below what its content needs is held at its minimum; tabs off shows "Use tabs".
+    list.append(Scene(name: "window-prs-narrow-list", size: windowSize, configure: { model in
+        model.screen = .changeRequests
+        model.detailTabsEnabled = false
+        model.setSplitWidth("pullRequests", 120)
+        model.selectedChangeRequestID = model.state.changeRequests.first?.key.id
+    }, kind: window))
+    return list
+}
+
+/// D53 scenes: the Reviews screen with every lane open, and the prompt shown while reviews are not tracked.
+func d53Scenes() -> [Scene] {
+    var list: [Scene] = []
+    list.append(Scene(name: "window-reviews", size: windowSize, configure: { model in
+        model.screen = .reviews
+        model.collapsedReviewLanes = []
+        model.selectedChangeRequestID = model.state.changeRequests.first {
+            $0.summary.providerKind == .bitbucketCloud && $0.summary.key.number == 12
+        }?.id
+    }, kind: window))
+    list.append(Scene(name: "window-reviews-untracked", size: windowSize, configure: { model in
+        model.screen = .reviews
+    }, kind: window, prepare: { $0.trackingPreferences = .authoredOnly }))
+    // D54: the popover's Reviews tab, and its Inbox narrowed to your own PRs with the Mine chip.
+    list.append(Scene(name: "popover-reviews", configure: { $0.popoverTab = .reviews }, kind: popover))
+    list.append(Scene(name: "popover-inbox-mine", configure: { $0.inboxFilter.scope = .mine }, kind: popover))
+    // D56: the Inbox's Reviews filter shows the review lanes, in the popover and the window.
+    list.append(Scene(name: "popover-inbox-reviews", configure: { model in
+        model.inboxFilter.scope = .reviewing
+        model.collapsedReviewLanes = []
+    }, kind: popover))
+    // D59: Approve (writes off, so it opens the provider page with the outside glyph) in the Inbox detail and in
+    // the Reviews detail.
+    list.append(Scene(name: "window-inbox-approve", size: windowSize, configure: { model in
+        model.screen = .inbox
+        model.detailTabsEnabled = false
+        model.selectedAttentionID = model.state.attention.first { $0.reason == .reviewRequested && $0.providerKind == .github }?.id
+    }, kind: window))
+    list.append(Scene(name: "window-reviews-approve", size: windowSize, configure: { model in
+        model.screen = .reviews
+        model.detailTabsEnabled = false
+        model.collapsedReviewLanes = []
+        model.selectedChangeRequestID = model.state.changeRequests.first {
+            $0.summary.providerKind == .bitbucketCloud && $0.summary.key.number == 12
+        }?.id
+    }, kind: window))
+    list.append(Scene(name: "popover-ready", configure: { model in
+        model.collapsedPopoverSections = [.needsYou, .inProgress]
+    }, kind: popover))
+    list.append(Scene(name: "window-inbox-reviews", size: windowSize, configure: { model in
+        model.screen = .inbox
+        model.inboxFilter.scope = .reviewing
+        model.selectedChangeRequestID = model.inboxReviewQueue.changesRequested.first?.id
+    }, kind: window))
+    return list
+}
+
+/// D60: handoffs without MCP (one item, and a task covering several) and "Review with AI" in both modes.
+func d60Scenes() -> [Scene] {
+    let reviewRequested: (AppModel) -> ChangeRequestKey? = { model in
+        model.state.attention.first { $0.reason == .reviewRequested && $0.providerKind == .github }?.changeRequest
+    }
+    return [
+        Scene(name: "window-task-handoff-prompt", size: windowSize, configure: { model in
+            showTask(.waitingForAgent)(model)
+            model.agentPromptMode = .standalone
+        }, kind: window),
+        Scene(name: "window-task-merged-prompt", size: NSSize(width: windowSize.width, height: 1500), configure: { model in
+            showCITask(model)
+            model.agentPromptMode = .standalone
+        }, kind: window, prepare: attachReviewToCITask),
+        Scene(name: "window-review-handoff", size: windowSize, configure: { model in
+            model.agentPromptMode = .standalone
+            if let key = reviewRequested(model) { model.startReview(key) }
+        }, kind: window),
+        Scene(name: "window-review-handoff-mcp", size: windowSize, configure: { model in
+            model.agentPromptMode = .mcp
+            if let key = reviewRequested(model) { model.startReview(key, focus: .logic) }
+        }, kind: window),
+    ]
 }
 
 let scenes: [Scene] = [
@@ -104,6 +253,10 @@ let scenes: [Scene] = [
     }, kind: window),
     Scene(name: "2-menubar-popover", kind: popover),
     Scene(name: "3-agent-handoff", size: windowSize, configure: showTask(.waitingForAgent), kind: window),
+    Scene(name: "window-task-handoff-collapsed", size: windowSize, configure: { model in
+        showTask(.waitingForAgent)(model)
+        model.handoffCollapsed = true
+    }, kind: window),
     Scene(name: "4-result-review", size: windowSize, configure: showTask(.readyForReview), kind: window),
     Scene(name: "menubar-icon", kind: .menuBar),
 
@@ -120,6 +273,23 @@ let scenes: [Scene] = [
     Scene(name: "popover-empty", variant: .allCaughtUp, kind: popover),
     Scene(name: "popover-error", variant: .authExpired, kind: popover),
     Scene(name: "popover-onboarding", variant: .noAccounts, kind: popover),
+    // A new approval on one of your PRs (D47), in the Inbox and the popover.
+    Scene(name: "window-inbox-approval", size: windowSize, configure: { model in
+        model.screen = .inbox
+        forgetOneApproval(model)
+    }, kind: window),
+    Scene(name: "popover-approval", configure: forgetOneApproval, kind: popover),
+    // PR groups (D46): one collapsed in the Inbox and one in the popover.
+    Scene(name: "window-inbox-group-collapsed", size: windowSize, configure: { model in
+        model.screen = .inbox
+        if let item = model.state.attention.first(where: { $0.providerKind == .github && $0.number == 42 && $0.reason == .changesRequested }) {
+            model.toggleInboxGroup(item.changeRequest)
+        }
+        model.selectedAttentionID = model.state.attention.first { $0.providerKind == .bitbucketCloud && $0.reason == .reviewerQuestion }?.id
+    }, kind: window),
+    Scene(name: "popover-group-collapsed", configure: { model in
+        if let group = model.popoverGroups(.needsYou).first { model.togglePopoverGroup(group) }
+    }, kind: popover),
     Scene(name: "window-inbox-ci", size: windowSize, configure: { model in
         model.screen = .inbox
         model.selectedAttentionID = model.state.attention.first { $0.providerKind == .gitlab && $0.reason == .ciFailed }?.id
@@ -144,6 +314,13 @@ let scenes: [Scene] = [
         }?.id
     }, kind: window),
     Scene(name: "window-tasks", size: windowSize, configure: { $0.screen = .tasks }, kind: window),
+    Scene(name: "window-tasks-finished", size: windowSize, configure: { model in
+        model.screen = .tasks
+        model.showsFinishedTasks = true
+    }, kind: window),
+    Scene(name: "window-tasks-merged", size: windowSize, configure: { $0.screen = .tasks }, kind: window, prepare: attachReviewToCITask),
+    Scene(name: "window-task-merged", size: NSSize(width: windowSize.width, height: 1500), configure: showCITask, kind: window,
+          prepare: attachReviewToCITask),
     Scene(name: "window-task-working", size: windowSize, configure: showTask(.working), kind: window),
     Scene(name: "window-task-blocked", size: windowSize, configure: showTask(.blocked), kind: window),
     Scene(name: "window-task-stale", size: windowSize, configure: showTask(.stale), kind: window),
@@ -235,7 +412,7 @@ func writePNG(of view: NSView, to url: URL) -> Bool {
 
 /// Hosts a single view (sized to fit unless `size` is given) and writes its PNG.
 func renderView(_ view: AnyView, size: NSSize?, appearance: NSAppearance.Name, to url: URL) -> Bool {
-    let hosting = NSHostingView(rootView: view.environment(\.controlActiveState, .key))
+    let hosting = NSHostingView(rootView: view.environment(\.controlActiveState, .key).environment(\.glassEffectsEnabled, false))
     let window = SnapshotWindow(contentRect: NSRect(origin: NSPoint(x: -30_000, y: -30_000), size: size ?? NSSize(width: 404, height: 600)),
                                 styleMask: [.borderless], backing: .buffered, defer: false)
     window.appearance = NSAppearance(named: appearance)
@@ -254,7 +431,7 @@ func renderView(_ view: AnyView, size: NSSize?, appearance: NSAppearance.Name, t
 
 /// Renders `view` into a bitmap through a borderless offscreen window.
 func bitmap(of view: AnyView, size: NSSize, appearance: NSAppearance.Name) -> NSBitmapImageRep? {
-    let hosting = NSHostingView(rootView: view.environment(\.controlActiveState, .key))
+    let hosting = NSHostingView(rootView: view.environment(\.controlActiveState, .key).environment(\.glassEffectsEnabled, false))
     let window = SnapshotWindow(contentRect: NSRect(origin: NSPoint(x: -30_000, y: -30_000), size: size),
                                 styleMask: [.borderless], backing: .buffered, defer: false)
     window.appearance = NSAppearance(named: appearance)
@@ -411,7 +588,7 @@ func renderEngineDemo() -> [String] {
         return []
     }
     defer { _ = runBlocking { await backend.shutdown() } }
-    let engineScenes: [EngineScene] = [
+    var engineScenes: [EngineScene] = [
         EngineScene(name: "engine-demo-inbox", size: windowSize, configure: { model in
             model.screen = .inbox
             model.selectedAttentionID = model.state.attention.first { $0.providerKind == .github && $0.number == 42 }?.id
@@ -445,6 +622,23 @@ func renderEngineDemo() -> [String] {
             AnyView(MergeCuePreview.connectAccountSheet(model: model, kind: .github).background(Color(nsColor: .windowBackgroundColor)))
         }),
     ]
+    // Bitbucket sends no diff hunk: the code under a comment comes from the pull request diff.
+    let bitbucketPR: String? = state.changeRequests
+        .first(where: { (snapshot: ChangeRequestSnapshot) -> Bool in snapshot.summary.providerKind == .bitbucketCloud && snapshot.key.number == 42 })?
+        .id
+    let bitbucketConversationItem: String? = state.attention
+        .first(where: { (item: AttentionItem) -> Bool in item.providerKind == .bitbucketCloud && item.thread?.kind == .conversation })?
+        .id
+    let bitbucketDetail = EngineScene(name: "engine-demo-bitbucket-code-context", size: NSSize(width: 1360, height: 2400), configure: { model in
+        model.screen = .changeRequests
+        model.selectedChangeRequestID = bitbucketPR
+    })
+    // Top-level comments of one pull request read as one conversation.
+    let bitbucketConversation = EngineScene(name: "engine-demo-bitbucket-conversation", size: windowSize, configure: { model in
+        model.screen = .inbox
+        model.selectedAttentionID = bitbucketConversationItem
+    })
+    engineScenes += [bitbucketDetail, bitbucketConversation]
     var names: [String] = []
     let now = Date()
     for scene in engineScenes where filter.map({ scene.name.contains($0) }) ?? true {
@@ -470,9 +664,18 @@ if !arguments.contains("--no-engine-demo"), filter.map({ $0.hasPrefix("engine") 
     written += renderEngineDemo()
 }
 
-for scene in scenes where filter.map({ !$0.hasPrefix("engine") && scene.name.contains($0) }) ?? true {
+for scene in scenes + d48Scenes() + d53Scenes() + d60Scenes() where filter.map({ !$0.hasPrefix("engine") && scene.name.contains($0) }) ?? true {
     for (suffix, appearance) in [("dark", NSAppearance.Name.darkAqua), ("light", NSAppearance.Name.aqua)] {
-        let model = MergeCuePreview.makeModel(variant: scene.variant, now: now)
+        let model: AppModel
+        if let prepare = scene.prepare {
+            var state = MergeCuePreview.makeState(variant: scene.variant, now: now)
+            prepare(&state)
+            model = AppModel(backend: MergeCuePreview.makeBackend(variant: scene.variant, now: now), initialState: state,
+                             environment: .fixed(now: now, userFullName: NSFullUserName()))
+            for (id, excerpt) in PreviewBackend.logExcerpts(now: now) { model.seedLogExcerpt(excerpt, checkID: id) }
+        } else {
+            model = MergeCuePreview.makeModel(variant: scene.variant, now: now)
+        }
         scene.configure(model)
         let url = outputDirectory.appending(path: "\(scene.name)-\(suffix).png")
         let ok = switch scene.kind {

@@ -36,45 +36,41 @@ struct SyncResilienceTests {
         let ok = try await status(coordinator, F.github)
         #expect(ok.state == .ok)
         #expect(ok.lastSuccessAt == F.start)
-        #expect(ok.nextRunAt == F.at(90))
+        #expect(ok.nextRunAt == F.at(900), "the next cycle, 15 min later")
         let expired = try await status(coordinator, F.gitlab)
         #expect(expired.state == .authExpired)
         #expect(expired.nextRunAt == nil)
         #expect(expired.consecutiveFailures == 1)
         #expect(expired.message?.contains("Reconnect") == true)
         let limited = try await status(coordinator, F.bitbucket)
-        #expect(limited.state == .rateLimited(until: F.at(600)))
-        #expect(limited.nextRunAt == F.at(600))
+        #expect(limited.state == .rateLimited(until: F.at(900)), "a 10-minute Retry-After still waits one interval")
+        #expect(limited.nextRunAt == F.at(900))
         let offline = try await status(coordinator, Self.second)
         #expect(offline.state == .offline)
-        #expect(offline.nextRunAt == F.at(30))
+        #expect(offline.nextRunAt == F.at(900), "retries never come sooner than the interval")
 
         // GitHub keeps syncing while the others are down.
         let key = F.crKey(F.github)
         let thread = F.threadKey(key)
         h.remote(F.github).update(key) { $0 = $0.touched(60); $0.threads = [F.thread(thread, comments: [F.comment("c1", at: 60)])] }
-        await h.advance(90, sleepers: 3)
+        h.remote(F.bitbucket).listError = nil
+        await h.advance(900, sleepers: 3)
         #expect(h.notifier.delivered.map(\.changeRequest) == [key])
         #expect(h.remote(F.gitlab).listCalls == 2, "one cycle (two listings), no retries after 401")
         let stillOffline = try await status(coordinator, Self.second)
         #expect(stillOffline.consecutiveFailures == 2)
-        #expect(stillOffline.nextRunAt == F.at(150), "backoff doubled to 60 s")
-        #expect(try await status(coordinator, F.bitbucket).consecutiveFailures == 1)
+        #expect(stillOffline.nextRunAt == F.at(900 + 1_800), "backoff doubled to 30 min")
+        #expect(try await status(coordinator, F.bitbucket).state == .ok, "the rate limit passed at its retry time")
 
-        // Wake: offline account retries, the rate-limited one waits for its reset, auth stays stopped.
-        let bitbucketCalls = h.remote(F.bitbucket).listCalls
+        // Wake: nothing is retried before its time; auth stays stopped.
+        let offlineCalls = h.remote(Self.second).listCalls
         h.remote(Self.second).listError = nil
         await coordinator.handleSystemWake()
+        #expect(h.remote(Self.second).listCalls == offlineCalls)
+        #expect(h.remote(F.gitlab).listCalls == 2)
+        await h.advance(1_800, sleepers: 3)
         #expect(try await status(coordinator, Self.second).state == .ok)
         #expect(try await status(coordinator, Self.second).consecutiveFailures == 0)
-        #expect(h.remote(F.bitbucket).listCalls == bitbucketCalls)
-        #expect(h.remote(F.gitlab).listCalls == 2)
-
-        // Rate limit reset passes.
-        h.remote(F.bitbucket).listError = nil
-        await h.clock.waitForSleepers(count: 3)
-        await h.advance(520, sleepers: 3)
-        #expect(try await status(coordinator, F.bitbucket).state == .ok)
 
         // Reconnecting the expired account restarts it immediately.
         h.remote(F.gitlab).listError = nil
@@ -88,7 +84,7 @@ struct SyncResilienceTests {
         await coordinator.stop()
     }
 
-    @Test func networkRecoveryRefreshesAccounts() async throws {
+    @Test func networkRecoveryWaitsForTheNextCycle() async throws {
         let h = try await SyncHarness()
         h.remote().put(F.snapshot(F.crKey()))
         h.remote().listError = .offline
@@ -101,8 +97,10 @@ struct SyncResilienceTests {
         continuation.yield(false)
         h.remote().listError = nil
         continuation.yield(true)
-        let recovered = await eventually { (try? await status(coordinator, F.github).state) == .ok }
-        #expect(recovered)
+        for _ in 0..<2_000 { await Task.yield() }
+        #expect(h.remote().listCalls == 2, "back online within the interval: no request yet")
+        await h.advance(900)
+        #expect(try await status(coordinator, F.github).state == .ok)
         continuation.finish()
         await coordinator.stop()
     }
@@ -115,18 +113,18 @@ struct SyncResilienceTests {
         await h.start(coordinator)
         var current = try await status(coordinator, F.github)
         #expect(current.state == .error(ProviderError.server(status: 502, message: "Bad gateway").errorDescription ?? ""))
-        #expect(current.nextRunAt == F.at(30))
-        await h.advance(30)
+        #expect(current.nextRunAt == F.at(900))
+        await h.advance(900)
         current = try await status(coordinator, F.github)
         #expect(current.consecutiveFailures == 2)
-        #expect(current.nextRunAt == F.at(90))
+        #expect(current.nextRunAt == F.at(900 + 1_800))
         h.remote().listError = nil
-        await h.advance(60)
+        await h.advance(1_800)
         current = try await status(coordinator, F.github)
         #expect(current.state == .ok)
         #expect(current.consecutiveFailures == 0)
-        #expect(current.lastSuccessAt == F.at(90))
-        #expect(current.nextRunAt == F.at(180))
+        #expect(current.lastSuccessAt == F.at(2_700))
+        #expect(current.nextRunAt == F.at(2_700 + 900))
         await coordinator.stop()
     }
 
@@ -160,17 +158,29 @@ struct SyncResilienceTests {
         #expect(try await status(coordinator, F.github).state == .ok)
         #expect(try await h.database.snapshot(good) != nil)
         #expect(try await h.database.snapshot(hidden) == nil)
-        // Retried next cycle (its list version was not recorded).
+        let failure = try #require(try await status(coordinator, F.github).changeRequestErrors.first)
+        #expect(failure.changeRequest == hidden)
+        #expect(failure.code == "forbidden")
+        #expect(failure.isTerminal)
+        #expect(failure.nextRetryAt == nil)
+        // Terminal: not retried by detail cycles or unchanged lists…
         h.remote().setHydrateError(nil, for: hidden)
         await h.advance(90)
+        await h.advance(900)
+        #expect(h.remote().hydrateCalls(hidden) == 1)
+        #expect(try await h.database.snapshot(hidden) == nil)
+        // …until a manual refresh.
+        await coordinator.refresh(account: F.github)
         #expect(try await h.database.snapshot(hidden) != nil)
+        #expect(try await status(coordinator, F.github).changeRequestErrors.isEmpty)
         await coordinator.stop()
     }
 
     @Test func hydrationIsBoundedAndOnlyForChangedChangeRequests() async throws {
         let h = try await SyncHarness()
         let keys = (1...10).map { F.crKey(number: $0) }
-        for key in keys { h.remote().put(F.snapshot(key)) }
+        // Quiet for a day: idle, every second cycle.
+        for key in keys { h.remote().put(F.snapshot(key, updatedAt: F.at(-86_400))) }
         var configuration = SyncConfiguration.deterministic
         configuration.hydrateConcurrency = 2
         let coordinator = await h.makeCoordinator(configuration: configuration)
@@ -180,19 +190,21 @@ struct SyncResilienceTests {
         #expect(try await h.database.snapshots(account: F.github).count == 10)
 
         await h.advance(90)
-        #expect(h.remote().totalHydrateCalls == 10, "unchanged listings are not re-hydrated")
+        #expect(h.remote().totalHydrateCalls == 10, "nothing between cycles")
         h.remote().update(keys[3]) { $0 = $0.touched(100) }
-        await h.advance(90)
-        #expect(h.remote().totalHydrateCalls == 11)
+        await h.advance(810)
+        #expect(h.remote().listCalls == 4)
+        #expect(h.remote().totalHydrateCalls == 11, "only the CR whose list version changed")
         #expect(h.remote().hydrateCalls(keys[3]) == 2)
-        await h.advance(600)
-        #expect(h.remote().totalHydrateCalls == 21, "stale snapshots are refreshed after fullRefreshInterval")
+        await h.advance(900)
+        #expect(h.remote().totalHydrateCalls == 21, "idle CRs every second cycle (30 min), the changed one every cycle")
+        #expect(h.remote().maxInFlightHydrations <= 2)
         await coordinator.stop()
     }
 
     @Test func disabledAccountsArePaused() async throws {
         let h = try await SyncHarness(accounts: [F.github, F.gitlab])
-        var configuration = SyncConfiguration.deterministic
+        var configuration = SyncHarness.fastRecentTier
         configuration.disabledAccounts = [F.gitlab]
         let coordinator = await h.makeCoordinator(configuration: configuration)
         await h.start(coordinator, sleepers: 1)
@@ -238,17 +250,5 @@ struct SyncResilienceTests {
         await h.advance(90, sleepers: 1)
         #expect(h.remote(F.gitlab).listCalls == calls)
         await coordinator.stop()
-    }
-
-    @Test func hotAccountsPollFaster() async throws {
-        let h = try await SyncHarness()
-        let coordinator = await h.makeCoordinator()
-        await h.start(coordinator)
-        #expect(try await status(coordinator, F.github).nextRunAt == F.at(90))
-        await coordinator.setHot(until: F.at(10_000))
-        await h.advance(90)
-        #expect(try await status(coordinator, F.github).nextRunAt == F.at(135))
-        await coordinator.stop()
-        #expect(try await status(coordinator, F.github).nextRunAt == nil)
     }
 }

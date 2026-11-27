@@ -90,4 +90,26 @@ extension GitLabProvider {
             }
         }
     }
+
+    /// `POST /projects/:id/merge_requests/:iid/approve` with `{"sha": expectedHeadSHA}` (D59). GitLab answers `409`
+    /// when the head moved (→ `.conflict`, nothing approved) and `401` when the user may not approve, e.g. they are
+    /// the author or not an eligible approver (→ `.forbidden`, not a credential failure).
+    public func approve(_ changeRequest: ChangeRequestKey, expectedHeadSHA: String) async throws {
+        let sha = expectedHeadSHA.trimmingCharacters(in: .whitespaces)
+        guard !sha.isEmpty else {
+            throw ProviderError.invalidRequest("Approving needs the head commit you reviewed.")
+        }
+        do {
+            _ = try await api.send("POST", GitLabAPI.mergeRequest(changeRequest) + "/approve", json: GLMergeBody(sha: sha))
+        } catch let error as ProviderError {
+            switch error {
+            case .unauthorized:
+                throw ProviderError.forbidden(missingScope: nil, message: "GitLab refused the approval: you may not approve this merge request.")
+            case .conflict:
+                throw ProviderError.conflict("The merge request changed since you looked at it. Refresh and review the new commits.")
+            default:
+                throw error
+            }
+        }
+    }
 }

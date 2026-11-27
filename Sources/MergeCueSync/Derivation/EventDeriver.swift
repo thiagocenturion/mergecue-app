@@ -21,6 +21,8 @@ import MergeCueCore
 /// - `head_changed`: the head SHA moved (`nativeRefs["force_push"]` is "true" when the old head is no longer part
 ///   of the commit list; `nativeRefs["outdated_threads"]` counts threads whose anchor became outdated).
 /// - `merged` / `closed_without_merge`: the state left `open`.
+/// - `approval_reset`: the user's approval of someone else's CR was lost after the head moved
+///   (`ChangeRequestSnapshot.viewerReview`, maintained by Sync with `ViewerReview.nextMemory`; D53).
 /// - `review_requested`: the current user's review is newly requested. `ready_to_merge`: readiness became
 ///   `readyToMerge` on an open CR.
 /// - With `previous == nil` (baseline or a newly seen CR) the current content is reported: every comment, current
@@ -57,6 +59,7 @@ public enum EventDeriver {
         events += stateEvents(previous: previous, builder: builder)
         events += headEvents(previous: previous, builder: builder)
         events += reviewRequestEvents(previous: previous, builder: builder)
+        events += approvalResetEvents(previous: previous, builder: builder)
         events += commentEvents(previous: previous, builder: builder)
         events += resolutionEvents(previous: previous, builder: builder)
         events += reviewEvents(previous: previous, builder: builder)
@@ -73,6 +76,8 @@ public enum EventDeriver {
     public static let stateObjectID = "state"
     /// `objectID` of the review-requested event.
     public static let reviewRequestObjectID = "involvement/review_requested"
+    /// `objectID` of approval-reset events.
+    public static let approvalResetObjectID = "viewer/approval_reset"
     /// `objectID` of ready-to-merge events.
     public static let readinessObjectID = "readiness"
 
@@ -167,6 +172,22 @@ public enum EventDeriver {
             occurredAt: current.summary.updatedAt,
             actor: author,
             summary: "\(author.displayLabel) requested your review",
+            forceNotOwn: true
+        )]
+    }
+
+    private static func approvalResetEvents(previous: ChangeRequestSnapshot?, builder: Builder) -> [ChangeEvent] {
+        let current = builder.current
+        guard current.summary.state == .open, let lostAt = current.viewerReview?.lostApprovalAt,
+              previous?.viewerReview?.lostApprovalAt != lostAt else { return [] }
+        let head = current.viewerReview?.lostApprovalHeadSHA ?? current.summary.headSHA ?? "-"
+        return [builder.make(
+            type: .approvalReset,
+            objectID: approvalResetObjectID,
+            version: head,
+            occurredAt: current.summary.updatedAt,
+            summary: "Your approval was reset by new commits (\(short(head)))",
+            nativeRefs: ["head": head],
             forceNotOwn: true
         )]
     }

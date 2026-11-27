@@ -77,15 +77,28 @@ extension BitbucketCloudProvider {
         return Int(contentRange[contentRange.index(after: slash)...].trimmingCharacters(in: .whitespaces))
     }
 
-    /// Unified diff of the pull request (`…/pullrequests/{id}/diff`, which redirects to the repository diff on the
-    /// same host), bounded to `maxBytes`, with the diffstat file list.
+    /// Unified diff of the pull request, bounded to `maxBytes`, with the diffstat file list. Same-repository pull
+    /// requests read the repository's three-dot diff directly (`/diff/{src}..{dst}?topic=true`, `/diffstat/…`);
+    /// the pull request endpoints answer with a redirect to exactly that (one more request each). Forks keep the
+    /// pull request endpoints.
     public func diff(for changeRequest: ChangeRequestKey, maxBytes: Int) async throws -> DiffPayload {
         let (path, pr) = try await fetchPullRequest(changeRequest)
         let mapper = try await mapper()
         let prPath = path.pullRequestPath(pr.id)
-        let response = try await client.get("\(prPath)/diff", headers: ["Accept": "text/plain"])
+        let isFork = mapper.sourceRepository(pr)?.isFork ?? false
+        let diffPath: String
+        let statsPath: String
+        var topic: [URLQueryItem] = []
+        if !isFork, let src = pr.source?.commit?.hash, let dst = pr.destination?.commit?.hash {
+            let spec = BitbucketIdentifiers.segment("\(src)..\(dst)")
+            (diffPath, statsPath) = ("\(path.apiPath)/diff/\(spec)", "\(path.apiPath)/diffstat/\(spec)")
+            topic = [URLQueryItem(name: "topic", value: "true")]
+        } else {
+            (diffPath, statsPath) = ("\(prPath)/diff", "\(prPath)/diffstat")
+        }
+        let response = try await client.get(diffPath, query: topic, headers: ["Accept": "text/plain"])
         let bounded = BoundedText.truncate(response.bodyText, maxBytes: max(0, maxBytes))
-        let stats: [BBDiffStat] = try await collect("\(prPath)/diffstat", query: pageSize(500), limit: limits.maxFiles)
+        let stats: [BBDiffStat] = try await collect(statsPath, query: topic + pageSize(500), limit: limits.maxFiles)
         return DiffPayload(
             unifiedDiff: bounded.text,
             files: stats.compactMap(mapper.changedFile),
@@ -136,7 +149,23 @@ extension BitbucketCloudProvider {
         _ = try await client.send("POST", "\(prPath)/request-changes")
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        // Atlassian asks for writes to be spaced out: never two POSTs back to back.
+        try await clock.sleep(for: 1)
         _ = try await client.send("POST", "\(prPath)/comments", json: BBCommentBody(content: .init(raw: body), parent: nil))
+    }
+
+    /// `POST …/approve` (D59). Bitbucket takes no expected head, so the head is re-read right before and a moved head
+    /// (or a pull request that is no longer open) throws `conflict` without approving.
+    public func approve(_ changeRequest: ChangeRequestKey, expectedHeadSHA: String) async throws {
+        let (path, pr) = try await fetchPullRequest(changeRequest)
+        let head = try await mapper().headInfo(pr)
+        guard head.state == .open else {
+            throw ProviderError.conflict("The pull request is \(head.state.rawValue), not open.")
+        }
+        guard BitbucketIdentifiers.sameCommit(head.headSHA, expectedHeadSHA) else {
+            throw ProviderError.conflict("The pull request changed since you looked at it. Refresh and review the new commits.")
+        }
+        _ = try await client.send("POST", "\(path.pullRequestPath(pr.id))/approve")
     }
 
     /// Merges with the repository's default strategy (`POST …/merge`).
@@ -156,6 +185,14 @@ extension BitbucketCloudProvider {
         guard BitbucketIdentifiers.sameCommit(head.headSHA, expectedHeadSHA) else {
             throw ProviderError.conflict("The pull request head changed since it was reviewed.")
         }
-        _ = try await client.send("POST", "\(path.pullRequestPath(pr.id))/merge")
+        let response = try await client.send("POST", "\(path.pullRequestPath(pr.id))/merge")
+        guard response.status == 202 else { return }
+        // 202: Bitbucket merges asynchronously. Confirm the merge landed before reporting success.
+        for _ in 0..<5 {
+            try await clock.sleep(for: 2)
+            let (_, current) = try await fetchPullRequest(changeRequest)
+            if BitbucketMapper.state(current.state) == .merged { return }
+        }
+        throw ProviderError.conflict("Bitbucket accepted the merge and is still processing it. Check the pull request on Bitbucket.")
     }
 }

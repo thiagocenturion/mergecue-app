@@ -276,7 +276,7 @@ public struct TaskHandoff: Sendable, Hashable {
     public var workingDirectory: String?
     public var checkoutPolicy: CheckoutPolicy?
     public var blockedReason: String?
-    /// "Task ready to start" until a real `claim_task` arrives, never "AI working".
+    /// "Task ready to start" until a real `claim_task` arrives, never "In progress".
     public var statusText: String
     /// The task's handoff code (already embedded in `command`); nil for tasks created before codes existed.
     public var handoffCode: String?

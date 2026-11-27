@@ -51,7 +51,11 @@ struct WriteAndDetailTests {
 
     @Test func requestChangesPostsTheVerdictThenTheExplanation() async throws {
         let harness = try await primed()
-        try await harness.provider.requestChanges(on: Fx.prKey(42), body: "Please propagate the gateway error.")
+        let posting = Task { try await harness.provider.requestChanges(on: Fx.prKey(42), body: "Please propagate the gateway error.") }
+        // The comment waits one second after the verdict (writes are spaced out).
+        await harness.clock.waitForSleepers(count: 1)
+        harness.clock.advance(by: 1)
+        try await posting.value
         let writes = harness.transport.requests.filter { $0.method == "POST" }
         #expect(writes.map { $0.url.lastPathComponent } == ["request-changes", "comments"])
         #expect(writes.first?.body == nil)
@@ -78,6 +82,20 @@ struct WriteAndDetailTests {
             try await harness.provider.merge(Fx.prKey(42), expectedHeadSHA: "0000000000000000000000000000000000000000")
         }
         #expect(harness.requests("POST", containing: "/merge").isEmpty)
+    }
+
+    /// D59: Bitbucket's approve takes no head, so the head is re-read first and a moved head approves nothing.
+    @Test func approveRechecksTheHeadImmediatelyBefore() async throws {
+        let harness = try await primed(step: 2)
+        try await harness.provider.approve(Fx.prKey(42), expectedHeadSHA: BitbucketFixtures.IDs.head42)
+        let methods = harness.transport.requests.map { "\($0.method) \($0.url.lastPathComponent)" }
+        #expect(methods == ["GET 42", "POST approve"])
+
+        let moved = try await primed()
+        await #expect(throws: ProviderError.self) {
+            try await moved.provider.approve(Fx.prKey(42), expectedHeadSHA: "0000000000000000000000000000000000000000")
+        }
+        #expect(moved.requests("POST", containing: "/approve").isEmpty)
     }
 
     @Test func mergeConflictFromBitbucketIsReported() async throws {

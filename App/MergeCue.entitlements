@@ -2,9 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   MergeCue is deliberately NOT sandboxed (DECISIONS.md D6): it inspects user checkouts, creates git worktrees,
-  launches agents and serves a private Unix socket. Hardened Runtime is enabled in project.yml and needs no
-  exceptions. Debug builds get com.apple.security.get-task-allow injected by Xcode.
+  launches agents and serves a private Unix socket. Hardened Runtime is enabled in project.yml; its only resource
+  entitlement is read access to calendars, used when the owner switches on "Pause on holidays" (all-day events of
+  the chosen calendars pause automatic sync). Debug builds get com.apple.security.get-task-allow injected by Xcode.
 -->
 <plist version="1.0">
-<dict/>
+<dict>
+	<key>com.apple.security.personal-information.calendars</key>
+	<true/>
+</dict>
 </plist>

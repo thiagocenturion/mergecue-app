@@ -274,7 +274,7 @@ public final class MergeCueAppDelegate: NSObject, NSApplicationDelegate, UNUserN
     }
 }
 
-/// The main menu: app menu, Edit (text editing in fields), View (⌘1–⌘5, ⌘R) and Window.
+/// The main menu: app menu, Edit (text editing in fields), View (⌘1–⌘6, ⌘R) and Window.
 enum MainMenuBuilder {
     static func makeMenu(model: AppModel) -> NSMenu {
         let main = NSMenu()

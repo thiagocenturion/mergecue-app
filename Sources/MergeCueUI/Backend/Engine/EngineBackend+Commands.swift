@@ -33,10 +33,16 @@ extension EngineBackend {
             try await engine.dismissAttention(id)
             return AppCommandResult(message: "Dismissed")
 
+        // MARK: Reviews
+        case .approveChangeRequest(let key):
+            try await engine.approveChangeRequest(key)
+            let demo = mode == .demo ? " (demo fixture, nothing reached a real provider)" : ""
+            return AppCommandResult(message: "Approved \(key.kind.formattedNumber(key.number)) on \(key.kind.displayName)\(demo)", tone: .success)
+
         // MARK: Tasks
         case .createTask(let attentionID, let type):
             let task = try await engine.createTask(fromAttention: attentionID, type: type)
-            return AppCommandResult(message: "Task \(task.id) created — task ready to start, awaiting agent connection",
+            return AppCommandResult(message: "Task \(task.id) created. Ready to start, awaiting an agent.",
                                     createdTaskID: task.id)
         case .cancelTask(let id):
             _ = try await engine.cancelTask(id)
@@ -53,12 +59,24 @@ extension EngineBackend {
         case .unblockTask(let id):
             _ = try await engine.unblockTask(id)
             return AppCommandResult(message: "Task \(id) unblocked")
+        case .attachToTask(let id, let attentionIDs):
+            let task = try await engine.attachToTask(id, attentionIDs: attentionIDs)
+            return AppCommandResult(message: "Added to task \(task.id). It now covers \(task.coveredAttentionIDs.count) items.")
+        case .detachFromTask(let id, let attentionID):
+            _ = try await engine.detachFromTask(id, attentionID: attentionID)
+            return AppCommandResult(message: "Removed from task \(id)")
+        case .mergeTask(let source, let target):
+            let task = try await engine.mergeTask(source, into: target)
+            return AppCommandResult(message: "Task \(source) merged into \(task.id)")
         case .markTaskDone(let id):
             _ = try await engine.markTaskDone(id)
-            return AppCommandResult(message: "Task \(id) marked done (nothing was written anywhere)")
+            return AppCommandResult(message: "Task \(id) marked done (nothing was written anywhere)", tone: .success)
+        case .startTaskManually(let id):
+            _ = try await engine.startTaskManually(id)
+            return AppCommandResult(message: "Task \(id) is in progress")
         case .rejectResult(let id, let note):
             _ = try await engine.rejectResult(id, note: note)
-            return AppCommandResult(message: "Result discarded — task \(id) is ready to start again")
+            return AppCommandResult(message: "Result discarded. Task \(id) is ready to start again.")
 
         // MARK: Review gate
         case .requestActionPreview(let id, let kind):
@@ -69,7 +87,7 @@ extension EngineBackend {
             return Self.result(of: outcome, action: preview.action, simulated: preview.isSimulated)
         case .declinePreview(let preview):
             try await engine.declinePreview(previewID: preview.id, approval: PreviewApproval(fingerprint: preview.fingerprint))
-            return AppCommandResult(message: "Declined — nothing was written")
+            return AppCommandResult(message: "Declined. Nothing was written.")
 
         // MARK: Sync and notifications
         case .refresh(let account):
@@ -110,23 +128,42 @@ extension EngineBackend {
         // MARK: Accounts
         case .connectAccount(let request):
             let account = try await connect(request)
-            let demoNote = mode == .demo ? " (demo — fixture account, nothing left this Mac)" : ""
+            let demoNote = mode == .demo ? " (demo fixture account, nothing left this Mac)" : ""
             return AppCommandResult(message: "Connected \(account.kind.displayName) · \(account.displayLabel). Remote writes stay off until you turn them on.\(demoNote)",
                                     tone: .success)
         case .disconnectAccount(let key):
             try await engine.disconnectAccount(key)
-            return AppCommandResult(message: "Disconnected \(key.kind.displayName). The token was removed from your Keychain — revoke it on \(key.kind.displayName) too if you no longer need it.")
+            return AppCommandResult(message: "Disconnected \(key.kind.displayName). The token was removed from your Keychain. Revoke it on \(key.kind.displayName) too if you no longer need it.")
         case .setWritesEnabled(let key, let enabled):
             try await engine.setWritesEnabled(key, enabled)
             return AppCommandResult(message: enabled
                 ? "Remote writes on for \(key.kind.displayName). Every reply or resolve still needs your approval of an exact preview."
                 : "Remote writes off for \(key.kind.displayName)")
 
+        case .setWatchedRepositories(let key, let repos):
+            try await engine.setWatchedRepositories(key, repos)
+            let message: String
+            if let repos {
+                message = repos.isEmpty
+                    ? "Syncing every repository of this account"
+                    : "Syncing \(repos.count) repositor\(repos.count == 1 ? "y" : "ies") of this account"
+            } else {
+                message = "Syncing the repositories you mapped"
+            }
+            return AppCommandResult(message: message)
+        case .setRefreshInterval(let key, let interval):
+            try await engine.setRefreshInterval(key, interval)
+            return AppCommandResult(message: interval.isManual
+                ? "\(key.kind.displayName) checks for updates only when you refresh"
+                : "\(key.kind.displayName) checks for updates \(interval.displayName.lowercased())")
+
         // MARK: Mappings
         case .addMapping(let repo, let path, let checkoutPath):
             let mapping = try await engine.addMapping(repo: repo, repoFullPath: path, checkoutPath: checkoutPath)
-            let confirmation = mapping.isConfirmed ? "confirmed (exact remote match)" : "\(mapping.confidence.rawValue) match — confirm it to use it"
+            let confirmation = mapping.isConfirmed ? "confirmed (exact remote match)" : "\(mapping.confidence.rawValue) match, confirm it to use it"
             return AppCommandResult(message: "Mapped \(path) to \(UIFormat.abbreviatedPath(checkoutPath)): \(confirmation)")
+        case .mapCheckoutFolder(let repo, let path, let checkoutPath, let mapAnyway):
+            return try await mapCheckoutFolder(repo: repo, repoFullPath: path, checkoutPath: checkoutPath, mapAnyway: mapAnyway)
         case .confirmMapping(let id):
             _ = try await engine.confirmMapping(id: id)
             return AppCommandResult(message: "Mapping confirmed")
@@ -142,26 +179,49 @@ extension EngineBackend {
             return .none
         case .scanCheckouts(let repos):
             return startCheckoutScan(repos) ? .none : AppCommandResult(message: "A checkout search is already running.")
+        case .cancelCheckoutScan:
+            return cancelCheckoutScan() ? .none : AppCommandResult(message: "No checkout search is running.")
+        case .setCheckoutSearchFolders(let folders):
+            let saved = try await engine.setCheckoutSearchFolders(folders)
+            return AppCommandResult(message: folders == nil
+                ? "Search folders reset to the defaults (\(saved.count))"
+                : "Search folders saved (\(saved.count))")
 
         // MARK: Handoff and links
         case .copyHandoffCommand(let id, let agent):
             let handoff = try await engine.handoff(for: id)
             try await engine.recordHandoffCopied(id, agentName: agent?.displayName)
             let target = agent?.displayName ?? "your agent"
-            return AppCommandResult(message: "Command copied — paste it into \(target). The task stays “\(handoff.statusText)” until the agent claims it.",
+            return AppCommandResult(message: "Command copied. Paste it into \(target). The task stays “\(handoff.statusText)” until the agent claims it.",
                                     handoffCommand: handoff.command)
-        case .openInAgent(let id, let kind):
+        case .openInAgent(let id, let kind, let directory):
+            // The agent starts in the repository's own folder (D61); MergeCue MCP hands it the task.
             let agent = try detected(kind)
             let handoff = try await engine.handoff(for: id)
-            _ = try await runtime.openInAgent(taskID: id, agent: agent)
-            let place = handoff.workingDirectory.map(UIFormat.abbreviatedPath) ?? "the task checkout"
-            return AppCommandResult(message: "Opened \(kind.displayName) in a new Terminal window at \(place). The task stays “Task ready to start” until the agent claims it.",
+            let prompt = HandoffCommandBuilder.prompt(for: id, handoffCode: handoff.handoffCode)
+            _ = try await runtime.openPromptInAgent(agent: agent, label: id.rawValue, directory: directory, prompt: prompt)
+            try await engine.recordHandoffCopied(id, agentName: kind.displayName)
+            return AppCommandResult(message: "Opened \(kind.displayName) in a new Terminal window at \(UIFormat.abbreviatedPath(directory)). "
+                                        + "The task stays “\(handoff.statusText)” until the agent claims it.",
+                                    tone: .success)
+        case .openPromptInAgent(let id, let kind, let directory, let prompt):
+            _ = try await runtime.openPromptInAgent(agent: try detected(kind), label: id.rawValue, directory: directory, prompt: prompt)
+            return AppCommandResult(message: "Opened \(kind.displayName) in a new Terminal window at \(UIFormat.abbreviatedPath(directory)). "
+                                        + "Without MCP the task doesn't track the agent: mark it done when it's finished.",
+                                    tone: .success)
+        case .openReviewInAgent(let key, let kind, let directory, let prompt):
+            _ = try await runtime.openPromptInAgent(agent: try detected(kind), label: "review-" + key.shortID.lowercased(),
+                                                    directory: directory, prompt: prompt)
+            return AppCommandResult(message: "Opened \(kind.displayName) in a new Terminal window at \(UIFormat.abbreviatedPath(directory)) "
+                                        + "to review \(key.kind.formattedNumber(key.number)).",
                                     tone: .success)
         case .loadCheckLog(let check):
             return AppCommandResult(logExcerpt: try await engine.loadCheckLog(check))
+        case .loadDiff(let key):
+            return AppCommandResult(diff: try await engine.loadDiff(key))
         case .openURL(let url):
             if mode == .demo, Self.isFixtureLink(url) {
-                return AppCommandResult(message: "Demo data — \(url.host() ?? "this link") has no such repository, so the link wasn't opened.")
+                return AppCommandResult(message: "Demo data: \(url.host() ?? "this link") has no such repository, so the link wasn't opened.")
             }
             return AppCommandResult(urlToOpen: url)
 
@@ -198,6 +258,13 @@ extension EngineBackend {
                 ? "Notifications allowed. One grouped notification per PR/MR."
                 : "Notifications are off. You can allow them later in System Settings › Notifications › MergeCue.",
                                     tone: granted ? .success : .attention)
+        case .sendTestNotification:
+            if let problem = await options.sendTestNotification() {
+                return AppCommandResult(message: "The test notification wasn't shown. \(problem)", tone: .attention)
+            }
+            return AppCommandResult(message: "Sent a macOS notification. Its banner comes from macOS at the top right of the screen. "
+                + "If none appeared, a Focus mode (such as Do Not Disturb) is on and the notification is waiting in Notification Center.",
+                                    tone: .success)
         case .exportDatabase(let url):
             try await engine.exportDatabase(to: MergeCuePaths.fileSystemPath(url))
             return AppCommandResult(message: "Database exported to \(UIFormat.abbreviatedPath(MergeCuePaths.fileSystemPath(url))) (no credentials inside)",
@@ -227,7 +294,7 @@ extension EngineBackend {
             if request.method == .bitbucketAPIToken {
                 let email = (request.email ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 guard email.contains("@") else {
-                    throw AppBackendError.invalidInput("Atlassian API tokens are used with your Atlassian account email — enter it too.")
+                    throw AppBackendError.invalidInput("Atlassian API tokens are used with your Atlassian account email. Enter it too.")
                 }
                 credential = .basic(username: email, password: token.exposeForCredentialStore())
             } else {
@@ -242,7 +309,7 @@ extension EngineBackend {
     // MARK: Review gate
 
     nonisolated static func result(of outcome: ActionOutcome, action: RemoteActionKind, simulated: Bool) -> AppCommandResult {
-        let demo = simulated ? " (demo fixture — nothing reached a real provider)" : ""
+        let demo = simulated ? " (demo fixture, nothing reached a real provider)" : ""
         switch outcome {
         case .performed(let state, let message):
             let next = state == .done ? "" : " Review the next action when you're ready."
@@ -274,8 +341,8 @@ extension EngineBackend {
         let name = plan.agent.displayName
         guard outcome.changed else {
             return AppCommandResult(message: plan.action == .register
-                ? "\(name) already had MergeCue registered — nothing was changed. Verify the connection next."
-                : "\(name) had no MergeCue registration — nothing was changed.")
+                ? "\(name) already had MergeCue registered. Nothing was changed. Verify the connection next."
+                : "\(name) had no MergeCue registration. Nothing was changed.")
         }
         let backup = outcome.backup.map { " Backup: \(UIFormat.abbreviatedPath(MergeCuePaths.fileSystemPath($0.directory)))." } ?? ""
         return AppCommandResult(message: plan.action == .register

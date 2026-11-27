@@ -16,6 +16,8 @@ public actor EngineBackend: AppBackend {
         public var detectAgents: @Sendable (MergeCueRuntime) async -> [DetectedAgent]
         public var registrationStatus: @Sendable (MergeCueRuntime, DetectedAgent) async -> AgentRegistrationStatus
         public var requestNotificationAuthorization: @Sendable () async -> Bool
+        /// Delivers a test notification; returns the reason it could not be shown, nil on success.
+        public var sendTestNotification: @Sendable () async -> String? = Options.sendTest
         /// Files looked for at the root of mapped checkouts ("Project instructions" in the handoff checklist).
         public var instructionFileNames: [String]
 
@@ -43,6 +45,10 @@ public actor EngineBackend: AppBackend {
 
         @Sendable public static func askForNotifications() async -> Bool {
             await UserNotificationDeliverer(isDemo: false).requestAuthorization()
+        }
+
+        @Sendable public static func sendTest() async -> String? {
+            await UserNotificationDeliverer(isDemo: false).deliverTest()
         }
     }
 
@@ -106,6 +112,7 @@ public actor EngineBackend: AppBackend {
             let accounts = Set(state.accounts.map(\.id))
             state.repositoryLists = repositoryLists.filter { accounts.contains($0.key) }
             state.checkoutScan = checkoutScan
+            state.checkoutSearchFolders = await runtime.engine.checkoutSearchFolders()
             lastState = state
             return state
         } catch {
@@ -140,6 +147,10 @@ public actor EngineBackend: AppBackend {
 
     public func handleSystemWake() async {
         await runtime.handleSystemWake()
+    }
+
+    public func userDidReturn() async {
+        await runtime.userDidReturn()
     }
 
     public func shutdown() async {

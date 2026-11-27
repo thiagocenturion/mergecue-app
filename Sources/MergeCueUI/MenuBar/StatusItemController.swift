@@ -21,6 +21,9 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     private let popover = NSPopover()
     private var currentIconShowsDot = false
     private var appearanceObservation: NSKeyValueObservation?
+    /// Light/dark of the last icon drawn for an appearance change, and whether a check is already queued.
+    private var lastIconIsDark: Bool?
+    private var appearanceCheckPending = false
     private var hotKey: GlobalHotKey?
 
     init(model: AppModel, actions: StatusMenuActions) {
@@ -44,9 +47,12 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         }
         statusItem.autosaveName = "MergeCueStatusItem"
         if #available(macOS 14.0, *) { popover.hasFullSizeContent = true }
-        // The icon is not a template: redraw it when the menu bar switches between light and dark.
-        appearanceObservation = statusItem.button?.observe(\.effectiveAppearance, options: [.new]) { button, _ in
-            Task { @MainActor in button.needsDisplay = true }
+        // The icon is not a template: redraw it when the menu bar switches between light and dark. AppKit sets the
+        // button's appearance again on every redraw of the status item, so redrawing on each notification never stops
+        // (a full CPU core, D55): redraw only when light/dark really changed, once per burst.
+        lastIconIsDark = statusItem.button.map { MenuBarIcon.isDark($0.effectiveAppearance) }
+        appearanceObservation = statusItem.button?.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
+            Task { @MainActor [weak self] in self?.scheduleAppearanceCheck() }
         }
         statusItem.button?.setAccessibilityCustomActions([
             NSAccessibilityCustomAction(name: "Show menu") { [weak self] in
@@ -80,6 +86,26 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         popover.isShown ? closePopover() : showPopover(fromKeyboard: true)
     }
 
+    // MARK: Appearance
+
+    private func scheduleAppearanceCheck() {
+        guard !appearanceCheckPending else { return }
+        appearanceCheckPending = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            self?.checkAppearance()
+        }
+    }
+
+    private func checkAppearance() {
+        appearanceCheckPending = false
+        guard let button = statusItem.button else { return }
+        let isDark = MenuBarIcon.isDark(button.effectiveAppearance)
+        guard isDark != lastIconIsDark else { return }
+        lastIconIsDark = isDark
+        button.needsDisplay = true
+    }
+
     // MARK: Button content
 
     private func observeModel() {
@@ -98,16 +124,22 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
             button.image = MenuBarIcon.image(showsDot: showsDot)
             currentIconShowsDot = showsDot
         }
-        if count > 0 && model.showCountInMenuBar {
-            button.attributedTitle = NSAttributedString(string: "\(count)", attributes: [
-                .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize - 1, weight: .medium),
-                .baselineOffset: 0.5,
-            ])
-        } else {
-            button.title = ""
+        // Every set redraws the status item, and this runs on each state change: set only what changed.
+        let title = count > 0 && model.showCountInMenuBar ? "\(count)" : ""
+        if button.title != title {
+            if title.isEmpty {
+                button.title = ""
+            } else {
+                button.attributedTitle = NSAttributedString(string: title, attributes: [
+                    .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize - 1, weight: .medium),
+                    .baselineOffset: 0.5,
+                ])
+            }
         }
-        button.toolTip = model.menuBarToolTip
-        button.setAccessibilityLabel(model.menuBarAccessibilityLabel)
+        let toolTip = model.menuBarToolTip
+        if button.toolTip != toolTip { button.toolTip = toolTip }
+        let label = model.menuBarAccessibilityLabel
+        if button.accessibilityLabel() != label { button.setAccessibilityLabel(label) }
         let shortcut = model.globalHotKey == .off ? "" : " Shortcut: \(model.globalHotKey.spokenName)."
         button.setAccessibilityHelp("Click to show what needs you. Control-click, or use the Show menu action, for more options.\(shortcut)")
     }
@@ -155,7 +187,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     private func makeMenu() -> NSMenu {
         let menu = NSMenu()
         if let badge = model.mode.badgeText {
-            let item = NSMenuItem(title: "\(badge) — not live", action: nil, keyEquivalent: "")
+            let item = NSMenuItem(title: "\(badge) (not live)", action: nil, keyEquivalent: "")
             item.isEnabled = false
             menu.addItem(item)
             menu.addItem(.separator())
@@ -178,6 +210,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         submenu.autoenablesItems = false
         pause.submenu = submenu
         menu.addItem(pause)
+        menu.addItem(makeAutoSyncItem())
 
         menu.addItem(.separator())
         menu.addItem(MenuItemFactory.item(title: "Settings…", key: ",") { [actions] in actions.openSettings() })
@@ -185,6 +218,51 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         menu.addItem(MenuItemFactory.item(title: "Quit MergeCue", key: "q") { [actions] in actions.quit() })
         menu.autoenablesItems = false
         return menu
+    }
+
+    /// "Pause Auto-Sync" (or "Auto-Sync Paused" while paused): timed pauses, resume, "sync anyway" during a
+    /// scheduled pause, and the way to the schedule rules.
+    private func makeAutoSyncItem() -> NSMenuItem {
+        let now = model.now
+        let pauseState = model.autoSyncPause
+        let item = NSMenuItem(title: pauseState == nil ? "Pause Auto-Sync" : "Auto-Sync Paused", action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        if let pauseState {
+            let status = NSMenuItem(title: AutoSyncText.status(pauseState, now: now), action: nil, keyEquivalent: "")
+            status.isEnabled = false
+            submenu.addItem(status)
+            if pauseState.reason == .manual {
+                submenu.addItem(MenuItemFactory.item(title: "Resume Auto-Sync") { [model] in
+                    Task { await model.pauseAutoSync(until: nil) }
+                })
+            } else {
+                let title = pauseState.until.map { "Sync Anyway Until \(AutoSyncText.moment($0, now: now))" } ?? "Sync Anyway"
+                submenu.addItem(MenuItemFactory.item(title: title) { [model] in
+                    Task { await model.syncAnywayUntil(pauseState.until) }
+                })
+            }
+            submenu.addItem(.separator())
+        }
+        submenu.addItem(MenuItemFactory.item(title: "For 1 Hour") { [model] in
+            Task { await model.pauseAutoSync(until: model.now.addingTimeInterval(3_600)) }
+        })
+        submenu.addItem(MenuItemFactory.item(title: "Until Tomorrow 9:00") { [model] in
+            Task { await model.pauseAutoSync(until: AutoSyncText.tomorrowMorning(after: model.now)) }
+        })
+        submenu.addItem(MenuItemFactory.item(title: "Until Monday 9:00") { [model] in
+            Task { await model.pauseAutoSync(until: AutoSyncText.nextMondayMorning(after: model.now)) }
+        })
+        submenu.addItem(MenuItemFactory.item(title: "Until I Resume") { [model] in
+            Task { await model.pauseAutoSync(until: .distantFuture) }
+        })
+        submenu.addItem(.separator())
+        submenu.addItem(MenuItemFactory.item(title: "Pause Schedule…") { [actions] in actions.openSettings() })
+        let hint = NSMenuItem(title: "Refresh always checks now", action: nil, keyEquivalent: "")
+        hint.isEnabled = false
+        submenu.addItem(hint)
+        submenu.autoenablesItems = false
+        item.submenu = submenu
+        return item
     }
 }
 

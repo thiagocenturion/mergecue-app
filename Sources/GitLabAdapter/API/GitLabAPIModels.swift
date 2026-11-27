@@ -134,6 +134,8 @@ struct GLMergeRequest: Decodable, Sendable {
     var blockingDiscussionsResolved: Bool?
     var diffRefs: GLDiffRefs?
     var headPipeline: GLPipeline?
+    /// Non-system notes (incremental hydration skips `/discussions` while it and `updated_at` are unchanged).
+    var userNotesCount: Int?
 }
 
 /// `GET /events?action=commented` — the current user's own contribution events (only the fields used to find the

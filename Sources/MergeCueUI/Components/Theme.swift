@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Design tokens of MergeCue (owner mockups in `Design/mockups/`): deep navy/graphite surfaces in dark mode, a
 /// cool off-white variant in light mode, the icon's cyan → blue → violet gradient for primary actions and one colour
-/// per status (Needs you, Waiting for agent, AI working, Ready). Every colour is appearance-aware; views never
+/// per status (Needs you, Waiting for agent, In progress, Ready). Every colour is appearance-aware; views never
 /// hard-code hex values.
 enum Theme {
     // MARK: Surfaces
@@ -56,7 +56,7 @@ enum Theme {
     static let needs = Palette.needs.color
     /// "Waiting for agent" (amber).
     static let waiting = Palette.waiting.color
-    /// "AI working" (violet → cyan).
+    /// "In progress" (violet → cyan).
     static let working = violet
     /// "Ready" / success (the icon's mint dot).
     static let mint = Palette.mint.color
@@ -92,7 +92,7 @@ enum Theme {
     static let brandGradientDiagonal = LinearGradient(colors: gradientStops, startPoint: .topLeading, endPoint: .bottomTrailing)
     /// Fill behind white text (primary buttons): the brand hues deepened to ≥ 4.5:1 with white at every point.
     static let actionGradient = LinearGradient(colors: Palette.actionStops.map { Color(hex: $0) }, startPoint: .leading, endPoint: .trailing)
-    /// Text or icon in the brand gradient on light surfaces ("✦ Fix with AI" outline button).
+    /// Text or icon in the brand gradient on light surfaces ("✦ Fix now" outline button).
     static let actionTextGradient = LinearGradient(colors: [cyanText, accentText], startPoint: .leading, endPoint: .trailing)
 
     static func color(_ tone: Tone) -> Color {
@@ -125,8 +125,7 @@ enum Theme {
     static func color(_ section: PopoverSection) -> Color {
         switch section {
         case .needsYou: needs
-        case .waitingForAgent: waiting
-        case .aiWorking: cyan
+        case .inProgress: cyan
         case .ready: mint
         }
     }
@@ -135,8 +134,7 @@ enum Theme {
     static func textColor(_ section: PopoverSection) -> Color {
         switch section {
         case .needsYou: needsText
-        case .waitingForAgent: waitingText
-        case .aiWorking: cyanText
+        case .inProgress: cyanText
         case .ready: mintText
         }
     }
@@ -145,8 +143,7 @@ enum Theme {
     static func symbol(_ section: PopoverSection) -> String {
         switch section {
         case .needsYou: "exclamationmark.circle.fill"
-        case .waitingForAgent: "clock.fill"
-        case .aiWorking: "sparkles"
+        case .inProgress: "progress.indicator"
         case .ready: "checkmark.circle.fill"
         }
     }
@@ -182,9 +179,16 @@ enum Theme {
 
     static let popoverWidth: CGFloat = 440
     static let popoverMaxHeight: CGFloat = 720
-    static let cornerRadius: CGFloat = 8
-    static let cardRadius: CGFloat = 13
-    static let controlRadius: CGFloat = 9
+    /// The one corner radius of every rectangular container (D41). SwiftUI caps a corner at half the shorter side,
+    /// so small elements with it become capsules.
+    static let radius: CGFloat = 32
+    /// Inner padding of cards and glass rows: enough room inside 32 pt corners (D49).
+    static let cardPadding: CGFloat = 20
+    static let cornerRadius: CGFloat = radius
+    static let cardRadius: CGFloat = radius
+    /// Corner radius of Liquid Glass cards (`glassCard`).
+    static let glassRadius: CGFloat = radius
+    static let controlRadius: CGFloat = radius
     static let sidebarWidth: CGFloat = 232
     /// Icon-only sidebar used when the window is narrower than `MainWindowMetrics.compactSidebarThreshold`.
     static let compactSidebarWidth: CGFloat = 76
@@ -210,10 +214,55 @@ extension NSColor {
 }
 
 extension View {
-    /// The standard card: surface fill, 1 px subtle border, 13 pt continuous corners.
-    func cardBackground(_ fill: Color = Theme.surface, radius: CGFloat = Theme.cardRadius, border: Color = Theme.border) -> some View {
-        background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(fill))
-            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(border, lineWidth: 1))
+    /// The standard container: Calculus's Liquid Glass card surface with 32 pt corners (D41, D43), for every
+    /// container including content wells. `fill` and `border` are the macOS 15 / snapshot fallback.
+    func cardBackground(_ fill: Color = Theme.surface, radius: CGFloat = Theme.radius, border: Color = Theme.border) -> some View {
+        modifier(GlassCardModifier(radius: Theme.radius, tint: nil, fallbackFill: fill, fallbackBorder: border))
+    }
+
+    /// A selectable row or card (inbox cards, lists, navigation): interactive Liquid Glass with 32 pt corners,
+    /// tinted with the accent when selected, lifting slightly on hover. `idle: false` keeps unselected rows bare
+    /// (sidebar and settings navigation). Fallback: the previous solid fills and accent border.
+    func selectableGlass(isSelected: Bool, isHovering: Bool = false, idle: Bool = true) -> some View {
+        modifier(SelectableGlassModifier(isSelected: isSelected, isHovering: isHovering, idle: idle))
+    }
+
+    /// System buttons without a MergeCue style (Settings, sheets) become Liquid Glass capsules on macOS 26.
+    func defaultGlassButtons() -> some View {
+        modifier(DefaultGlassButtons())
+    }
+
+    /// A content well (code, logs, quotes): the same glass card surface; `fill` is the fallback.
+    func wellBackground(_ fill: Color = Theme.surfaceSunken) -> some View {
+        cardBackground(fill)
+    }
+
+    /// A Liquid Glass card (macOS 26+) with continuous `Theme.glassRadius` corners, optionally tinted. On macOS 15, or
+    /// when `glassEffectsEnabled` is off, it falls back to the solid card look with the same radius.
+    func glassCard(radius: CGFloat = Theme.glassRadius, tint: Color? = nil, interactive: Bool = false) -> some View {
+        modifier(GlassCardModifier(radius: radius, tint: tint, interactive: interactive))
+    }
+
+    /// Liquid Glass in any shape (capsule buttons, circles); `fallback` is drawn instead on macOS 15 / snapshots.
+    func glassShape<S: InsettableShape>(_ shape: S, tint: Color? = nil, interactive: Bool = true, fallback: Color = Theme.surfaceRaised) -> some View {
+        modifier(GlassShapeModifier(shape: shape, tint: tint, interactive: interactive, fallback: fallback))
+    }
+
+    /// Room for card shadows inside a vertical `ScrollView`, which clips to its bounds: the scroll view grows by
+    /// `inset` on each side and its content is inset by the same amount, so the layout doesn't move but shadows
+    /// at the left and right edges are no longer cut off. Apply to the `ScrollView`.
+    func shadowRoom(_ inset: CGFloat = 16) -> some View {
+        contentMargins(.horizontal, inset, for: .scrollContent)
+            .padding(.horizontal, -inset)
+    }
+
+    /// The same for a horizontal `ScrollView` (a chip rail), which is only as tall as its content: room above and
+    /// about twice as much below, where shadows fall, cancelled outside so the layout doesn't move.
+    func shadowRail(top: CGFloat = 16, bottom: CGFloat = 32) -> some View {
+        contentMargins(.top, top, for: .scrollContent)
+            .contentMargins(.bottom, bottom, for: .scrollContent)
+            .padding(.top, -top)
+            .padding(.bottom, -bottom)
     }
 }
 
@@ -232,6 +281,12 @@ struct Card<Content: View>: View {
     }
 
     var body: some View {
+        CardView {
+            inner
+        }
+    }
+
+    private var inner: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let title {
                 HStack(spacing: 8) {
@@ -252,9 +307,7 @@ struct Card<Content: View>: View {
             }
             content
         }
-        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardBackground()
     }
 }
 
@@ -309,25 +362,6 @@ struct ModeBadge: View {
     }
 }
 
-/// Initial in a muted circle (no remote avatars are loaded).
-struct Avatar: View {
-    var name: String
-    var size: CGFloat = 22
-
-    var body: some View {
-        let initial = name.split(whereSeparator: { $0 == " " || $0 == "." || $0 == "-" || $0 == "_" })
-            .first?.first.map { String($0).uppercased() } ?? "?"
-        let palette: [Color] = [Color(hex: 0x6B5B95), Color(hex: 0x4F6D8F), Color(hex: 0x5B7A6E), Color(hex: 0x8A6A4F), Color(hex: 0x5E6478)]
-        let index = name.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0x7FFF_FFFF } % palette.count
-        Text(initial)
-            .scaledFont(.system(size: size * 0.46, weight: .semibold))
-            .foregroundStyle(.white.opacity(0.95))
-            .frame(width: size, height: size)
-            .background(Circle().fill(palette[index]))
-            .accessibilityHidden(true)
-    }
-}
-
 /// The small app mark (the approved icon when available, otherwise a gradient glyph).
 struct AppMark: View {
     var size: CGFloat = 18
@@ -358,4 +392,115 @@ enum AppIconImage {
         }
         return Bundle.module.image(forResource: "AppMark")
     }()
+}
+
+extension EnvironmentValues {
+    /// Off in offscreen snapshots: `cacheDisplay` cannot capture Liquid Glass, which the window server composites.
+    @Entry public var glassEffectsEnabled = true
+    /// Off in offscreen renders: animated scrolls only advance while the window is on an awake display, so a
+    /// focus scroll (D51) jumps instead.
+    @Entry var animatesFocusScroll = true
+}
+
+struct GlassCardModifier: ViewModifier {
+    let radius: CGFloat
+    let tint: Color?
+    var interactive = false
+    var fallbackFill: Color?
+    var fallbackBorder: Color?
+    @Environment(\.glassEffectsEnabled) private var glassEnabled
+
+    func body(content: Content) -> some View {
+        let shape = SmoothRect(radius: radius)
+        if #available(macOS 26.0, *), glassEnabled {
+            content.liquidGlassSurface(interactive: interactive, cornerRadius: radius, tint: tint)
+        } else {
+            content
+                .background(shape.fill(tint.map { $0.opacity(0.08) } ?? .clear))
+                .background(shape.fill(tint == nil ? fallbackFill ?? Theme.surface : Theme.surface))
+                .overlay(shape.strokeBorder(tint.map { $0.opacity(0.3) } ?? fallbackBorder ?? Theme.border, lineWidth: 1))
+        }
+    }
+
+}
+
+private struct GlassShapeModifier<S: InsettableShape>: ViewModifier {
+    let shape: S
+    let tint: Color?
+    let interactive: Bool
+    let fallback: Color
+    @Environment(\.glassEffectsEnabled) private var glassEnabled
+
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *), glassEnabled {
+            content.glassEffect(Glass.mergeCue(tint: tint, interactive: interactive), in: shape)
+        } else {
+            content.background(shape.fill(tint.map { $0.opacity(0.85) } ?? fallback))
+        }
+    }
+}
+
+private struct SelectableGlassModifier: ViewModifier {
+    let isSelected: Bool
+    let isHovering: Bool
+    let idle: Bool
+    @Environment(\.glassEffectsEnabled) private var glassEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        let shape = SmoothRect()
+        Group {
+            if #available(macOS 26.0, *), glassEnabled, isSelected || idle {
+                content.liquidGlassSurface(interactive: true, tint: isSelected ? Theme.accent : nil)
+            } else if #available(macOS 26.0, *), glassEnabled {
+                content.background(shape.fill(isHovering ? Theme.surfaceHover : .clear))
+            } else {
+                content
+                    .background(shape.fill(isSelected ? Theme.surfaceSelected : isHovering ? Theme.surfaceHover : idle ? Theme.surface : .clear))
+                    .overlay(shape.strokeBorder(isSelected ? Theme.accent.opacity(0.6) : idle ? Theme.border : .clear, lineWidth: 1))
+            }
+        }
+        .scaleEffect(isHovering && idle && !reduceMotion ? 1.006 : 1)
+        .animation(Motion.hover, value: isHovering)
+        .animation(Motion.snappy, value: isSelected)
+    }
+}
+
+private struct DefaultGlassButtons: ViewModifier {
+    @Environment(\.glassEffectsEnabled) private var glassEnabled
+
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *), glassEnabled {
+            content.buttonStyle(.glass).buttonBorderShape(.capsule)
+        } else {
+            content.buttonBorderShape(.capsule)
+        }
+    }
+}
+
+/// The container shape (D41/D42): continuous rounded corners while they fit, and an exact capsule / circle once the
+/// corner smoothing (about 1.53 × the radius per side) would reach the middle of the shorter side. A `.continuous` RoundedRectangle whose radius reaches half the height
+/// leaves straight slivers at its ends, which a stroke or the glass edge drew as 1 pt hairlines.
+nonisolated struct SmoothRect: InsettableShape {
+    /// `Theme.radius`.
+    var radius: CGFloat = 32
+    var insetAmount: CGFloat = 0
+
+    func path(in rect: CGRect) -> Path {
+        let box = rect.insetBy(dx: insetAmount, dy: insetAmount)
+        let half = min(box.width, box.height) / 2
+        let corner = max(0, radius - insetAmount)
+        // A continuous corner's smoothing runs about 1.53 × the radius along each side; once the two corners of a
+        // side would meet, draw an exact capsule instead of letting the curves overlap into slivers.
+        if corner * 1.53 >= half {
+            return Capsule(style: .circular).path(in: box)
+        }
+        return RoundedRectangle(cornerRadius: corner, style: .continuous).path(in: box)
+    }
+
+    func inset(by amount: CGFloat) -> SmoothRect {
+        var copy = self
+        copy.insetAmount += amount
+        return copy
+    }
 }

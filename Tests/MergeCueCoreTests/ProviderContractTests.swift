@@ -79,7 +79,7 @@ struct ProviderContractTests {
     }
 
     @Test func writeCapabilities() {
-        #expect(Set(Capability.allCases.filter(\.isWrite)) == [.resolveThread, .requestChanges, .createReply, .merge])
+        #expect(Set(Capability.allCases.filter(\.isWrite)) == [.resolveThread, .requestChanges, .createReply, .merge, .approve])
         #expect(RemoteActionKind.postReply.requiredCapability == .createReply)
         #expect(RemoteActionKind.applyPatch.requiredCapability == nil)
     }

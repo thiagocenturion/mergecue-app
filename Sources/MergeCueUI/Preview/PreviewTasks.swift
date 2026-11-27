@@ -62,7 +62,7 @@ nonisolated extension PreviewWorld {
                                                      baseSHA: snapshot.summary.headSHA, sourceBranch: snapshot.summary.sourceBranch,
                                                      targetBranch: snapshot.summary.targetBranch))
             records.append(TaskRecord(task: task, activities: [
-                activity(id, 1, at: ago(minutes: 3), .user, "mona-dev", .created, "Created from @dchen's review comment (Fix with AI)", to: .waitingForAgent),
+                activity(id, 1, at: ago(minutes: 3), .user, "mona-dev", .created, "Created from @dchen's review comment (Fix now)", to: .waitingForAgent),
             ]))
         }
 
@@ -80,7 +80,7 @@ nonisolated extension PreviewWorld {
             task.lease = AgentLease(agentName: "Claude Code", runID: "run_2c81f0", leaseID: "lease_preview_working",
                                     claimedAt: ago(minutes: 18), heartbeatAt: now.addingTimeInterval(-40), expiresAt: later(minutes: 9))
             records.append(TaskRecord(task: task, activities: [
-                activity(id, 1, at: ago(minutes: 22), .user, "mona-dev", .created, "Created from @oscar.b's review comment (Fix with AI)", to: .waitingForAgent),
+                activity(id, 1, at: ago(minutes: 22), .user, "mona-dev", .created, "Created from @oscar.b's review comment (Fix now)", to: .waitingForAgent),
                 activity(id, 2, at: ago(minutes: 18), .agent, "Claude Code", .claimed, "Claimed the task", from: .waitingForAgent, to: .working),
                 activity(id, 3, at: ago(minutes: 16), .agent, "Claude Code", .progress, "Investigating: read the thread and the ledger client error paths",
                          data: ["phase": "investigating"]),
@@ -176,7 +176,7 @@ nonisolated extension PreviewWorld {
                                                                              maxBytes: 4_096)]),
                               agentLabel: "Codex CLI", resultSummary: "Rounded payouts with the currency exponent and added JPY/BHD cases.")
             records.append(TaskRecord(task: task, activities: [
-                activity(id, 1, at: ago(days: 2), .user, "mona-dev", .created, "Created from @priya.n's requested change (Fix with AI)", to: .waitingForAgent),
+                activity(id, 1, at: ago(days: 2), .user, "mona-dev", .created, "Created from @priya.n's requested change (Fix now)", to: .waitingForAgent),
                 activity(id, 2, at: ago(hours: 47), .agent, "Codex CLI", .claimed, "Claimed the task", from: .waitingForAgent, to: .working),
                 activity(id, 3, at: ago(hours: 46), .agent, "Codex CLI", .resultSubmitted, "Submitted result", from: .working, to: .readyForReview),
                 activity(id, 4, at: ago(hours: 44), .user, "mona-dev", .approved, "Approved Apply patch", from: .readyForReview, to: .approvedAction),

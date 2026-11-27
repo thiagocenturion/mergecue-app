@@ -2,7 +2,7 @@ import MergeCueCore
 import SwiftUI
 
 /// The menu bar popover: header (app tile, "Your PRs at a glance", sync state), account problems, the sections
-/// Needs you / Waiting for agent (only when non-empty) / AI working / Ready (top 3 each, collapsible) and the footer
+/// Needs you / In progress (waiting for an agent or being worked on) / Ready (top 3 each, collapsible) and the footer
 /// (Open MergeCue, Refresh, Pause notifications, Settings).
 /// Keyboard: ↑/↓ select, Return or Space open the selected row's details, ⌘↩ runs its primary action, ⌘R refreshes,
 /// ⌘, opens Settings, ⌘O opens the window, Esc closes. The global shortcut (Settings › General) opens it from any app.
@@ -56,14 +56,22 @@ public struct PopoverView: View {
             } else {
                 sectionsScroll
             }
-            VStack(spacing: 0) {
-                ThemeDivider().padding(.horizontal, 20)
-                PopoverFooter(model: model)
-            }
+            // A floating glass footer bar, like the window's floating sidebar (D43).
+            PopoverFooter(model: model)
+                .glassShape(Capsule(), interactive: false, fallback: Theme.surface)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
+                .padding(.top, 4)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bottomHeight = $0 }
         }
         .frame(width: width)
-        .background(Theme.popoverBackground.ignoresSafeArea())
+        .background(alignment: .top) {
+            ZStack(alignment: .top) {
+                Theme.popoverBackground
+                AuroraGlow(opacity: 0.55).frame(height: 260)
+            }
+            .ignoresSafeArea()
+        }
         // The container takes keyboard focus for ↑/↓/Return; the selected row shows it (a 2 pt focus ring)
         // instead of a system ring around the whole popover.
         .focusable()
@@ -95,20 +103,42 @@ public struct PopoverView: View {
             if let id { voiceOverFocus = id }
         }
         .dynamicTypeSize(model.textSize.dynamicTypeSize)
+        .environment(\.avatarImages, model.avatarImages)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("MergeCue")
+        .defaultGlassButtons()
+        .id(model.darkStyle)
     }
 
     private var sectionsScroll: some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 18) {
-                    ForEach(PopoverSection.allCases) { section in
-                        if section != .waitingForAgent || !model.sections.items(section).isEmpty {
-                            PopoverSectionView(model: model, section: section, voiceOverFocus: $voiceOverFocus)
+                    // Approvals of your own PRs; the Reviews tab is about others' PRs only (D54).
+                    if !model.popoverShowsReviewLanes { ApprovalHighlights(model: model, compact: true) }
+                    switch model.popoverTab {
+                    case .inbox:
+                        PopoverScopeChips(model: model)
+                        if model.inboxFilter.scope == .reviewing {
+                            // Reviews filter (D56): the review lanes instead of Needs you / In progress / Ready.
+                            PopoverReviewList(model: model)
+                                .transition(.opacity)
+                        } else {
+                            ForEach(PopoverSection.allCases) { section in
+                                PopoverSectionView(model: model, section: section, voiceOverFocus: $voiceOverFocus)
+                            }
+                            .transition(.opacity.combined(with: .move(edge: .leading)))
                         }
+                    case .pullRequests:
+                        PopoverPullRequestList(model: model)
+                            .transition(.opacity.combined(with: .move(edge: .trailing)))
+                    case .reviews:
+                        PopoverReviewList(model: model)
+                            .transition(.opacity.combined(with: .move(edge: .trailing)))
                     }
                 }
+                .animation(Motion.smooth, value: model.popoverTab)
+                .animation(Motion.smooth, value: model.inboxFilter.scope)
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
                 .padding(.bottom, 18)
@@ -130,41 +160,40 @@ struct PopoverHeader: View {
 
     var body: some View {
         let summary = Presentation.syncSummary(accounts: model.state.accounts, now: model.now, refreshing: model.isRefreshing)
-        HStack(alignment: .center, spacing: 14) {
+        HStack(alignment: .center, spacing: 12) {
+            // The whole brand area opens the app (D48).
             Button {
                 model.showScreen(.inbox)
             } label: {
-                AppMark(size: 50)
+                HStack(spacing: 12) {
+                    AppMark(size: 44)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("MergeCue")
+                            .scaledFont(.system(size: 18, weight: .bold))
+                            .foregroundStyle(Theme.textPrimary)
+                            .fixedSize()
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(summary.tone == .success ? Theme.mint : (summary.tone == .neutral ? Theme.textTertiary : Theme.color(summary.tone)))
+                                .frame(width: 7, height: 7)
+                                .accessibilityHidden(true)
+                            Text(summary.text.replacingOccurrences(of: "Synced just now", with: "Synced now"))
+                                .scaledFont(.system(size: 12.5))
+                                .foregroundStyle(Theme.textSecondary)
+                                .lineLimit(1)
+                        }
+                        .help(accountLines)
+                    }
+                }
+                .contentShape(Rectangle())
             }
-            .buttonStyle(PlainRowButtonStyle())
+            .buttonStyle(PressScaleButtonStyle())
             .help("Open MergeCue")
-            .accessibilityLabel("Open MergeCue window")
-            VStack(alignment: .leading, spacing: 3) {
-                Text("MergeCue")
-                    .scaledFont(.system(size: 19, weight: .bold))
-                    .foregroundStyle(Theme.textPrimary)
-                    .fixedSize()
-                Text("Your PRs at a glance")
-                    .scaledFont(.system(size: 14))
-                    .foregroundStyle(Theme.textSecondary)
-                    .fixedSize()
-            }
+            .accessibilityLabel("Open MergeCue. \(summary.text)")
+            .accessibilityHint(accountLines)
             Spacer(minLength: 6)
             VStack(alignment: .trailing, spacing: 8) {
-            HStack(spacing: 7) {
-                Circle()
-                    .fill(summary.tone == .success ? Theme.mint : (summary.tone == .neutral ? Theme.textTertiary : Theme.color(summary.tone)))
-                    .frame(width: 8, height: 8)
-                    .accessibilityHidden(true)
-                Text(summary.text.replacingOccurrences(of: "Synced just now", with: "Synced now"))
-                    .scaledFont(.system(size: 13))
-                    .foregroundStyle(Theme.textSecondary)
-                    .lineLimit(1)
-            }
-            .help(accountLines)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(summary.text)
-            .accessibilityHint(accountLines)
+            PopoverTabBar(model: model)
             ModeBadge(mode: model.mode)
             }
         }
@@ -219,7 +248,9 @@ struct AccountStatusLine: View {
     let account: AccountState
 
     var body: some View {
-        let tone = UIFormat.tone(of: account.status.state)
+        let failures = account.status.state.isProblem ? nil : UIFormat.changeRequestFailureText(account.status, kind: account.kind)
+        let tone = failures == nil ? UIFormat.tone(of: account.status.state) : .attention
+        let text = failures ?? UIFormat.syncText(account.status, now: model.now)
         HStack(spacing: 8) {
             ProviderGlyph(kind: account.kind, size: 14)
                 .frame(width: 18)
@@ -232,10 +263,17 @@ struct AccountStatusLine: View {
                 .scaledFont(.system(size: 10.5))
                 .foregroundStyle(Theme.color(tone))
                 .accessibilityHidden(true)
-            Text(UIFormat.syncText(account.status, now: model.now))
+            Text(text)
                 .scaledFont(.system(size: 12))
                 .foregroundStyle(Theme.textColor(tone))
                 .lineLimit(1)
+            if failures != nil {
+                Button("Retry") { Task { await model.send(.refresh(account: account.id)) } }
+                    .buttonStyle(PlainRowButtonStyle())
+                    .scaledFont(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.accentText)
+                    .accessibilityLabel("Retry loading \(account.kind.displayName) account \(account.account.displayLabel)")
+            }
             if account.status.state == .authExpired {
                 Button("Reconnect") {
                     model.connectSheetKind = account.kind
@@ -249,7 +287,7 @@ struct AccountStatusLine: View {
         }
         .help(account.status.message.map { SecretRedactorHelp.safe($0) } ?? account.status.state.displayText)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(account.kind.displayName) account \(account.account.displayLabel): \(UIFormat.syncText(account.status, now: model.now))")
+        .accessibilityLabel("\(account.kind.displayName) account \(account.account.displayLabel): \(text)")
     }
 
     private var symbol: String {
@@ -304,22 +342,17 @@ struct PopoverFooter: View {
             Rectangle().fill(Theme.divider).frame(width: 1, height: 22).padding(.horizontal, 4)
                 .accessibilityHidden(true)
             // Settings, the window and Quit in one menu, so quitting doesn't depend on right-clicking the menu bar icon.
-            Menu {
-                Button("Settings…") { model.showSettings() }
-                Button("Open MergeCue") { model.showScreen(.inbox) }
-                if let quit = model.quitHandler {
-                    Divider()
-                    Button("Quit MergeCue", action: quit)
-                }
+            AppKitMenuButton {
+                var entries: [AppKitMenuEntry] = [
+                    .action("Settings…") { model.showSettings() },
+                    .action("Open MergeCue") { model.showScreen(.inbox) },
+                ]
+                if let quit = model.quitHandler { entries += [.divider, .action("Quit MergeCue", quit)] }
+                return entries
             } label: {
                 Image(systemName: "gearshape")
                     .scaledFont(.system(size: 13.5, weight: .medium))
-                    .foregroundStyle(Theme.textSecondary)
-                    .frame(width: 30, height: 30)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
             .help("Settings and Quit (⌘, opens Settings)")
             .accessibilityLabel("Settings and more")
             .background {
@@ -329,8 +362,8 @@ struct PopoverFooter: View {
                     .accessibilityHidden(true)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
     }
 }
 
@@ -339,28 +372,24 @@ struct PauseNotificationsMenu: View {
     let model: AppModel
 
     var body: some View {
-        Menu {
-            Button("Pause for 1 Hour") {
-                Task { await model.send(.pauseNotifications(until: model.now.addingTimeInterval(3_600))) }
-            }
-            Button("Pause Until Tomorrow") {
-                Task { await model.send(.pauseNotifications(until: PauseOptions.tomorrowMorning(after: model.now))) }
-            }
+        AppKitMenuButton {
+            var entries: [AppKitMenuEntry] = [
+                .action("Pause for 1 Hour") {
+                    Task { await model.send(.pauseNotifications(until: model.now.addingTimeInterval(3_600))) }
+                },
+                .action("Pause Until Tomorrow") {
+                    Task { await model.send(.pauseNotifications(until: PauseOptions.tomorrowMorning(after: model.now))) }
+                },
+            ]
             if model.notificationsPaused {
-                Divider()
-                Button("Resume Notifications") {
-                    Task { await model.send(.pauseNotifications(until: nil)) }
-                }
+                entries += [.divider, .action("Resume Notifications") { Task { await model.send(.pauseNotifications(until: nil)) } }]
             }
+            return entries
         } label: {
             Image(systemName: model.notificationsPaused ? "bell.slash.fill" : "bell")
                 .scaledFont(.system(size: 13.5, weight: .medium))
                 .foregroundStyle(model.notificationsPaused ? Theme.waitingText : Theme.textSecondary)
-                .frame(width: 30, height: 30)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
         .help(model.notificationsPaused ? "Notifications paused" : "Pause notifications")
         .accessibilityLabel(model.notificationsPaused ? "Notifications paused" : "Pause notifications")
     }
@@ -385,7 +414,7 @@ struct PopoverSectionView: View {
     private var isCollapsed: Bool { model.collapsedPopoverSections.contains(section) }
 
     var body: some View {
-        let items = model.sections.items(section)
+        let items = model.popoverSections.items(section)
         VStack(alignment: .leading, spacing: 10) {
             Button {
                 withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) {
@@ -415,10 +444,11 @@ struct PopoverSectionView: View {
                 if items.isEmpty {
                     EmptySectionRow(section: section)
                 } else {
-                    VStack(spacing: 8) {
-                        ForEach(items.prefix(AppModel.popoverRowLimit)) { item in
-                            PopoverRowView(model: model, item: item, voiceOverFocus: voiceOverFocus)
-                                .id(item.id)
+                    // Rows grouped by pull/merge request under collapsible headers (D46), expanded by default.
+                    VStack(spacing: 10) {
+                        ForEach(model.popoverGroups(section)) { group in
+                            PopoverPRGroupView(model: model, group: group, voiceOverFocus: voiceOverFocus)
+                                .transition(Motion.listTransition)
                         }
                     }
                     if items.count > AppModel.popoverRowLimit {
@@ -463,7 +493,7 @@ struct EmptySectionRow: View {
     }
 }
 
-/// Shown right after "Fix with AI" in the popover: hand the new task to an agent.
+/// Shown right after "Fix now" in the popover: hand the new task to an agent.
 struct HandoffCallout: View {
     let model: AppModel
     let offer: HandoffOffer
@@ -486,14 +516,15 @@ struct HandoffCallout: View {
                 .buttonStyle(PlainRowButtonStyle())
                 .accessibilityLabel("Dismiss")
             }
-            Text("Paste the command into your agent, or open the agent at the task checkout. The status changes only after it connects.")
+            Text("Paste the command into your agent, or open the agent in the repository's folder. The status changes only after it connects.")
                 .scaledFont(.system(size: 12))
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
-                if let agent = model.preferredAgent, agent.canOpenTasks {
+                if let agent = model.preferredAgent, agent.canOpenTasks, let record = model.task(offer.taskID),
+                   let directory = model.localCheckout(for: record.task.origin.changeRequest, task: record) {
                     Button {
-                        Task { await model.send(.openInAgent(offer.taskID, agent: agent.kind)) }
+                        Task { await model.send(.openInAgent(offer.taskID, agent: agent.kind, directory: directory)) }
                     } label: {
                         HStack(spacing: 6) {
                             AgentMark(kind: agent.kind, size: 13, monochrome: .white)
@@ -514,7 +545,7 @@ struct HandoffCallout: View {
             }
         }
         .padding(12)
-        .cardBackground(Theme.waiting.opacity(0.07), radius: 12, border: Theme.waiting.opacity(0.35))
+        .glassCard(tint: Theme.waiting)
     }
 }
 
@@ -546,5 +577,42 @@ struct OnboardingPrompt: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity)
+    }
+}
+
+/// One change request's rows in a popover section under a compact collapsible header (D46).
+struct PopoverPRGroupView: View {
+    let model: AppModel
+    let group: PopoverPRGroup
+    var voiceOverFocus: AccessibilityFocusState<String?>.Binding?
+
+    var body: some View {
+        let first = group.first
+        PRGroupView(
+            providerKind: group.changeRequest.kind, repoFullPath: first?.repoFullPath ?? "", number: group.changeRequest.number,
+            title: model.snapshot(group.changeRequest)?.summary.title ?? first?.title ?? "", count: group.items.count,
+            unreadCount: group.items.filter(\.isUnread).count, marks: marks, latest: group.items.map(\.date).max(), now: model.now,
+            isCollapsed: model.isPopoverGroupCollapsed(group), approval: model.approvalSummary(group.changeRequest),
+            onOpen: { model.openChangeRequestFromPopover(group.changeRequest) },
+            onOpenExternal: model.snapshot(group.changeRequest).map { snapshot in { Task { await model.send(.openURL(snapshot.summary.webURL)) } } },
+            compact: true,
+            toggle: { model.togglePopoverGroup(group) }
+        ) {
+            VStack(spacing: 8) {
+                ForEach(group.items) { item in
+                    PopoverRowView(model: model, item: item, voiceOverFocus: voiceOverFocus, inGroup: true)
+                        .id(item.id)
+                        .transition(Motion.listTransition)
+                }
+            }
+        }
+    }
+
+    private var marks: [PRGroupMark] {
+        var seen: Set<String> = []
+        return group.items.compactMap { item in
+            guard seen.insert(item.reasonSymbol).inserted else { return nil }
+            return PRGroupMark(symbol: item.reasonSymbol, color: Theme.color(item.tone))
+        }
     }
 }

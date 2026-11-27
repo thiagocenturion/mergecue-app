@@ -51,7 +51,7 @@ extension MergeCueEngine {
         try await userTransition(id, .dismiss, message: "Dismissed by you.") { $0.lease = nil }
     }
 
-    /// `failed` / `blocked` / `stale` → `waiting_for_agent` (lease cleared).
+    /// `failed` / `blocked` / `stale` / `working` → `waiting_for_agent` (lease cleared).
     @discardableResult
     public func retryTask(_ id: TaskID) async throws(EngineError) -> MCTask {
         try await userTransition(id, .retry, message: "Retry requested; task ready to start again.") {
@@ -66,10 +66,25 @@ extension MergeCueEngine {
         try await userTransition(id, .unblock, message: "Unblocked by you; task ready to start again.") { $0.lease = nil }
     }
 
-    /// `ready_for_review` → `done` without any remote action.
+    /// → `done` without any remote action: from `ready_for_review`, or set by hand from `waiting_for_agent`,
+    /// `working`, `blocked`, `failed` or `stale` (D40). Items the task covers that still need you are acknowledged.
     @discardableResult
     public func markTaskDone(_ id: TaskID) async throws(EngineError) -> MCTask {
-        try await userTransition(id, .markDone, message: "Marked done by you (no remote action).")
+        let done = try await userTransition(id, .markDone, message: "Marked done by you (no remote action).") { $0.lease = nil }
+        for attentionID in done.coveredAttentionIDs {
+            guard let item = try? await database.attentionItem(id: attentionID), item.isActionable(now: now) else { continue }
+            try? await acknowledgeAttention(attentionID)
+        }
+        return done
+    }
+
+    /// "In progress" set by hand (`waiting_for_agent`, `stale`, `failed`, `blocked` → `working`, no lease, never stale).
+    @discardableResult
+    public func startTaskManually(_ id: TaskID) async throws(EngineError) -> MCTask {
+        try await userTransition(id, .startManually, message: "Marked in progress by you.") {
+            $0.lease = nil
+            $0.lastError = nil
+        }
     }
 
     /// "Discard and retry": rejects the submitted result (`ready_for_review` → `waiting_for_agent`). Nothing is

@@ -117,6 +117,20 @@ extension MergeCueRuntime {
         return script
     }
 
+    /// "Open in <agent>" (D60, D61): opens the agent in a new Terminal window in `directory` (the repository's local
+    /// checkout the owner mapped) with `prompt`. `label` names the launch script (a task id, `review-cr_…`).
+    @discardableResult
+    public func openPromptInAgent(agent: DetectedAgent, label: String, directory: String, prompt: String) async throws -> URL {
+        var isDirectory: ObjCBool = false
+        guard directory.hasPrefix("/"), FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw RuntimeError.failed("\(directory) isn't a folder on this Mac. Map the repository again in Settings › Repositories.")
+        }
+        let command = try HandoffCommandBuilder.promptCommand(
+            for: agent, label: label, directory: URL(filePath: directory, directoryHint: .isDirectory), prompt: prompt
+        )
+        return try await AgentLauncher().openInTerminal(prompt: command, handoffDir: dataPaths.handoff)
+    }
+
     // MARK: Login item
 
     /// Launch-at-login state (`SMAppService.mainApp`).

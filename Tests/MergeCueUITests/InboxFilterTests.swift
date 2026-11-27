@@ -52,16 +52,34 @@ struct InboxFilterTests {
         let mine = run(InboxFilter(scope: .mine, collapseRead: false)).visibleItems
         let reviewing = run(InboxFilter(scope: .reviewing, collapseRead: false)).visibleItems
         #expect(!mine.isEmpty && mine.allSatisfy { snapshots[$0.changeRequest]?.contains(.authored) == true })
-        #expect(!reviewing.isEmpty && reviewing.allSatisfy { snapshots[$0.changeRequest]?.contains(.reviewRequested) == true })
+        #expect(!reviewing.isEmpty && reviewing.allSatisfy {
+            !(snapshots[$0.changeRequest] ?? []).isDisjoint(with: [.reviewRequested, .participated])
+        })
         #expect(Set(mine.map(\.id)).isDisjoint(with: reviewing.map(\.id)))
     }
 
-    @Test func collapseReadHidesReadActivity() {
+    @Test func collapseReadHidesClearedActivity() {
         let collapsed = InboxQuery.run(state: state, filter: InboxFilter(collapseRead: true), now: testNow)
         let expanded = InboxQuery.run(state: state, filter: InboxFilter(collapseRead: true), now: testNow, showRead: true)
         #expect(collapsed.hiddenReadCount > 0)
-        #expect(collapsed.visibleItems.allSatisfy { $0.isUnread || $0.isActionable(now: testNow) })
+        #expect(collapsed.visibleItems.allSatisfy { $0.isActionable(now: testNow) })
         #expect(expanded.visibleItems.count == collapsed.visibleItems.count + collapsed.hiddenReadCount)
+    }
+
+    /// D55: an item the provider resolved while it was still unread (approved on the website, CI recovered) has
+    /// nothing left to acknowledge, so it must not stay in the Inbox forever.
+    @Test func unreadButClearedItemsAreCollapsed() throws {
+        var state = state
+        let index = try #require(state.attention.firstIndex { $0.isActionable(now: testNow) && $0.thread == nil })
+        let item = state.attention[index]
+        for disposition in [AttentionDisposition.resolved, .acknowledged, .snoozed(until: testNow.addingTimeInterval(3_600))] {
+            state.attention[index].disposition = disposition
+            state.attention[index].isUnread = true
+            let result = InboxQuery.run(state: state, filter: InboxFilter(collapseRead: true), now: testNow)
+            #expect(!result.visibleItems.contains { $0.id == item.id }, "\(disposition.name) stays hidden while unread")
+            let shown = InboxQuery.run(state: state, filter: InboxFilter(collapseRead: true), now: testNow, showRead: true)
+            #expect(shown.visibleItems.contains { $0.id == item.id }, "still behind Show cleared items")
+        }
     }
 
     @Test func statusFilters() {
@@ -101,5 +119,41 @@ struct InboxFilterTests {
             == .unsupportedPermission("missing scope read:org"))
         #expect(AccountListState(status: AccountSyncStatus(account: key, state: .rateLimited(until: testNow)), hasItems: true)
             == .rateLimited(until: testNow))
+    }
+
+    /// An account whose change requests all failed to load is never shown as a healthy empty list (DECISIONS D35).
+    @Test func failedChangeRequestsAreSurfaced() throws {
+        let key = AccountKey(kind: .bitbucketCloud, host: "bitbucket.org", remoteUserID: "1")
+        let errors = (1...4).map { number in
+            ChangeRequestSyncError(
+                changeRequest: ChangeRequestKey(repo: RepoKey(account: key, remoteRepoID: "r"), remoteID: "\(number)", number: number),
+                title: "PR \(number)", repoFullPath: "acme/api", code: "not_found", message: "Not found.",
+                isTerminal: true, failedAt: testNow
+            )
+        }
+        var status = AccountSyncStatus(account: key, state: .ok, lastSuccessAt: testNow, changeRequestErrors: errors)
+        #expect(AccountListState(status: status, hasItems: false) == .changeRequestsFailed(count: 4))
+        #expect(AccountListState(status: status, hasItems: false).isProblem)
+        #expect(AccountListState(status: status, hasItems: true) == .ok)
+        #expect(UIFormat.changeRequestFailureText(status, kind: .bitbucketCloud) == "4 PRs couldn't be loaded: not found")
+        #expect(UIFormat.changeRequestRetryText(status)?.contains("Not retried automatically") == true)
+        status.changeRequestErrors = [errors[0]]
+        #expect(UIFormat.changeRequestFailureText(status, kind: .gitlab) == "1 MR couldn't be loaded: not found")
+        status.changeRequestErrors = []
+        #expect(UIFormat.changeRequestFailureText(status, kind: .github) == nil)
+    }
+
+    @Test func rateLimitAndRequestUsageTexts() {
+        let key = AccountKey(kind: .github, host: "github.com", remoteUserID: "1")
+        let limited = AccountSyncStatus(account: key, state: .rateLimited(until: testNow))
+        #expect(UIFormat.syncText(limited, now: testNow) == "Rate limited. Retrying at \(UIFormat.time(testNow))")
+        #expect(!UIFormat.syncText(limited, now: testNow).contains("hour"))
+        var usage = AccountSyncStatus(account: key, state: .ok, requestsLastHour: 142, requestBudget: 1_500)
+        #expect(UIFormat.requestUsageText(usage) == "142 requests in the last hour · budget 1500/h")
+        usage.requestsLastHour = 1_600
+        #expect(usage.isOverRequestBudget)
+        #expect(UIFormat.requestUsageText(usage)?.contains("refreshing less often") == true)
+        usage.requestsLastHour = nil
+        #expect(UIFormat.requestUsageText(usage) == nil)
     }
 }

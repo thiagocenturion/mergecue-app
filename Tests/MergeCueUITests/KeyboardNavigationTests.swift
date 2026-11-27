@@ -32,7 +32,7 @@ struct KeyboardNavigationTests {
         #expect(model.selectedAttentionID == first.attentionID)
         #expect(model.handoffOffer == nil)
 
-        // ⌘↩: the primary action ("Fix with AI").
+        // ⌘↩: the primary action ("Fix now").
         await model.activatePopoverSelection()
         #expect(model.handoffOffer != nil)
     }
@@ -124,16 +124,16 @@ struct KeyboardNavigationTests {
         #expect(model.windowTitle.subtitle == "MergeCue · Preview data")
         let item = try #require(model.state.attention(.github, number: 42, reason: .changesRequested))
         model.selectedAttentionID = item.id
-        #expect(model.windowTitle.title == "Inbox — \(item.repoFullPath) #42")
+        #expect(model.windowTitle.title == "Inbox · \(item.repoFullPath) #42")
         model.screen = .settings
         model.settingsTab = .notifications
-        #expect(model.windowTitle.title == "Settings — Notifications")
+        #expect(model.windowTitle.title == "Settings · Notifications")
         model.screen = .tasks
         model.selectedTaskID = nil
         #expect(model.windowTitle.title == "Tasks")
         let ready = try #require(model.state.task(in: .readyForReview))
         model.selectedTaskID = ready.id
-        #expect(model.windowTitle.title == "Task \(ready.id.rawValue) — Ready")
+        #expect(model.windowTitle.title == "Task \(ready.id.rawValue) · Ready")
     }
 
     @Test func hotKeyPresetsAreCarbonCombinations() {

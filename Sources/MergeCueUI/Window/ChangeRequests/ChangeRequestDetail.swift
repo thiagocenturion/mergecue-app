@@ -7,14 +7,32 @@ struct ChangeRequestDetail: View {
     let model: AppModel
 
     var body: some View {
-        Group {
-            if let snapshot = model.snapshot(id: model.selectedChangeRequestID) {
-                ChangeRequestPanel(model: model, changeRequest: snapshot.key, focus: nil)
-                    .id(snapshot.id)
-            } else {
-                NothingSelected(title: "Select a pull or merge request", symbol: "arrow.triangle.pull",
-                                message: "Pick a PR/MR to see its reviews, checks and threads.")
+        VStack(spacing: 10) {
+            if model.detailTabsEnabled == true, !model.prTabs.isEmpty {
+                DetailTabBar(
+                    tabs: model.prTabs.compactMap { id in
+                        model.snapshot(id: id).map { DetailTab(id: id, title: $0.summary.title, providerKind: $0.key.kind) }
+                    },
+                    selected: model.selectedChangeRequestID,
+                    onSelect: { model.selectedChangeRequestID = $0 },
+                    onClose: { model.closeChangeRequestDetail($0) },
+                    onDisable: { withAnimation(Motion.smooth) { model.detailTabsEnabled = false } }
+                )
+            } else if model.detailTabsEnabled == nil, model.selectedChangeRequestID != nil {
+                DetailTabsPrompt(model: model)
             }
+            ZStack {
+                if let snapshot = model.snapshot(id: model.selectedChangeRequestID) {
+                    ChangeRequestPanel(model: model, changeRequest: snapshot.key, focus: nil,
+                                       onClose: model.detailTabsEnabled == true ? nil : { model.closeChangeRequestDetail(snapshot.id) })
+                        .id(snapshot.id)
+                        .transition(.asymmetric(insertion: .opacity.combined(with: .offset(x: 18)), removal: .opacity))
+                } else {
+                    NothingSelected(title: "Select a pull or merge request", symbol: "arrow.triangle.pull",
+                                    message: "Pick a PR/MR to see its reviews, checks and threads.")
+                }
+            }
+            .animation(Motion.smooth, value: model.selectedChangeRequestID)
         }
         .padding(.horizontal, 14)
         .padding(.bottom, 14)
@@ -33,7 +51,7 @@ struct ReviewersCard: View {
                 }
                 ForEach(snapshot.reviewers, id: \.person.remoteID) { reviewer in
                     HStack(spacing: 10) {
-                        Avatar(name: reviewer.person.displayLabel, size: 26)
+                        PersonAvatar(person: reviewer.person, size: 26)
                         VStack(alignment: .leading, spacing: 0) {
                             Text(reviewer.person.displayLabel).scaledFont(.system(size: 13, weight: .medium)).foregroundStyle(Theme.textPrimary)
                             Text("@" + reviewer.person.username).scaledFont(.system(size: 11.5)).foregroundStyle(Theme.textSecondary)
@@ -47,9 +65,15 @@ struct ReviewersCard: View {
                     .accessibilityElement(children: .combine)
                 }
                 ThemeDivider()
-                Text(approvalText)
-                    .scaledFont(.system(size: 12))
-                    .foregroundStyle(snapshot.approvals.isSatisfied == true ? Theme.mint : Theme.textSecondary)
+                HStack(spacing: 8) {
+                    let approvers = ApprovalDerivation.approvers(snapshot).people
+                    if !approvers.isEmpty {
+                        AvatarStack(people: approvers, size: 20, limit: 5)
+                    }
+                    Text(approvalText)
+                        .scaledFont(.system(size: 12))
+                        .foregroundStyle(snapshot.approvals.isSatisfied == true ? Theme.mint : Theme.textSecondary)
+                }
             }
         }
     }

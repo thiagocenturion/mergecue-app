@@ -85,8 +85,8 @@ struct IPCErrorTests {
         let working = try await h.task(task.id)
         // Claiming a task that is already working (with the right version) is not a legal transition.
         #expect(await h.errorCode(ClaimTaskParams(taskID: task.id, agentName: "b", expectedVersion: working.version)) == .invalidTransition)
-        // User-side: markDone from working is illegal.
-        await #expect(throws: EngineError.self) { try await h.engine.markTaskDone(task.id) }
+        // User-side: "In progress" on a task that is already working is illegal (marking it done by hand is allowed, D40).
+        await #expect(throws: EngineError.self) { try await h.engine.startTaskManually(task.id) }
     }
 
     @Test("terminal_state: agents can never resurrect finished tasks")

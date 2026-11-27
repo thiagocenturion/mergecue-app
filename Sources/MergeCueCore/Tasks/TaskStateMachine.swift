@@ -64,6 +64,9 @@ public enum TaskTransitionError: Error, Sendable, Hashable, LocalizedError {
 /// | done, cancelled, dismissed | reopen (user) | waiting_for_agent |
 /// | waiting_for_agent, working | block (system or user) | blocked |
 /// | blocked | unblock (user) | waiting_for_agent |
+/// | waiting_for_agent, stale, failed, blocked | startManually (user) | working (no lease: set by hand, never stale) |
+/// | waiting_for_agent, working, blocked, failed, stale | markDone (user) | done (set by hand) |
+/// | working | retry (user) | waiting_for_agent (lease cleared) |
 public enum TaskStateMachine {
     /// The only state a task can be created in.
     public static let initialState: TaskState = .waitingForAgent
@@ -128,6 +131,16 @@ public enum TaskStateMachine {
             return .waitingForAgent
         case (.readyForReview, .markDone, .user):
             return .done
+
+        // Status set by hand (D40).
+        case (.waitingForAgent, .startManually, .user), (.stale, .startManually, .user),
+             (.failed, .startManually, .user), (.blocked, .startManually, .user):
+            return .working
+        case (.waitingForAgent, .markDone, .user), (.working, .markDone, .user), (.blocked, .markDone, .user),
+             (.failed, .markDone, .user), (.stale, .markDone, .user):
+            return .done
+        case (.working, .retry, .user):
+            return .waitingForAgent
 
         // Outcome of an approved remote action (performed by the engine).
         case (.approvedAction, .markDone, .system):

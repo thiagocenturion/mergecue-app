@@ -56,7 +56,6 @@ struct RuleList: View {
                 .accessibilityHint("Use the up and down arrow keys to move, Command-Return to edit")
             }
         }
-        .background(Theme.contentBackground)
     }
 
     @ViewBuilder
@@ -71,9 +70,8 @@ struct RuleList: View {
             let isSelected = model.selectedRuleID == rule.id
             RuleRow(model: model, rule: rule)
                 .padding(10)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(isSelected ? Theme.surfaceSelected : Theme.surface))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(isSelected ? Theme.accent.opacity(0.7) : Theme.border, lineWidth: 1))
-                .keyboardSelectionRing(isSelected && listFocused, cornerRadius: 10)
+                .selectableGlass(isSelected: isSelected)
+                .keyboardSelectionRing(isSelected && listFocused, cornerRadius: Theme.radius)
                 .contentShape(Rectangle())
                 .onTapGesture {
                     model.selectedRuleID = rule.id
@@ -191,7 +189,6 @@ struct RuleDetail: View {
                 .frame(maxWidth: 760, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .background(Theme.windowBackground)
         } else {
             NothingSelected(title: "Rules", symbol: "wand.and.rays",
                             message: "Rules turn PR/MR events into notifications or tasks, with per-repo filters and quiet hours.")
@@ -238,6 +235,7 @@ enum RuleText {
         case .reviewRequested: "a review request"
         case .headChanged: "new commits"
         case .threadResolved: "a resolved thread"
+        case .approvalReset: "a reset approval"
         }
     }
 

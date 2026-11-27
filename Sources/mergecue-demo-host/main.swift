@@ -43,8 +43,9 @@ if let index = arguments.firstIndex(of: "--lease-seconds"), index + 1 < argument
     leaseSeconds = value
 }
 
-// Profiling (scripts/profile-demo-host.sh): --sync-interval N polls every account every N seconds and re-hydrates
-// every change request each cycle (the live cadence is 45–300 s); --refresh-every N also runs a manual refresh
+// Profiling (scripts/profile-demo-host.sh): --sync-interval N lists every account and refreshes every change
+// request's details every N seconds (the live cadence is lists every 15 min + progressive 30 s–30 min detail
+// refreshes); --refresh-every N also runs a manual refresh
 // (which advances the demo scenario) every N seconds.
 func numberArgument(_ name: String) -> TimeInterval? {
     guard let index = arguments.firstIndex(of: name), index + 1 < arguments.count else { return nil }
@@ -52,10 +53,7 @@ func numberArgument(_ name: String) -> TimeInterval? {
 }
 var syncConfiguration: SyncConfiguration?
 if let interval = numberArgument("--sync-interval"), interval > 0 {
-    syncConfiguration = SyncConfiguration(
-        defaultInterval: interval, hotInterval: interval, idleInterval: interval, idleHours: nil,
-        jitterFraction: 0, fullRefreshInterval: 0
-    )
+    syncConfiguration = .fixedInterval(interval)
 }
 let refreshEvery = numberArgument("--refresh-every")
 

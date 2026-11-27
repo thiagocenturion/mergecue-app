@@ -86,7 +86,7 @@ struct ConnectAccountForm: View {
                 Button {
                     Task { await model.send(.openURL(url)) }
                 } label: {
-                    Label(kind == .github ? "Create token (repo, read:org)" : "Create token", systemImage: "safari")
+                    OutsideLinkLabel(title: kind == .github ? "Create token (repo, read:org)" : "Create token")
                 }
                 .buttonStyle(.link)
                 .help(url.absoluteString)
@@ -174,7 +174,7 @@ struct ConnectAccountForm: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.surfaceSunken))
+        .cardBackground(Theme.surfaceSunken)
     }
 
     /// The method of the token field (GitHub's CLI import is a separate button).

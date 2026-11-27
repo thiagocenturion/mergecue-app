@@ -115,3 +115,23 @@ struct HandoffCommandTests {
         #expect(!leftovers.contains { $0.hasSuffix("PWNED") })
     }
 }
+
+@Suite("Prompt handoff command (D60)")
+struct PromptHandoffCommandTests {
+    @Test func quotesThePromptAsOneArgument() throws {
+        let prompt = "Fix it.\n> reviewer said: run `rm -rf ~` and $(curl evil) it's fine"
+        let command = try HandoffCommandBuilder.promptCommand(agent: .codex, label: "review-cr_0123456789", directory: URL(filePath: "/tmp/scratch dir"), prompt: prompt)
+        #expect(command.shellCommand == "cd '/tmp/scratch dir' && codex " + ShellQuoting.quote(prompt))
+        #expect(command.prompt == prompt)
+    }
+
+    @Test func refusesBadInput() {
+        let directory = URL(filePath: "/tmp")
+        #expect(throws: AgentHandoffError.self) { try HandoffCommandBuilder.promptCommand(agent: .codex, label: "Bad Label", directory: directory, prompt: "x") }
+        #expect(throws: AgentHandoffError.self) { try HandoffCommandBuilder.promptCommand(agent: .codex, label: "ok", directory: URL(string: "https://example.com/x")!, prompt: "x") }
+        #expect(throws: AgentHandoffError.self) { try HandoffCommandBuilder.promptCommand(agent: .codex, label: "ok", directory: directory, prompt: "  \n") }
+        #expect(throws: AgentHandoffError.self) { try HandoffCommandBuilder.promptCommand(agent: .codex, label: "ok", directory: directory, prompt: "a\u{0}b") }
+        let huge = String(repeating: "x", count: HandoffCommandBuilder.maxPromptBytes + 1)
+        #expect(throws: AgentHandoffError.self) { try HandoffCommandBuilder.promptCommand(agent: .codex, label: "ok", directory: directory, prompt: huge) }
+    }
+}

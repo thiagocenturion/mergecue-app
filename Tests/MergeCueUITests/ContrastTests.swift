@@ -7,17 +7,18 @@ import Testing
 @Suite("Theme contrast")
 @MainActor
 struct ContrastTests {
-    typealias Appearance = (name: String, dark: Bool, highContrast: Bool)
-    static let appearances: [Appearance] = [("light", false, false), ("dark", true, false),
-                                            ("light HC", false, true), ("dark HC", true, true)]
+    typealias Appearance = (name: String, dark: Bool, highContrast: Bool, style: DarkStyle)
+    static let appearances: [Appearance] = [("light", false, false, .graphite), ("dark", true, false, .graphite),
+                                            ("light HC", false, true, .graphite), ("dark HC", true, true, .graphite),
+                                            ("dark midnight", true, false, .midnight), ("dark midnight HC", true, true, .midnight)]
 
     static func hex(_ token: ColorToken, _ appearance: Appearance) -> UInt32 {
-        token.resolved(dark: appearance.dark, highContrast: appearance.highContrast).hex
+        token.resolved(dark: appearance.dark, highContrast: appearance.highContrast, style: appearance.style).hex
     }
 
     /// A translucent token composited over an opaque surface.
     static func flattened(_ token: ColorToken, over surface: ColorToken, _ appearance: Appearance) -> UInt32 {
-        let value = token.resolved(dark: appearance.dark, highContrast: appearance.highContrast)
+        let value = token.resolved(dark: appearance.dark, highContrast: appearance.highContrast, style: appearance.style)
         return Contrast.composite(value.hex, alpha: value.alpha, over: hex(surface, appearance))
     }
 
@@ -114,9 +115,9 @@ struct ContrastTests {
     }
 
     @Test func increaseContrastNeverLowersContrast() {
-        for dark in [false, true] {
-            let regular: Appearance = (dark ? "dark" : "light", dark, false)
-            let high: Appearance = (regular.name + " HC", dark, true)
+        for (dark, style) in [(false, DarkStyle.graphite), (true, .graphite), (true, .midnight)] {
+            let regular: Appearance = (dark ? "dark \(style)" : "light", dark, false, style)
+            let high: Appearance = (regular.name + " HC", dark, true, style)
             for token in [Palette.textSecondary, Palette.textTertiary, Palette.controlBorder] {
                 for (_, surface) in Palette.surfaces {
                     #expect(Contrast.ratio(Self.hex(token, high), Self.hex(surface, high))

@@ -11,6 +11,10 @@ public enum AttentionReason: String, Codable, Sendable, CaseIterable {
     case reviewRequested = "review_requested"
     case readyToMerge = "ready_to_merge"
     case mergeConflict = "merge_conflict"
+    /// The user's approval was reset by new commits and the change request needs it again (D53).
+    case reapprovalNeeded = "reapproval_needed"
+    /// New commits after the user commented or requested changes (D53).
+    case updatedSinceReview = "updated_since_review"
 
     public var displayName: String {
         switch self {
@@ -23,14 +27,16 @@ public enum AttentionReason: String, Codable, Sendable, CaseIterable {
         case .reviewRequested: "Review requested"
         case .readyToMerge: "Ready to merge"
         case .mergeConflict: "Merge conflict"
+        case .reapprovalNeeded: "Re-approval needed"
+        case .updatedSinceReview: "Updated since your review"
         }
     }
 
     /// Default priority used by attention derivation.
     public var defaultPriority: AttentionPriority {
         switch self {
-        case .changesRequested, .ciFailed, .mergeConflict: .high
-        case .reviewComment, .reviewerQuestion, .codeSuggestion, .reply, .reviewRequested: .normal
+        case .changesRequested, .ciFailed, .mergeConflict, .reapprovalNeeded: .high
+        case .reviewComment, .reviewerQuestion, .codeSuggestion, .reply, .reviewRequested, .updatedSinceReview: .normal
         case .readyToMerge: .low
         }
     }
@@ -46,7 +52,7 @@ public enum AttentionReason: String, Codable, Sendable, CaseIterable {
             [.addressWithAI, .openInProvider, .acknowledge, .snooze]
         case .ciFailed:
             [.investigateWithAI, .openInProvider, .acknowledge, .snooze]
-        case .reviewRequested, .readyToMerge, .mergeConflict:
+        case .reviewRequested, .readyToMerge, .mergeConflict, .reapprovalNeeded, .updatedSinceReview:
             [.openInProvider, .acknowledge, .snooze]
         }
     }

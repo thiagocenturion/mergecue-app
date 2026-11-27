@@ -18,6 +18,16 @@ public enum NotificationCategory: String, Codable, Sendable, CaseIterable {
     case approvals
     /// An agent submitted a result that is ready for your review.
     case agentResults = "agent_results"
+    /// Your approval was reset by new commits, or new commits arrived after you commented or requested changes (D53).
+    case reviewUpdates = "review_updates"
+    /// A pull/merge request you reviewed was merged (off by default, D53).
+    case reviewedMerged = "reviewed_merged"
+
+    /// Whether the category is on until the owner switches it off. Opt-in categories are stored in
+    /// `NotificationPreferences.enabled` instead.
+    public var isOnByDefault: Bool {
+        self != .reviewedMerged
+    }
 
     /// The category of an attention reason.
     public init(reason: AttentionReason) {
@@ -27,6 +37,7 @@ public enum NotificationCategory: String, Codable, Sendable, CaseIterable {
         case .ciFailed: self = .ciFailures
         case .reviewRequested: self = .reviewRequests
         case .readyToMerge: self = .approvals
+        case .reapprovalNeeded, .updatedSinceReview: self = .reviewUpdates
         }
     }
 
@@ -37,7 +48,9 @@ public enum NotificationCategory: String, Codable, Sendable, CaseIterable {
         case .reviewComment, .changeRequested, .reply: self = .reviewComments
         case .ciFailed: self = .ciFailures
         case .reviewRequested: self = .reviewRequests
-        case .ciRecovered, .merged, .closedWithoutMerge, .headChanged, .threadResolved: return nil
+        case .approvalReset: self = .reviewUpdates
+        case .merged: self = .reviewedMerged
+        case .ciRecovered, .closedWithoutMerge, .headChanged, .threadResolved: return nil
         }
     }
 
@@ -50,26 +63,32 @@ public enum NotificationCategory: String, Codable, Sendable, CaseIterable {
         case .reviewRequests: "Review requests"
         case .approvals: "Approvals and ready to merge on my PRs/MRs"
         case .agentResults: "Agent results ready for review"
+        case .reviewUpdates: "Re-approval needed and new commits on PRs/MRs I review"
+        case .reviewedMerged: "PRs/MRs I reviewed get merged"
         }
     }
 }
 
 /// The owner's per-category notification switches (persisted by the engine, honoured by Sync's
-/// `NotificationGrouper` and by the engine's agent-result notification). Every category is on by default; only the
-/// switched-off ones are stored, so categories added later start enabled.
+/// `NotificationGrouper` and by the engine's agent-result notification). Categories are on by default and only the
+/// switched-off ones are stored, so categories added later start enabled; opt-in categories
+/// (`NotificationCategory.isOnByDefault == false`) are stored in `enabled` once switched on.
 public struct NotificationPreferences: Codable, Sendable, Hashable {
-    /// Categories the owner switched off.
+    /// On-by-default categories the owner switched off.
     public var disabled: Set<NotificationCategory>
+    /// Opt-in categories the owner switched on.
+    public var enabled: Set<NotificationCategory>
 
-    public init(disabled: Set<NotificationCategory> = []) {
+    public init(disabled: Set<NotificationCategory> = [], enabled: Set<NotificationCategory> = []) {
         self.disabled = disabled
+        self.enabled = enabled
     }
 
-    /// Everything on (the default).
+    /// The defaults: every on-by-default category on, opt-in categories off.
     public static let allEnabled = NotificationPreferences()
 
     public func isEnabled(_ category: NotificationCategory) -> Bool {
-        !disabled.contains(category)
+        category.isOnByDefault ? !disabled.contains(category) : enabled.contains(category)
     }
 
     /// Whether an attention item with `reason` may raise an alert.
@@ -82,8 +101,12 @@ public struct NotificationPreferences: Codable, Sendable, Hashable {
         NotificationCategory(informationalEvent: type).map(isEnabled) ?? true
     }
 
-    public mutating func set(_ category: NotificationCategory, enabled: Bool) {
-        if enabled { disabled.remove(category) } else { disabled.insert(category) }
+    public mutating func set(_ category: NotificationCategory, enabled isOn: Bool) {
+        if category.isOnByDefault {
+            if isOn { disabled.remove(category) } else { disabled.insert(category) }
+        } else {
+            if isOn { enabled.insert(category) } else { enabled.remove(category) }
+        }
     }
 
     public func setting(_ category: NotificationCategory, enabled: Bool) -> NotificationPreferences {
@@ -93,16 +116,20 @@ public struct NotificationPreferences: Codable, Sendable, Hashable {
     }
 
     // Sorted array encoding (stable bytes, D17); unknown categories from a newer build are ignored.
-    private enum CodingKeys: String, CodingKey { case disabled }
+    // `enabled` is written only when non-empty, so preferences without opt-ins keep their earlier bytes.
+    private enum CodingKeys: String, CodingKey { case disabled, enabled }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let raw = try container.decodeIfPresent([String].self, forKey: .disabled) ?? []
         disabled = Set(raw.compactMap(NotificationCategory.init(rawValue:)))
+        let rawEnabled = try container.decodeIfPresent([String].self, forKey: .enabled) ?? []
+        enabled = Set(rawEnabled.compactMap(NotificationCategory.init(rawValue:)))
     }
 
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(disabled.map(\.rawValue).sorted(), forKey: .disabled)
+        if !enabled.isEmpty { try container.encode(enabled.map(\.rawValue).sorted(), forKey: .enabled) }
     }
 }

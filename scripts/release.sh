@@ -76,5 +76,15 @@ xcrun notarytool submit "$dmg_out" --keychain-profile "$profile" --wait >/dev/nu
     && echo "  dmg notarized and stapled" || echo "  warning: dmg notarization failed; the zip is still valid"
 rm -rf "$staging" "$(dirname "$submission")"
 
+section "Forgetting build copies in LaunchServices"
+# Every build copy of the bundle (DerivedData, dist/, staging) registers com.thiagocenturion.MergeCue with
+# LaunchServices. Stale or duplicate entries make Notification Center resolve the wrong (or a deleted) copy, so only
+# the copy you install and run (/Applications or the repository root) should stay registered.
+lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+for copy in "$app" build/DerivedData/Build/Products/*/MergeCue.app; do
+    [[ -e "$copy" ]] && "$lsregister" -u "$copy" >/dev/null 2>&1 || true
+done
+echo "  unregistered build copies (install with: ditto MergeCue.app /Applications/MergeCue.app)"
+
 section "Done: MergeCue $version ($build)"
 ls -lh "$zip_out" "$dmg_out"

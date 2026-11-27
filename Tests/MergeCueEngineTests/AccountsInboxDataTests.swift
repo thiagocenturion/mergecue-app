@@ -13,6 +13,8 @@ struct AccountsInboxDataTests {
     func connect() async throws {
         let h = try await Harness.make()
         h.world.state.update { $0.users["gitlab"] = ProviderUser(remoteID: "2002", username: "mona", displayName: "Mona", grantedScopes: ["read_api"]) }
+        // The harness maps checkouts first; each mapping reloads Sync too (watched repositories follow them, D36).
+        let reloadsBefore = await h.sync.accountsDidChangeCount
         let account = try await h.engine.connectAccount(AccountConnectionRequest(
             instance: .gitlabCom, method: .personalAccessToken, credential: .bearer("glpat-secretsecretsecret1234"), label: "Work"
         ))
@@ -21,7 +23,7 @@ struct AccountsInboxDataTests {
         #expect(account.label == "Work")
         #expect(try h.credentials.load(for: Fixture.gitlab) != nil)
         #expect(try await h.db.account(Fixture.gitlab) != nil)
-        #expect(await h.sync.accountsDidChangeCount == 1)
+        #expect(await h.sync.accountsDidChangeCount == reloadsBefore + 1)
         let states = try await h.engine.accountStates()
         #expect(states.map(\.account.id).contains(Fixture.gitlab))
         #expect(states.first { $0.id == Fixture.gitlab }?.capabilities.provider == .gitlab)

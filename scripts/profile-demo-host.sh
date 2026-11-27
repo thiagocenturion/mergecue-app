@@ -5,8 +5,8 @@
 #   scripts/profile-demo-host.sh [duration-seconds=300] [sync-interval=5] [refresh-every=20]
 #
 # - Release build of mergecue-demo-host + mergecue-mcp; throwaway MERGECUE_HOME (/tmp/mcprof-XXXXXX), never your data.
-# - Every account polls every <sync-interval> s and re-hydrates every change request each cycle (live: 45–300 s,
-#   re-hydration only on change / every 10 min); a manual refresh (advances the demo scenario) every
+# - Every account lists and re-hydrates every change request every <sync-interval> s (live, D35: lists every 15 min,
+#   details 30 s → 5 min → 30 min by time since the last change); a manual refresh (advances the demo scenario) every
 #   <refresh-every> s; `mergecue-mcp --self-test` over the private socket every 15 s.
 # - Samples `ps -o rss=,%cpu=` every 5 s, `footprint` at start/end, `leaks` at the end.
 # - Prints a Markdown report on stdout (tables + raw samples); diagnostics on stderr.

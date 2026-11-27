@@ -142,6 +142,24 @@ public enum GitLabFixtures {
                 let project = match["project"] ?? ""
                 let lists = ["merge_requests_review_requested", "merge_requests_authored_page1", "merge_requests_authored_page2"]
                 let all = lists.flatMap { name in (data(name, step: step).flatMap { try? jsonArray($0) }) ?? [] }
+                // Watched-project listings (`author_id` / `reviewer_id`, no `iids[]`), deduplicated per iid.
+                if iids.isEmpty {
+                    let author = match.query["author_id"]?.first
+                    let reviewer = match.query["reviewer_id"]?.first
+                    var seenIIDs = Set<String>()
+                    let selected = all.filter { mr in
+                        guard "\(mr["project_id"] ?? "")" == project, (mr["state"] as? String) == "opened",
+                              seenIIDs.insert("\(mr["iid"] ?? "")").inserted
+                        else { return false }
+                        if let author { return "\((mr["author"] as? [String: Any])?["id"] ?? "")" == author }
+                        if let reviewer {
+                            let reviewers = (mr["reviewers"] as? [[String: Any]]) ?? []
+                            return reviewers.contains { "\($0["id"] ?? "")" == reviewer }
+                        }
+                        return true
+                    }
+                    return respond(json: selected, request: request)
+                }
                 let selected = all.filter { mr in
                     "\(mr["project_id"] ?? "")" == project && iids.contains("\(mr["iid"] ?? "")") && (mr["state"] as? String) == "opened"
                 }
@@ -184,6 +202,9 @@ public enum GitLabFixtures {
             },
             Route(method: "PUT", pathPattern: "/projects/{project}/merge_requests/{iid}/merge") { request, match in
                 merge(request: request, match: match, step: step)
+            },
+            Route(method: "POST", pathPattern: "/projects/{project}/merge_requests/{iid}/approve") { request, match in
+                approve(request: request, match: match, step: step)
             },
             Route(method: "POST", pathPattern: "/projects/{project}/merge_requests/{iid}/draft_notes/bulk_publish") { request, match in
                 if (request.jsonBody?["reviewer_state"]?.stringValue) == "requested_changes" {
@@ -328,6 +349,18 @@ public enum GitLabFixtures {
         state.setResolved(resolved, discussion: match["discussion"] ?? "", mr: mrName(match))
         guard let discussion = findDiscussion(match: match, step: step, state: state) else { return notFound() }
         return respond(json: discussion, request: request)
+    }
+
+    /// `POST …/approve`: 409 when `sha` is not the head, else the approval state.
+    private static func approve(request: HTTPRequest, match: StubTransport.Match, step: Int) -> HTTPResponse {
+        guard let data = data(mrName(match), step: step),
+              let mr = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return notFound() }
+        let head = mr["sha"] as? String
+        guard let sha = request.jsonBody?["sha"]?.stringValue, sha == head else {
+            return StubTransport.json(#"{"message":"SHA does not match HEAD of source branch: \#(head ?? "")"}"#, status: 409)
+        }
+        return StubTransport.json(#"{"approved":true,"approvals_left":0,"approved_by":[{"user":{"id":9120334,"username":"mona-dev"}}]}"#)
     }
 
     private static func merge(request: HTTPRequest, match: StubTransport.Match, step: Int) -> HTTPResponse {

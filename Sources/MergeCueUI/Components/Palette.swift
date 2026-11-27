@@ -1,5 +1,32 @@
 import AppKit
 import SwiftUI
+import Synchronization
+
+/// The dark-mode look (Settings › General › Appearance): neutral grays, or the original navy.
+public nonisolated enum DarkStyle: String, Sendable, Hashable, CaseIterable, Identifiable {
+    /// Neutral grays (default), like the system's own dark mode.
+    case graphite
+    /// The original deep navy.
+    case midnight
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .graphite: "Graphite"
+        case .midnight: "Midnight blue"
+        }
+    }
+
+    /// The style colour tokens resolve with. Set by `AppModel` when the preference changes; read whenever AppKit
+    /// draws a dynamic colour (any thread).
+    static var current: DarkStyle {
+        get { storage.withLock { $0 } }
+        set { storage.withLock { $0 = newValue } }
+    }
+
+    private static let storage = Mutex(DarkStyle.graphite)
+}
 
 /// One appearance-aware colour: a light and a dark value, each with an optional Increase Contrast variant
 /// (System Settings › Accessibility › Display › Increase contrast, reported by AppKit as the
@@ -11,15 +38,19 @@ struct ColorToken: Sendable, Hashable {
     }
 
     var light: Value
+    /// Dark mode in the default `graphite` style.
     var dark: Value
+    /// Dark mode in the `midnight` style; nil when it matches `dark`.
+    var midnight: Value?
     var lightHighContrast: Value?
     var darkHighContrast: Value?
 
-    init(light: UInt32, dark: UInt32, lightAlpha: CGFloat = 1, darkAlpha: CGFloat = 1,
+    init(light: UInt32, dark: UInt32, midnight: UInt32? = nil, lightAlpha: CGFloat = 1, darkAlpha: CGFloat = 1,
          lightHighContrast: UInt32? = nil, darkHighContrast: UInt32? = nil,
          lightHighContrastAlpha: CGFloat? = nil, darkHighContrastAlpha: CGFloat? = nil) {
         self.light = Value(hex: light, alpha: lightAlpha)
         self.dark = Value(hex: dark, alpha: darkAlpha)
+        self.midnight = midnight.map { Value(hex: $0, alpha: darkAlpha) }
         if lightHighContrast != nil || lightHighContrastAlpha != nil {
             self.lightHighContrast = Value(hex: lightHighContrast ?? light, alpha: lightHighContrastAlpha ?? lightAlpha)
         }
@@ -29,8 +60,11 @@ struct ColorToken: Sendable, Hashable {
     }
 
     /// The value used for an appearance (Increase Contrast falls back to the regular value when not specified).
-    func resolved(dark isDark: Bool, highContrast: Bool) -> Value {
-        if isDark { return highContrast ? (darkHighContrast ?? dark) : dark }
+    func resolved(dark isDark: Bool, highContrast: Bool, style: DarkStyle = DarkStyle.current) -> Value {
+        if isDark {
+            let base = style == .midnight ? (midnight ?? dark) : dark
+            return highContrast ? (darkHighContrast ?? base) : base
+        }
         return highContrast ? (lightHighContrast ?? light) : light
     }
 
@@ -102,18 +136,18 @@ enum Contrast {
 /// keep the brighter mockup colours; text in a status colour uses the `…Text` variants.
 enum Palette {
     // MARK: Surfaces
-    static let windowBackground = ColorToken(light: 0xF3F5FA, dark: 0x0B1020)
-    static let sidebarBackground = ColorToken(light: 0xE9EDF5, dark: 0x0D1324)
-    static let contentBackground = ColorToken(light: 0xF3F5FA, dark: 0x0F1629)
-    static let surface = ColorToken(light: 0xFFFFFF, dark: 0x141B2D)
-    static let surfaceSunken = ColorToken(light: 0xF5F7FB, dark: 0x0F1526)
-    static let surfaceRaised = ColorToken(light: 0xF1F4F9, dark: 0x1A2236)
-    static let surfaceHover = ColorToken(light: 0xEEF2F8, dark: 0x192136)
-    static let surfaceSelected = ColorToken(light: 0xE8F0FF, dark: 0x16224A)
-    static let popoverBackground = ColorToken(light: 0xF7F8FC, dark: 0x111728)
+    static let windowBackground = ColorToken(light: 0xF3F5FA, dark: 0x151517, midnight: 0x0B1020)
+    static let sidebarBackground = ColorToken(light: 0xE9EDF5, dark: 0x1A1A1D, midnight: 0x0D1324)
+    static let contentBackground = ColorToken(light: 0xF3F5FA, dark: 0x161618, midnight: 0x0F1629)
+    static let surface = ColorToken(light: 0xFFFFFF, dark: 0x1C1C1F, midnight: 0x141B2D)
+    static let surfaceSunken = ColorToken(light: 0xF5F7FB, dark: 0x19191B, midnight: 0x0F1526)
+    static let surfaceRaised = ColorToken(light: 0xF1F4F9, dark: 0x28282C, midnight: 0x1A2236)
+    static let surfaceHover = ColorToken(light: 0xEEF2F8, dark: 0x252528, midnight: 0x192136)
+    static let surfaceSelected = ColorToken(light: 0xE8F0FF, dark: 0x1D2638, midnight: 0x16224A)
+    static let popoverBackground = ColorToken(light: 0xF7F8FC, dark: 0x1C1C1E, midnight: 0x111728)
     /// The change request panel next to the inbox list.
-    static let panel = ColorToken(light: 0xFFFFFF, dark: 0x10172A)
-    static let terminalBackground = ColorToken(light: 0x0F1424, dark: 0x0A0F1C)
+    static let panel = ColorToken(light: 0xFFFFFF, dark: 0x1B1B1E, midnight: 0x10172A)
+    static let terminalBackground = ColorToken(light: 0x0F1424, dark: 0x0E0E10, midnight: 0x0A0F1C)
 
     /// Every opaque surface text can be drawn on (tests iterate over these).
     static let surfaces: [(String, ColorToken)] = [
@@ -140,12 +174,12 @@ enum Palette {
     static let divider = ColorToken(light: 0x0F172A, dark: 0xFFFFFF, lightAlpha: 0.08, darkAlpha: 0.07,
                                     lightHighContrastAlpha: 0.35, darkHighContrastAlpha: 0.35)
     /// Boundary of interactive controls (buttons, fields, filter chips): ≥ 3:1 against the surfaces around them.
-    static let controlBorder = ColorToken(light: 0x7F889B, dark: 0x677189, lightHighContrast: 0x4A5366, darkHighContrast: 0x9AA3B8)
+    static let controlBorder = ColorToken(light: 0x7F889B, dark: 0x7A7A82, midnight: 0x677189, lightHighContrast: 0x4A5366, darkHighContrast: 0x9AA3B8)
 
     // MARK: Text
-    static let textPrimary = ColorToken(light: 0x0F172A, dark: 0xF3F5FA, lightHighContrast: 0x000000, darkHighContrast: 0xFFFFFF)
-    static let textSecondary = ColorToken(light: 0x566074, dark: 0xA3ACBF, lightHighContrast: 0x3A4252, darkHighContrast: 0xCDD3DF)
-    static let textTertiary = ColorToken(light: 0x5F677A, dark: 0x8A93A8, lightHighContrast: 0x474F60, darkHighContrast: 0xB7BECC)
+    static let textPrimary = ColorToken(light: 0x0F172A, dark: 0xF5F5F7, midnight: 0xF3F5FA, lightHighContrast: 0x000000, darkHighContrast: 0xFFFFFF)
+    static let textSecondary = ColorToken(light: 0x566074, dark: 0xAEAEB4, midnight: 0xA3ACBF, lightHighContrast: 0x3A4252, darkHighContrast: 0xCDD3DF)
+    static let textTertiary = ColorToken(light: 0x5F677A, dark: 0x9A9AA1, midnight: 0x8A93A8, lightHighContrast: 0x474F60, darkHighContrast: 0xB7BECC)
 
     // MARK: Status and brand (fills, dots, borders, icons)
     static let accent = ColorToken(light: 0x2F6BF0, dark: 0x4C8DFF)
@@ -174,7 +208,7 @@ enum Palette {
 
     /// Glyph drawn on a status fill (StatusGlyph): white on the deeper light-mode fills, deep navy on the bright
     /// dark-mode fills (white on #3FE6B4 was 1.6:1).
-    static let onStatusFill = ColorToken(light: 0xFFFFFF, dark: 0x0B1020)
+    static let onStatusFill = ColorToken(light: 0xFFFFFF, dark: 0x111113, midnight: 0x0B1020)
     /// The full-opacity keyboard focus ring (≥ 3:1 against every surface).
     static let focusRing = ColorToken(light: 0x1154EA, dark: 0x5492FF, lightHighContrast: 0x0B3FB8, darkHighContrast: 0x86B2FF)
 
@@ -190,7 +224,7 @@ enum Palette {
     /// The icon's cyan → blue → violet, for decoration only (borders, underlines, icons): #38C8F5 → #3B82F6 → #8B5CF6.
     static let brandStops: [UInt32] = [0x38C8F5, 0x3B82F6, 0x8B5CF6]
     /// The same hues deepened until white text reaches 4.5:1 at every point: fills behind text (primary buttons,
-    /// the "Fix with AI" split button). White on the old stops was 1.95 / 3.68 / 4.23:1.
+    /// the "Fix now" split button). White on the old stops was 1.95 / 3.68 / 4.23:1.
     static let actionStops: [UInt32] = [0x087EA3, 0x1B6DF5, 0x8452F5]
     /// Selected filter chip fill (white text).
     static let selectedChipStops: [UInt32] = [0x2B6DF0, 0x2456C9]

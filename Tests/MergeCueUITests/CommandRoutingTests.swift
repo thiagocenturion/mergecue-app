@@ -11,8 +11,8 @@ struct CommandRoutingTests {
         let model = await makeModel()
         #expect(model.mode == .preview)
         #expect(model.modeBadge == "Preview data")
-        #expect(model.menuBarAccessibilityLabel == "MergeCue (preview data), 7 need you, 1 in progress, 1 ready")
-        #expect(model.menuBarToolTip == "Needs you: 7 · Waiting for agent: 2 · AI working: 1 · Ready: 1")
+        #expect(model.menuBarAccessibilityLabel == "MergeCue (preview data), 7 need you, 3 in progress, 2 ready")
+        #expect(model.menuBarToolTip == "Needs you: 7 · In progress: 3 · Ready: 2")
         #expect(model.state.accounts.allSatisfy { $0.account.isDemo })
     }
 
@@ -32,9 +32,9 @@ struct CommandRoutingTests {
         #expect(record.task.trigger.quoted.first?.text.contains("double-refunds") == true)
         #expect(model.handoffOffer == HandoffOffer(taskID: taskID))
         #expect(model.sections.count(.needsYou) == before.count(.needsYou) - 1)
-        #expect(model.sections.count(.waitingForAgent) == before.count(.waitingForAgent) + 1)
-        #expect(model.sections.count(.aiWorking) == before.count(.aiWorking))
-        let row = try #require(model.sections.waitingForAgent.first { $0.taskID == taskID })
+        #expect(model.sections.count(.inProgress) == before.count(.inProgress) + 1)
+        let row = try #require(model.sections.inProgress.first { $0.taskID == taskID })
+        #expect(!row.isRunning, "waiting for an agent: no spinner")
         #expect(row.reason == "Awaiting agent connection")
 
         // Copying the command is read-only: exact text on the pasteboard, still waiting for an agent.
@@ -110,7 +110,7 @@ struct CommandRoutingTests {
         #expect(done.task.state == .done)
         #expect(done.activities.contains { $0.kind == .completed })
         #expect(model.attentionItem(ready.task.origin.attentionItemID)?.disposition == .resolved)
-        #expect(model.sections.count(.ready) == 0)
+        #expect(!model.sections.ready.contains { $0.source == .task(ready.id) })
     }
 
     @Test func staleApprovalsAreRejected() async throws {
@@ -233,10 +233,10 @@ struct CommandRoutingTests {
         #expect(model.popoverSelection == first.id)
         model.movePopoverSelection(by: 100)
         #expect(model.popoverSelection == model.popoverRows.last?.id)
-        let visibleRows = 7 // 3 needs you + 2 waiting + 1 working + 1 ready
+        let visibleRows = 8 // 3 needs you + 2 waiting + 1 working + 2 ready (a task result, a PR ready to merge)
         #expect(model.popoverRows.count == visibleRows)
 
-        // ⌘↩ on the first row ("Fix with AI") creates a task (Return and Space open details, see KeyboardNavigationTests).
+        // ⌘↩ on the first row ("Fix now") creates a task (Return and Space open details, see KeyboardNavigationTests).
         model.popoverSelection = first.id
         await model.activatePopoverSelection()
         #expect(model.handoffOffer != nil)
@@ -259,6 +259,8 @@ struct CommandRoutingTests {
         }
         #expect(opened == model.popoverRows.count)
         model.showAll(.ready)
+        #expect(model.screen == .changeRequests, "Ready lists your PRs ready to merge first (D56)")
+        model.showAll(.inProgress)
         #expect(model.screen == .tasks)
         model.showSettings(.agents)
         #expect(model.screen == .settings && model.settingsTab == .agents)

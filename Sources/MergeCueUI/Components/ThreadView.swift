@@ -2,102 +2,6 @@ import AppKit
 import MergeCueCore
 import SwiftUI
 
-/// Renders an untrusted comment body: inline Markdown (no links), fenced code and ```suggestion blocks.
-struct CommentBody: View {
-    var text: String
-    var font: ThemeFont = .system(size: 13.5)
-
-    private struct Segment: Identifiable {
-        var id: Int
-        var isCode: Bool
-        var language: String
-        var text: String
-    }
-
-    private var segments: [Segment] {
-        var result: [Segment] = []
-        var buffer: [Substring] = []
-        var inFence = false
-        var language = ""
-        func push(code: Bool) {
-            let joined = buffer.joined(separator: "\n")
-            if !joined.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || code {
-                result.append(Segment(id: result.count, isCode: code, language: language, text: joined))
-            }
-            buffer = []
-        }
-        // Untrusted text: redacted (and stripped of control sequences) before it is shown or selectable.
-        for line in UIFormat.untrustedDisplay(text).split(separator: "\n", omittingEmptySubsequences: false) {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("```") {
-                if inFence {
-                    push(code: true)
-                    inFence = false
-                    language = ""
-                } else {
-                    push(code: false)
-                    inFence = true
-                    language = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
-                }
-                continue
-            }
-            buffer.append(line)
-        }
-        push(code: inFence)
-        return result
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(segments) { segment in
-                if segment.isCode {
-                    VStack(alignment: .leading, spacing: 0) {
-                        if segment.language == "suggestion" {
-                            Label("Suggested change", systemImage: "chevron.left.forwardslash.chevron.right")
-                                .scaledFont(.system(size: 11.5, weight: .semibold))
-                                .foregroundStyle(Theme.violetText)
-                                .padding(.horizontal, 10)
-                                .padding(.top, 7)
-                        }
-                        ScrollView(.horizontal) {
-                            Text(segment.text.replacingOccurrences(of: "\t", with: "    "))
-                                .scaledFont(Theme.mono)
-                                .foregroundStyle(Theme.textPrimary)
-                                .fixedSize(horizontal: true, vertical: false)
-                                .textSelection(.enabled)
-                                .padding(10)
-                        }
-                    }
-                    .background(segment.language == "suggestion" ? Theme.mint.opacity(0.08) : Theme.surfaceSunken)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Theme.border))
-                } else {
-                    Text(Self.inlineMarkdown(segment.text))
-                        .scaledFont(font)
-                        .foregroundStyle(Theme.textPrimary.opacity(0.92))
-                        .lineSpacing(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
-                }
-            }
-        }
-    }
-
-    /// Inline Markdown (code spans, emphasis) with links removed — reviewer text is untrusted.
-    static func inlineMarkdown(_ text: String) -> AttributedString {
-        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        guard var attributed = try? AttributedString(markdown: text, options: options) else { return AttributedString(text) }
-        for run in attributed.runs where run.link != nil {
-            attributed[run.range].link = nil
-        }
-        for run in attributed.runs where run.inlinePresentationIntent?.contains(.code) == true {
-            attributed[run.range].font = .system(size: 12.5, design: .monospaced)
-            attributed[run.range].backgroundColor = Theme.surfaceRaised
-        }
-        return attributed
-    }
-}
-
 /// A review thread: root comment, the code it points at, then every reply in time order.
 struct ThreadView: View {
     var thread: ReviewThread
@@ -112,6 +16,10 @@ struct ThreadView: View {
     var checkoutPath: String?
     var onOpen: ((URL) -> Void)?
     var showsHeader = true
+    /// Code rows under the first comment; nil = only what the anchor's own hunk carries (`CodeContext`).
+    var codeLines: [DiffLine]?
+    /// The change request diff that provides `codeLines` is being read.
+    var isLoadingCode = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -119,8 +27,9 @@ struct ThreadView: View {
             ForEach(Array(thread.comments.enumerated()), id: \.element.id) { index, comment in
                 CommentCard(comment: comment, role: role(of: comment), isNew: isNew(comment), now: now,
                             providerKind: providerKind, onOpen: onOpen)
-                if index == 0, let anchor = thread.anchor, anchor.diffHunk != nil {
-                    CodeContextCard(anchor: anchor, checkoutPath: checkoutPath, onOpen: onOpen)
+                if index == 0, let anchor = thread.anchor {
+                    CodeContextCard(anchor: anchor, lines: codeLines ?? CodeContext.lines(for: anchor, diffFiles: nil),
+                                    isLoading: isLoadingCode, checkoutPath: checkoutPath, onOpen: onOpen)
                 }
             }
         }
@@ -179,14 +88,18 @@ struct CommentCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
-                Avatar(name: comment.author.displayLabel, size: 34)
+                PersonAvatar(person: comment.author, size: 34)
                 Text(comment.author.displayName.flatMap(Presentation.firstName) ?? comment.author.username)
                     .scaledFont(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(1)
+                    .fixedSize()
                     .help("@\(comment.author.username)")
                 Text(UIFormat.relative(from: comment.createdAt, now: now))
                     .scaledFont(.system(size: 12.5))
                     .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(1)
+                    .fixedSize()
                     .help(UIFormat.dateTime(comment.createdAt))
                 if comment.author.isBot { Chip(text: "Bot") }
                 switch comment.kind {
@@ -206,16 +119,29 @@ struct CommentCard: View {
                         .fixedSize()
                         .padding(.horizontal, 9)
                         .padding(.vertical, 3.5)
-                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Theme.surfaceRaised))
-                        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Theme.borderStrong, lineWidth: 1))
+                        .background(Capsule().fill(Theme.surfaceRaised))
                 }
+                // Quick actions next to the menu (D48): open the comment, copy its text.
+                if let url = comment.webURL, let onOpen {
+                    Button { onOpen(url) } label: { Image(systemName: "arrow.up.right.square") }
+                        .buttonStyle(IconButtonStyle(size: 24, filled: false))
+                        .help("Open in \(providerKind.displayName)")
+                        .accessibilityLabel("Open comment in \(providerKind.displayName)")
+                }
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(SecretRedactor.redact(comment.body), forType: .string)
+                } label: { Image(systemName: "doc.on.doc") }
+                    .buttonStyle(IconButtonStyle(size: 24, filled: false))
+                    .help("Copy text")
+                    .accessibilityLabel("Copy comment text")
                 Menu {
                     Button("Copy Text") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(SecretRedactor.redact(comment.body), forType: .string)
                     }
                     if let url = comment.webURL, let onOpen {
-                        Button("Open in \(providerKind.displayName)") { onOpen(url) }
+                        Button { onOpen(url) } label: { Label("Open in \(providerKind.displayName)", systemImage: OutsideLinkGlyph.symbol) }
                     }
                 } label: {
                     Image(systemName: "ellipsis")
@@ -228,10 +154,10 @@ struct CommentCard: View {
                 .fixedSize()
                 .accessibilityLabel("Comment actions")
             }
-            CommentBody(text: comment.body)
+            CommentBody(text: comment.body, onOpen: onOpen)
                 .padding(.leading, 46)
         }
-        .padding(14)
+        .padding(Theme.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardBackground(Theme.surface)
         .overlay(alignment: .leading) {
@@ -243,15 +169,17 @@ struct CommentCard: View {
     }
 }
 
-/// The code a comment points at: file name, line, "Open in editor", numbered lines with − / + rows.
+/// The code a comment points at: file name, line (range), "Open in editor", numbered lines with − / + rows and the
+/// commented lines highlighted.
 struct CodeContextCard: View {
     var anchor: DiffAnchor
+    /// Rows to show (`CodeContext`); empty shows why there is no code.
+    var lines: [DiffLine]
+    var isLoading = false
     var checkoutPath: String?
     var onOpen: ((URL) -> Void)?
 
     var body: some View {
-        let file = DiffParser.parse(anchor.diffHunk ?? "", defaultPath: anchor.path).first
-        let lines = file?.lines.filter { $0.kind != .hunk && $0.kind != .meta } ?? []
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "doc")
@@ -269,7 +197,7 @@ struct CodeContextCard: View {
                 }
                 Spacer(minLength: 8)
                 if let line = anchor.line {
-                    Text("Line \(line)")
+                    Text(lineLabel(line))
                         .scaledFont(.system(size: 12.5))
                         .foregroundStyle(Theme.textSecondary)
                 }
@@ -288,18 +216,43 @@ struct CodeContextCard: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             ThemeDivider()
-            ScrollView(.horizontal) {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(lines) { line in
-                        CodeLineRow(line: line, isAnchor: isAnchor(line))
+            if lines.isEmpty, isLoading {
+                // Shimmering code lines while the diff loads.
+                VStack(alignment: .leading, spacing: 9) {
+                    ForEach([0.72, 0.55, 0.86, 0.4], id: \.self) { fraction in
+                        GeometryReader { proxy in
+                            Capsule().fill(Theme.surfaceRaised).frame(width: proxy.size.width * fraction, height: 9)
+                        }
+                        .frame(height: 9)
                     }
                 }
-                .padding(.vertical, 8)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .shimmering()
+                .accessibilityLabel("Loading code")
+            } else if lines.isEmpty {
+                HStack(spacing: 8) {
+                    Text(emptyMessage)
+                        .scaledFont(.system(size: 12.5))
+                        .foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+            } else {
+                ScrollView(.horizontal) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(lines) { line in
+                            CodeLineRow(line: line, isAnchor: CodeContext.isAnchored(line, anchor: anchor))
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
+                .scrollIndicators(.never)
             }
-            .scrollIndicators(.never)
         }
         .cardBackground(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
+        .clipShape(SmoothRect())
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Code context, \(anchor.path)\(anchor.line.map { " line \($0)" } ?? "")")
     }
@@ -310,13 +263,16 @@ struct CodeContextCard: View {
         return URL(filePath: expanded).appending(path: anchor.path)
     }
 
-    private func isAnchor(_ line: DiffLine) -> Bool {
-        guard let target = anchor.line else { return false }
-        switch line.kind {
-        case .added: return line.newNumber == target
-        case .removed: return line.oldNumber == target
-        default: return false
-        }
+    private func lineLabel(_ line: Int) -> String {
+        if let start = anchor.startLine, start < line { return "Lines \(start)–\(line)" }
+        return "Line \(line)"
+    }
+
+    private var emptyMessage: String {
+        if isLoading { return "Loading code…" }
+        if anchor.line == nil { return "This comment is on the whole file." }
+        if anchor.isOutdated { return "The code changed after this comment. Open it in the provider to see the original lines." }
+        return "The code for this comment isn't in the loaded diff."
     }
 }
 
@@ -421,7 +377,7 @@ struct UntrustedQuote: View {
                 CommentBody(text: quote.text)
             }
         }
-        .padding(12)
+        .padding(Theme.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardBackground(Theme.surfaceSunken, radius: 10)
     }

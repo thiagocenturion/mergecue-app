@@ -19,6 +19,7 @@ public enum UntrustedFields {
     public static let taskContext = [
         "source.title", "checkout.source_branch", "checkout.target_branch", "checkout.blocked_reason",
         "trigger.anchor.path", "trigger.untrusted_content", "artifacts[].title",
+        "attached_items[].anchor.path", "attached_items[].untrusted_content",
     ]
     public static let taskSummary = ["title"]
     public static let attentionItem = ["title", "summary"]

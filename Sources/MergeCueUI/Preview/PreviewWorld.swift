@@ -25,9 +25,9 @@ nonisolated struct PreviewWorld {
 
     func mona(_ kind: ProviderKind) -> Person {
         switch kind {
-        case .github: Person(remoteID: Self.githubUserID, username: "mona-dev", displayName: "Mona Dev")
-        case .gitlab: Person(remoteID: Self.gitlabUserID, username: "mona-dev", displayName: "Mona Dev")
-        case .bitbucketCloud: Person(remoteID: Self.bitbucketUserID, username: "mona-dev", displayName: "Mona Dev")
+        case .github: Person(remoteID: Self.githubUserID, username: "mona-dev", displayName: "Mona Dev", avatarURL: MergeCuePreview.avatarURL("gh-mona-dev"))
+        case .gitlab: Person(remoteID: Self.gitlabUserID, username: "mona-dev", displayName: "Mona Dev", avatarURL: MergeCuePreview.avatarURL("gl-mona-dev"))
+        case .bitbucketCloud: Person(remoteID: Self.bitbucketUserID, username: "mona-dev", displayName: "Mona Dev", avatarURL: MergeCuePreview.avatarURL("bb-mona-dev"))
         }
     }
 
@@ -37,7 +37,9 @@ nonisolated struct PreviewWorld {
         case .gitlab: "gl"
         case .bitbucketCloud: "bb"
         }
-        return Person(remoteID: "\(prefix)-\(username)", username: username, displayName: displayName, isBot: bot)
+        // Synthetic avatars (D58): `.invalid` never resolves; the preview store draws a pattern for it instead.
+        return Person(remoteID: "\(prefix)-\(username)", username: username, displayName: displayName,
+                      avatarURL: bot ? nil : MergeCuePreview.avatarURL("\(prefix)-\(username)"), isBot: bot)
     }
 
     // MARK: Repositories and change requests

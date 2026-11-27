@@ -10,6 +10,7 @@ struct Harness {
     let transport: StubTransport
     let provider: BitbucketCloudProvider
     let directory: BitbucketRepositoryDirectory
+    let clock = TestClock()
 
     init(step: Int = 0, credential: Credential = .bearer("fixture-bitbucket-token"), extraRoutes: [StubTransport.Route] = []) {
         transport = BitbucketFixtures.transport(step: step)
@@ -19,7 +20,7 @@ struct Harness {
             instance: BitbucketFixtures.instance,
             credential: credential,
             transport: transport,
-            clock: TestClock(),
+            clock: clock,
             directory: directory
         )
     }

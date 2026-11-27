@@ -289,7 +289,8 @@ extension MergeCueEngine {
             subtitle: "Ready for review · \(task.type.displayName)",
             body: "\(agentName) submitted a result for task \(task.id.rawValue). Review it in MergeCue — nothing was published.",
             changeRequest: key,
-            attentionItemIDs: task.origin.attentionItemID.map { [$0] } ?? [],
+            attentionItemIDs: task.coveredAttentionIDs,
+            topics: ["task:" + task.id.rawValue],
             isUrgent: false
         )
         await notifier.deliver(notification)

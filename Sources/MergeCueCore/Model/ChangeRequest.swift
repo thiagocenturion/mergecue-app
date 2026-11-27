@@ -173,11 +173,42 @@ public struct ChangeRequestQuery: Codable, Sendable, Hashable {
     /// Repositories to query individually (required for Bitbucket reviewer listings).
     public var repositories: [Repository]
     public var updatedSince: Date?
+    /// The owner's watched repositories (DECISIONS D36): only change requests of `repositories` are wanted, and
+    /// adapters scope their provider queries to them (per repository, or one search qualified with every
+    /// repository) instead of listing the whole account/workspace. Never set with an empty `repositories`.
+    public var restrictToRepositories: Bool
 
-    public init(scope: ChangeRequestScope, namespaces: [String] = [], repositories: [Repository] = [], updatedSince: Date? = nil) {
+    public init(
+        scope: ChangeRequestScope,
+        namespaces: [String] = [],
+        repositories: [Repository] = [],
+        updatedSince: Date? = nil,
+        restrictToRepositories: Bool = false
+    ) {
         self.scope = scope
         self.namespaces = namespaces
         self.repositories = repositories
         self.updatedSince = updatedSince
+        self.restrictToRepositories = restrictToRepositories && !repositories.isEmpty
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case scope, namespaces, repositories, updatedSince, restrictToRepositories
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            scope: try c.decode(ChangeRequestScope.self, forKey: .scope),
+            namespaces: try c.decodeIfPresent([String].self, forKey: .namespaces) ?? [],
+            repositories: try c.decodeIfPresent([Repository].self, forKey: .repositories) ?? [],
+            updatedSince: try c.decodeIfPresent(Date.self, forKey: .updatedSince),
+            restrictToRepositories: try c.decodeIfPresent(Bool.self, forKey: .restrictToRepositories) ?? false
+        )
+    }
+
+    /// Whether a listed change request of `repository` belongs to this query (always true when not restricted).
+    public func includes(_ repository: RepoKey) -> Bool {
+        !restrictToRepositories || repositories.contains { $0.key == repository }
     }
 }

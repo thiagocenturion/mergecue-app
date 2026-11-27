@@ -102,6 +102,9 @@ public protocol HTTPTransport: Sendable {
 public enum HTTPHeaders {
     /// Response header added to `304 Not Modified` responses served from the `ETagCache` (value `hit`).
     public static let cacheStatus = "x-mergecue-cache"
+    /// Response header added by `URLSessionTransport`: how many redirects were followed to get the response (each
+    /// hop is one more request the provider served; `CountingTransport` counts them).
+    public static let redirectHops = "x-mergecue-redirect-hops"
 
     /// Header names whose values are secrets and are masked by `redacted(_:)` (lower-cased).
     public static let sensitiveNames: Set<String> = [

@@ -20,10 +20,15 @@ struct TaskHandoffScreen: View {
                     .padding(.leading, -6)
                 header
                     .padding(.top, 8)
-                let wide = availableWidth >= 1_000
+                let panel = panelWidth
                 HStack(alignment: .top, spacing: 18) {
-                    leftColumn.frame(width: wide ? 320 : 300)
-                    TaskStatePanel(model: model, record: record, wide: wide)
+                    VStack(spacing: 18) {
+                        leftColumn
+                        CoveredItemsCard(model: model, record: record)
+                    }
+                    .frame(minWidth: 300, maxWidth: .infinity)
+                    TaskStatePanel(model: model, record: record, wide: panel >= 720)
+                        .frame(width: panel)
                 }
                 .padding(.top, 24)
             }
@@ -32,7 +37,6 @@ struct TaskHandoffScreen: View {
             .padding(.bottom, 24)
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width - 56 } action: { availableWidth = $0 }
-        .background(Theme.contentBackground)
     }
 
     // MARK: Header
@@ -47,14 +51,14 @@ struct TaskHandoffScreen: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                         .accessibilityAddTraits(.isHeader)
-                    StatusPill(text: TaskStateStyle.label(record), color: TaskStateStyle.color(record), textColor: TaskStateStyle.textColor(record), symbol: statusSymbol, size: 13.5)
+                    TaskStatusPillMenu(model: model, record: record, symbol: statusSymbol)
                 }
                 HStack(spacing: 10) {
                     ProviderGlyph(kind: task.origin.providerKind, size: 18)
                     Text("\(task.origin.providerKind.shortName)  ·  \(task.origin.changeRequestRef.repoFullPath)")
                         .foregroundStyle(Theme.textSecondary)
                     Button {
-                        model.showChangeRequest(task.origin.changeRequest)
+                        model.showChangeRequest(task.origin.changeRequest, thread: task.origin.thread)
                     } label: {
                         Text(task.origin.providerKind.formattedNumber(task.origin.changeRequest.number))
                             .lineLimit(1)
@@ -86,6 +90,15 @@ struct TaskHandoffScreen: View {
             Spacer(minLength: 12)
             TaskActionsMenu(model: model, record: record)
         }
+    }
+
+    /// The comment column takes what the state panel leaves. A collapsed handoff card is narrow; otherwise the
+    /// panel takes a bit more than half (the agent preview sits beside the controls from 720 pt).
+    private var panelWidth: CGFloat {
+        let showsHandoff = [.waitingForAgent, .stale].contains(task.state)
+            || (task.state == .working && !record.hasRealClaim && !record.isManuallyInProgress)
+        if showsHandoff && model.handoffCollapsed { return 380 }
+        return min(max(availableWidth * 0.56, 520), 820)
     }
 
     private var statusSymbol: String? {
@@ -139,7 +152,11 @@ struct TriggerQuoteCard: View {
         let root = task.origin.thread.flatMap { snapshot?.thread($0) }?.rootComment
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                ProviderGlyph(kind: task.origin.providerKind, size: 26)
+                if let author = root?.author {
+                    PersonAvatar(person: author, size: 26)
+                } else {
+                    ProviderGlyph(kind: task.origin.providerKind, size: 26)
+                }
                 Text(root.map { Presentation.shortName($0.author) } ?? quote?.author ?? (quote?.source == UntrustedText.Source.ciLog ? "CI log" : "Comment"))
                     .scaledFont(.system(size: 14.5, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
@@ -167,7 +184,7 @@ struct TriggerQuoteCard: View {
                     .foregroundStyle(Theme.textSecondary)
             }
         }
-        .padding(16)
+        .padding(Theme.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardBackground(Theme.surfaceSunken, radius: 12)
         .help("Exact text captured when the task was created. Untrusted — shown as data, never as instructions.")
@@ -186,8 +203,8 @@ struct ContextRow: View {
                 .scaledFont(.system(size: 16))
                 .foregroundStyle(Theme.textSecondary)
                 .frame(width: 42, height: 42)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.surfaceRaised))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.border, lineWidth: 1))
+                .glassShape(Circle(), interactive: false)
+                .overlay(SmoothRect().strokeBorder(Theme.border, lineWidth: 1))
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.title)
                     .scaledFont(.system(size: 14, weight: .medium))
@@ -230,7 +247,7 @@ struct ContextRow: View {
         case .ready:
             Image(systemName: "checkmark.circle.fill")
                 .scaledFont(.system(size: 21))
-                .foregroundStyle(Color(hex: 0x0B1020), Theme.mint)
+                .foregroundStyle(Theme.onStatusFill, Theme.mint)
                 .symbolRenderingMode(.palette)
         case .warning:
             Image(systemName: "exclamationmark.triangle.fill")
@@ -263,6 +280,8 @@ struct TaskStatePanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             content
+                .id("\(task.state)|\(model.handoffCollapsed)")
+                .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             HandoffTracker(current: Presentation.handoffStep(record), currentColor: trackerColor, currentLabel: trackerLabel)
                 .padding(.top, 30)
             ThemeDivider().padding(.top, 24)
@@ -278,6 +297,7 @@ struct TaskStatePanel: View {
         .padding(24)
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardBackground(Theme.surface, radius: 16)
+        .animation(Motion.smooth, value: task.state)
     }
 
     @ViewBuilder
@@ -289,6 +309,12 @@ struct TaskStatePanel: View {
         case .working:
             if record.hasRealClaim {
                 WorkingView(model: model, record: record)
+            } else if record.isManuallyInProgress {
+                StatusCallout(tone: .progress, symbol: "hammer.fill", title: "In progress",
+                              message: "You marked this task in progress. Mark it done when it's finished, or hand it to an agent.") {
+                    Button("Mark Done") { send(.markTaskDone(task.id)) }.buttonStyle(GradientButtonStyle(size: .small))
+                    Button("Hand to an Agent") { send(.retryTask(task.id)) }.buttonStyle(SecondaryButtonStyle(size: .small))
+                }
             } else {
                 HandoffStepView(model: model, record: record, wide: wide, number: "1", title: "Open in your coding agent",
                                 message: "No agent holds this task yet.")
@@ -349,6 +375,7 @@ struct TaskStatePanel: View {
     private var trackerLabel: String? {
         switch task.state {
         case .stale: "Stalled"
+        case .working where record.isManuallyInProgress: "In progress"
         case .blocked: "Blocked"
         case .failed: "Failed"
         case .done: "Done"
@@ -378,217 +405,6 @@ struct TaskStatePanel: View {
 
     private func send(_ command: AppCommand) {
         Task { await model.send(command) }
-    }
-}
-
-/// "1 Open in your coding agent": agent picker, the exact command, Open / Copy and a terminal-style preview.
-struct HandoffStepView: View {
-    @Bindable var model: AppModel
-    let record: TaskRecord
-    var wide: Bool
-    var number: String
-    var title: String
-    var message: String?
-
-    private var agentKind: AgentKind { model.effectiveAgentKind }
-    private var detected: AgentStatus? { model.state.agents.first { $0.kind == agentKind } }
-
-    var body: some View {
-        if wide {
-            HStack(alignment: .top, spacing: 22) {
-                controls
-                TerminalPreview(model: model, record: record, agent: agentKind)
-                    .frame(width: 250)
-            }
-        } else {
-            VStack(alignment: .leading, spacing: 18) {
-                controls
-                TerminalPreview(model: model, record: record, agent: agentKind)
-            }
-        }
-    }
-
-    private var controls: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 16) {
-                StepNumber(text: number)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(title)
-                        .scaledFont(.system(size: 21, weight: .semibold))
-                        .foregroundStyle(Theme.textPrimary)
-                    if let message {
-                        Text(message)
-                            .scaledFont(.system(size: 13.5))
-                            .foregroundStyle(Theme.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-            SegmentedTrack(options: AgentKind.allCases, selection: Binding(get: { agentKind }, set: { model.selectedAgentKind = $0 }), height: 44) { kind, selected in
-                HStack(spacing: 10) {
-                    AgentMark(kind: kind, size: 20)
-                    Text(kind.shortName)
-                        .scaledFont(.system(size: 14, weight: selected ? .semibold : .medium))
-                        .foregroundStyle(selected ? Theme.textPrimary : Theme.textSecondary)
-                }
-            }
-            .padding(.top, 22)
-            .accessibilityLabel("Coding agent")
-            Text("Command")
-                .scaledFont(.system(size: 13))
-                .foregroundStyle(Theme.textSecondary)
-                .padding(.top, 18)
-            CommandField(command: HandoffText.command(for: record.id, handoffCode: record.task.handoffCode)) {
-                Task { await model.send(.copyHandoffCommand(record.id, agent: agentKind)) }
-            }
-            .padding(.top, 8)
-            HStack(spacing: 12) {
-                Button {
-                    Task { await model.send(.openInAgent(record.id, agent: agentKind)) }
-                } label: {
-                    HStack(spacing: 9) {
-                        AgentMark(kind: agentKind, size: 16, monochrome: .white)
-                        Text("Open in \(agentKind.shortName)")
-                        Image(systemName: "arrow.right").scaledFont(.system(size: 13, weight: .semibold))
-                    }
-                    .lineLimit(1)
-                    .fixedSize()
-                }
-                .buttonStyle(GradientButtonStyle(size: .tall))
-                .disabled(!(detected?.canOpenTasks ?? false))
-                .help(openHelp)
-                Button {
-                    Task { await model.send(.copyHandoffCommand(record.id, agent: agentKind)) }
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "doc.on.doc")
-                        Text("Copy command")
-                    }
-                    .lineLimit(1)
-                    .fixedSize()
-                }
-                .buttonStyle(SecondaryButtonStyle(size: .tall))
-            }
-            .padding(.top, 16)
-            agentNote
-                .padding(.top, 12)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var openHelp: String {
-        guard let detected else { return "\(agentKind.shortName) wasn't found on this Mac — use Copy command" }
-        return detected.canOpenTasks ? "Opens \(detected.name) in the task checkout" : "Opening \(detected.name) isn't verified yet — use Copy command"
-    }
-
-    @ViewBuilder
-    private var agentNote: some View {
-        if let detected {
-            if !detected.mcpRegistration.isVerified {
-                Label("\(detected.name): \(detected.mcpRegistration.displayText). Set it up in Settings › Agents.", systemImage: "exclamationmark.triangle.fill")
-                    .scaledFont(.system(size: 12))
-                    .foregroundStyle(Theme.waitingText)
-            }
-        } else {
-            Label("\(agentKind.shortName) wasn't detected on this Mac. Copy the command into any MCP-capable agent.", systemImage: "exclamationmark.triangle.fill")
-                .scaledFont(.system(size: 12))
-                .foregroundStyle(Theme.waitingText)
-        }
-    }
-}
-
-/// The exact handoff command in a monospaced field with a copy button.
-struct CommandField: View {
-    var command: String
-    var onCopy: () -> Void
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Text(command)
-                .scaledFont(.system(size: 13, design: .monospaced))
-                .foregroundStyle(Theme.textPrimary)
-                .lineSpacing(3)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Button(action: onCopy) {
-                Image(systemName: "doc.on.doc")
-            }
-            .buttonStyle(IconButtonStyle(size: 28, filled: false))
-            .help("Copy command")
-            .accessibilityLabel("Copy command")
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 13)
-        .cardBackground(Theme.surfaceSunken, radius: 11, border: Theme.borderStrong)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Handoff command: \(command)")
-    }
-}
-
-/// A terminal-style illustration of what to run. Not live output: it lists only context MergeCue really has.
-struct TerminalPreview: View {
-    let model: AppModel
-    let record: TaskRecord
-    var agent: AgentKind
-
-    var body: some View {
-        let ready = Presentation.handoffContext(record, state: model.state).filter { $0.status == .ready }
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 7) {
-                ForEach([0xFF5F57, 0xFEBC2E, 0x28C840], id: \.self) { Circle().fill(Color(hex: UInt32($0))).frame(width: 11, height: 11) }
-                Spacer()
-                Text(agent.shortName)
-                    .scaledFont(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color(hex: 0xC9D1E0))
-                Spacer()
-                Color.clear.frame(width: 47, height: 1)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
-            .frame(minHeight: 34)
-            .background(Color(hex: 0x1A2133))
-            VStack(alignment: .leading, spacing: 4) {
-                line("> ", firstSentence, prompt: true)
-                    .padding(.bottom, 8)
-                comment("MergeCue has prepared the context")
-                comment("for this task, including:")
-                ForEach(ready) { comment("- \($0.title)") }
-                comment("")
-                comment("The agent will start working")
-                comment("after you run this command.")
-                HStack(spacing: 6) {
-                    Text(">").foregroundStyle(Theme.cyan)
-                    Rectangle().fill(Color(hex: 0xE6EAF2)).frame(width: 8, height: 15)
-                }
-                .padding(.top, 10)
-            }
-            .scaledFont(.system(size: 11.5, design: .monospaced))
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .background(Theme.terminalBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.borderStrong, lineWidth: 1))
-        .help("Illustration of the handoff — not live output from your agent.")
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Preview of the command in \(agent.shortName). Illustration, not live output.")
-    }
-
-    private var firstSentence: String {
-        let command = HandoffText.command(for: record.id, handoffCode: record.task.handoffCode)
-        return command.split(separator: ".").first.map(String.init) ?? command
-    }
-
-    private func line(_ prefix: String, _ text: String, prompt: Bool) -> some View {
-        (Text(prefix).foregroundStyle(Theme.cyan) + Text(text).foregroundStyle(Color(hex: 0xE6EAF2)))
-            .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private func comment(_ text: String) -> some View {
-        Text("# " + text)
-            .foregroundStyle(Color(hex: 0x98A2B6))
-            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -635,7 +451,7 @@ struct WorkingView: View {
                         .scaledFont(.system(size: 12))
                         .foregroundStyle(Theme.textSecondary)
                 }
-                .padding(14)
+                .padding(Theme.cardPadding)
                 .cardBackground(Theme.surfaceSunken, radius: 11)
             }
             PhaseTrack(current: record.latestProgress?.data["phase"])

@@ -14,7 +14,7 @@ struct ApprovalSheet: View {
                     .scaledFont(.system(size: 20, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 44, height: 44)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.brandGradientDiagonal))
+                    .background(SmoothRect().fill(Theme.brandGradientDiagonal))
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(preview.title)
@@ -44,7 +44,7 @@ struct ApprovalSheet: View {
                     .scaledFont(Theme.body)
                     .foregroundStyle(Theme.textPrimary)
                     .textSelection(.enabled)
-                    .padding(14)
+                    .padding(Theme.cardPadding)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .cardBackground(Theme.surfaceSunken, radius: 10)
             }
@@ -72,8 +72,8 @@ struct ApprovalSheet: View {
                         .buttonStyle(SecondaryButtonStyle(size: .small))
                     }
                 }
-                .padding(12)
-                .cardBackground(Theme.critical.opacity(0.08), radius: 10, border: Theme.critical.opacity(0.35))
+                .padding(Theme.cardPadding)
+                .glassCard(tint: Theme.critical)
             }
             HStack(spacing: 10) {
                 Text("Fingerprint \(String(preview.fingerprint.prefix(12)))…")
@@ -91,12 +91,26 @@ struct ApprovalSheet: View {
                 }
                 .buttonStyle(SecondaryButtonStyle())
                 .keyboardShortcut(.cancelAction)
-                Button("Approve \(preview.action.displayName)") {
-                    Task { await model.send(.approvePreview(preview)) }
+                if !preview.canApprove, let fallback = model.browserFallback(for: preview) {
+                    // The app may not write here (D59): same place, done on the provider page instead.
+                    Button {
+                        model.performInBrowser(fallback)
+                        model.pendingPreview = nil
+                        dismiss()
+                    } label: {
+                        OutsideLinkLabel(title: fallback.title)
+                    }
+                    .buttonStyle(GradientButtonStyle())
+                    .keyboardShortcut(.defaultAction)
+                    .help(fallback.textToCopy == nil ? "Opens the page in your browser" : "Copies the text, then opens the page in your browser to paste it")
+                } else {
+                    Button("Approve \(preview.action.displayName)") {
+                        Task { await model.send(.approvePreview(preview)) }
+                    }
+                    .buttonStyle(GradientButtonStyle())
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!preview.canApprove)
                 }
-                .buttonStyle(GradientButtonStyle())
-                .keyboardShortcut(.defaultAction)
-                .disabled(!preview.canApprove)
             }
         }
         .padding(24)

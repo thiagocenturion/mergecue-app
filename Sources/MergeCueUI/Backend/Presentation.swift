@@ -93,6 +93,12 @@ public nonisolated enum Presentation {
         case .mergeConflict:
             headline = "Merge conflict"
             subtitle = item.summary
+        case .reapprovalNeeded:
+            headline = "Re-approval needed"
+            subtitle = item.summary
+        case .updatedSinceReview:
+            headline = snapshot.map { "\(shortName($0.summary.author)) updated the PR" } ?? "Updated since your review"
+            subtitle = item.summary
         }
         return AttentionText(headline: headline, subtitle: subtitle, symbol: statusSymbol(item.reason), tone: item.reason.tone,
                              commentCount: comments)
@@ -109,6 +115,8 @@ public nonisolated enum Presentation {
         case .reviewRequested: "eye.fill"
         case .readyToMerge: "checkmark"
         case .mergeConflict: "arrow.triangle.merge"
+        case .reapprovalNeeded: "arrow.counterclockwise"
+        case .updatedSinceReview: "arrow.triangle.2.circlepath"
         }
     }
 
@@ -131,6 +139,8 @@ public nonisolated enum Presentation {
         case .reviewRequested: "Review requested"
         case .readyToMerge: "Ready to merge"
         case .mergeConflict: "Merge conflict"
+        case .reapprovalNeeded: "Re-approve"
+        case .updatedSinceReview: "Updated"
         }
     }
 
@@ -361,7 +371,7 @@ public nonisolated enum Presentation {
 
     // MARK: Handoff progress
 
-    /// The 4-step tracker: Task created → Waiting for agent → AI working → Ready for review.
+    /// The 4-step tracker: Task created → Waiting for agent → In progress → Ready for review.
     public enum HandoffStep: Int, Sendable, CaseIterable, Comparable {
         case created, waiting, working, ready
 
@@ -369,7 +379,7 @@ public nonisolated enum Presentation {
             switch self {
             case .created: "Task created"
             case .waiting: "Waiting for agent"
-            case .working: "AI working"
+            case .working: "In progress"
             case .ready: "Ready for review"
             }
         }
@@ -377,11 +387,11 @@ public nonisolated enum Presentation {
         public static func < (lhs: HandoffStep, rhs: HandoffStep) -> Bool { lhs.rawValue < rhs.rawValue }
     }
 
-    /// The active step. `working` only with a real claim (a lease), never on a guess.
+    /// The active step. `working` only with a real claim (a lease) or a task the owner started by hand, never on a guess.
     public static func handoffStep(_ record: TaskRecord) -> HandoffStep {
         switch record.task.state {
         case .waitingForAgent, .blocked: .waiting
-        case .working: record.hasRealClaim ? .working : .waiting
+        case .working: record.hasRealClaim || record.isManuallyInProgress ? .working : .waiting
         case .stale, .failed: .working
         case .readyForReview, .approvedAction, .done: .ready
         case .cancelled, .dismissed: .created

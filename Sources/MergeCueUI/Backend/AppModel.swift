@@ -2,15 +2,17 @@ import AppKit
 import Foundation
 import MergeCueCore
 import Observation
+import SwiftUI
 
-/// Main window screens (⌘1–⌘5).
+/// Main window screens (⌘1–⌘6).
 public nonisolated enum MainScreen: String, Sendable, Hashable, CaseIterable, Identifiable {
-    case inbox, changeRequests, tasks, rules, settings
+    case inbox, reviews, changeRequests, tasks, rules, settings
 
     public var id: String { rawValue }
     public var title: String {
         switch self {
         case .inbox: "Inbox"
+        case .reviews: "Reviews"
         case .changeRequests: "Pull requests"
         case .tasks: "Tasks"
         case .rules: "Rules"
@@ -21,6 +23,7 @@ public nonisolated enum MainScreen: String, Sendable, Hashable, CaseIterable, Id
     public var symbol: String {
         switch self {
         case .inbox: "tray"
+        case .reviews: "checkmark.bubble"
         case .changeRequests: "arrow.triangle.pull"
         case .tasks: "checklist.checked"
         case .rules: "wand.and.stars"
@@ -28,14 +31,15 @@ public nonisolated enum MainScreen: String, Sendable, Hashable, CaseIterable, Id
         }
     }
 
-    /// "1"…"5" for ⌘1–⌘5.
+    /// "1"…"6" for ⌘1–⌘6.
     public var shortcutDigit: Character {
         switch self {
         case .inbox: "1"
-        case .changeRequests: "2"
-        case .tasks: "3"
-        case .rules: "4"
-        case .settings: "5"
+        case .reviews: "2"
+        case .changeRequests: "3"
+        case .tasks: "4"
+        case .rules: "5"
+        case .settings: "6"
         }
     }
 }
@@ -133,6 +137,10 @@ public struct AppEnvironment {
     public var notificationPermission: (() async -> NotificationPermission)?
     /// Opens System Settings › Notifications › MergeCue.
     public var openNotificationSettings: (() -> Void)?
+    /// Animates state changes (off in tests and snapshots, which render a single frame).
+    public var animatesChanges = false
+    /// Applies Settings › General › Appearance to the whole app (`NSApp.appearance`). Inert in tests and snapshots.
+    public var applyAppearance: (AppearancePreference) -> Void = { _ in }
 
     public init(now: @escaping () -> Date, copyToPasteboard: @escaping (String) -> Void, openURL: @escaping (URL) -> Void,
                 autoDismissBanners: Bool, tickInterval: Duration?, userFullName: String? = nil) {
@@ -157,6 +165,7 @@ public struct AppEnvironment {
             tickInterval: .seconds(30),
             userFullName: NSFullUserName()
         )
+        .animating()
     }
 
     /// Frozen clock, no side effects (tests, snapshots).
@@ -167,12 +176,20 @@ public struct AppEnvironment {
 }
 
 extension AppEnvironment {
+    /// The same environment with animated state changes.
+    func animating() -> AppEnvironment {
+        var copy = self
+        copy.animatesChanges = true
+        return copy
+    }
+
     /// `.system` plus the services only the installed app uses: persisted preferences, VoiceOver announcements and
     /// the real notification permission.
     public static func withSystemServices() -> AppEnvironment {
         var environment = AppEnvironment.system
         environment.preferences = .userDefaults
         environment.announce = { message, tone in AccessibilityAnnouncer.announce(message, tone: tone) }
+        environment.applyAppearance = { preference in NSApp?.appearance = preference.nsAppearance }
         environment.notificationPermission = { await NotificationPermission.current() }
         environment.openNotificationSettings = { NotificationPermission.openSystemSettings() }
         return environment
@@ -193,13 +210,47 @@ public final class AppModel {
     public private(set) var isRefreshing = false
     public private(set) var logExcerpts: [String: LogExcerpt] = [:]
     public private(set) var loadingLogIDs: Set<String> = []
+    /// Parsed change request diffs by `ChangeRequestKey.id` (code context for comments without a provider hunk).
+    var changeRequestDiffs: [String: LoadedDiff] = [:]
+    var loadingDiffIDs: Set<String> = []
     private(set) var indexes: Indexes
 
     // MARK: Navigation and selection
-    public var screen: MainScreen = .inbox
-    public var selectedAttentionID: String?
-    public var selectedChangeRequestID: String?
+    public var screen: MainScreen = .inbox {
+        didSet { if screen != oldValue { reviewHandoff = nil } }
+    }
+    /// "Review with AI" open on the Reviews screen (D60); cleared when the screen changes.
+    public var reviewHandoff: ReviewHandoffRequest?
+    public var selectedAttentionID: String? {
+        didSet {
+            guard let selectedAttentionID, selectedAttentionID != oldValue else { return }
+            openDetailTab(selectedAttentionID, in: &inboxTabs)
+            // Opening an item scrolls its detail to the conversation and highlights it (D51).
+            if let item = attentionItem(selectedAttentionID) { focusInboxItem(item) }
+        }
+    }
+    public var selectedChangeRequestID: String? {
+        didSet { if let selectedChangeRequestID { openDetailTab(selectedChangeRequestID, in: &prTabs) } }
+    }
+    /// Open detail tabs (D48): Inbox item ids and pull request ids, in opening order. Only used with tabs on.
+    public var inboxTabs: [String] = []
+    public var prTabs: [String] = []
+    /// Detail tabs on or off (persisted); nil until the owner answered the first-time question.
+    public var detailTabsEnabled: Bool? {
+        didSet {
+            environment.preferences.save(UIPreferenceKeys.detailTabs, detailTabsEnabled.map { $0 ? "1" : "0" })
+            if detailTabsEnabled != true {
+                inboxTabs = []
+                prTabs = []
+            } else {
+                if let selectedAttentionID { openDetailTab(selectedAttentionID, in: &inboxTabs) }
+                if let selectedChangeRequestID { openDetailTab(selectedChangeRequestID, in: &prTabs) }
+            }
+        }
+    }
     public var selectedTaskID: TaskID?
+    /// Tasks screen shows the finished tasks (done, cancelled, dismissed) instead of the open ones.
+    public var showsFinishedTasks = false
     public var selectedRuleID: String?
     public var settingsTab: SettingsTab = .accounts
     /// Keyboard selection in the popover (`PopoverItem.id`).
@@ -208,20 +259,29 @@ public final class AppModel {
     // MARK: Filters
     public var inboxFilter = InboxFilter()
     public var showReadInInbox = false
-    public var changeRequestFilter = ChangeRequestFilter()
+    /// Pull requests screen: your own PRs/MRs only; others' are on the Reviews screen (D54).
+    public var changeRequestFilter = ChangeRequestFilter(scope: .mine)
+    /// Reviews screen filters (provider, account, search; D53).
+    public var reviewFilter = ChangeRequestFilter()
+    /// Collapsed lanes of the Reviews screen ("Approved, watching" starts collapsed).
+    public var collapsedReviewLanes: Set<ReviewLane> = [.approved]
 
     // MARK: Presentation
     public var banners: [Banner] = []
+    /// The error message of the most recent failed `send` (also shown as a banner), for inline error states.
+    public private(set) var lastCommandError: String?
     /// Presented as the approval sheet.
     public var pendingPreview: ActionPreview?
     public var handoffOffer: HandoffOffer?
     /// A link to an unfamiliar host, presented as a confirmation alert before it opens.
     public var pendingLinkConfirmation: LinkConfirmation?
+    /// A PR/MR the owner is about to approve from the app; the confirmation alert is showing (D59).
+    public var pendingApproval: ChangeRequestKey?
     public var ruleEditor: RuleEditorContext?
     /// Presented as the connect-account sheet.
     public var connectSheetKind: ProviderKind?
     public var showCountInMenuBar = true
-    /// Agent picked in the handoff screen and the "Fix with AI" menu.
+    /// Agent picked in the handoff screen and the "Fix now" menu.
     public var selectedAgentKind: AgentKind?
     /// Tab of the change request panel next to the inbox list.
     public var changeRequestTab: ChangeRequestTab = .conversation
@@ -231,11 +291,73 @@ public final class AppModel {
     public var reviewSelectedFile: String?
     /// Collapsed popover sections.
     public var collapsedPopoverSections: Set<PopoverSection> = []
+    /// Approvals the owner has seen, per change request id (persisted; D47).
+    public var seenApprovals: [String: Set<String>] = [:] {
+        didSet {
+            let encoded = (try? JSONEncoder().encode(seenApprovals)).flatMap { String(data: $0, encoding: .utf8) }
+            environment.preferences.save(UIPreferenceKeys.seenApprovals, encoded)
+        }
+    }
+    /// True once existing approvals were recorded as seen (stored with them, so a fresh install starts quiet).
+    var approvalsBaselined: Bool {
+        get { environment.preferences.load(UIPreferenceKeys.seenApprovals) != nil }
+        set { if newValue, environment.preferences.load(UIPreferenceKeys.seenApprovals) == nil { environment.preferences.save(UIPreferenceKeys.seenApprovals, "{}") } }
+    }
+    /// Column widths the owner set by dragging a split line, per screen (persisted; D49).
+    public var splitWidths: [String: Double] = [:] {
+        didSet {
+            let encoded = (try? JSONEncoder().encode(splitWidths)).flatMap { String(data: $0, encoding: .utf8) }
+            environment.preferences.save(UIPreferenceKeys.splitWidths, splitWidths.isEmpty ? nil : encoded)
+        }
+    }
+    /// A pending "scroll to this thread / to the approvals" for the detail panel (D51).
+    public var detailFocusRequest: DetailFocusRequest?
+    /// The popover's view: Inbox sections or open pull requests (D48).
+    public var popoverTab: PopoverTab = .inbox
+    /// Collapsed change request groups in the Inbox (change request ids; expanded by default).
+    public var collapsedInboxGroups: Set<String> = []
+    /// Collapsed change request groups in the popover (`PopoverPRGroup.id`; expanded by default).
+    public var collapsedPopoverGroups: Set<String> = []
     /// Presents the setup assistant (first live launch without accounts, or Settings › General).
     public var showsOnboarding = false
     /// Settings › General › Text size (persisted; applied at the window and popover roots).
     public var textSize: TextSizePreference = .standard {
         didSet { environment.preferences.save(UIPreferenceKeys.textSize, textSize.rawValue) }
+    }
+    /// Settings › General › Appearance: follow macOS, or always light / dark (persisted).
+    public var appearance: AppearancePreference = .system {
+        didSet {
+            environment.preferences.save(UIPreferenceKeys.appearance, appearance.rawValue)
+            environment.applyAppearance(appearance)
+        }
+    }
+    /// Settings › General › Dark mode style (persisted). Root views re-render with `.id(darkStyle)` when it changes.
+    public var darkStyle: DarkStyle = .graphite {
+        didSet {
+            DarkStyle.current = darkStyle
+            environment.preferences.save(UIPreferenceKeys.darkStyle, darkStyle.rawValue)
+        }
+    }
+    /// The account whose avatar the sidebar shows (persisted; nil = the first account with an avatar).
+    public var avatarAccountID: String? {
+        didSet { environment.preferences.save(UIPreferenceKeys.avatarAccount, avatarAccountID) }
+    }
+    /// Sidebar collapsed to icons by the owner with the title bar toggle (persisted; D48).
+    public var sidebarCollapsed = false {
+        didSet { environment.preferences.save(UIPreferenceKeys.sidebarCollapsed, sidebarCollapsed ? "1" : nil) }
+    }
+
+    public func toggleSidebar() {
+        withAnimation(Motion.smooth) { sidebarCollapsed.toggle() }
+    }
+
+    /// Task screen: "Open in your coding agent" shown as a compact card (persisted).
+    public var handoffCollapsed = false {
+        didSet { environment.preferences.save(UIPreferenceKeys.handoffCollapsed, handoffCollapsed ? "1" : nil) }
+    }
+    /// Agent handoffs: through MergeCue MCP or with a self-contained prompt (D60, persisted).
+    public var agentPromptMode: AgentPromptMode = .mcp {
+        didSet { environment.preferences.save(UIPreferenceKeys.agentPromptMode, agentPromptMode == .mcp ? nil : agentPromptMode.rawValue) }
     }
     /// Settings › General › Global shortcut that opens the popover from anywhere (persisted).
     public var globalHotKey: HotKeyPreset = .defaultPreset {
@@ -275,6 +397,23 @@ public final class AppModel {
         self.isLoaded = initialState != nil
         self.textSize = environment.preferences.load(UIPreferenceKeys.textSize).flatMap(TextSizePreference.init(rawValue:)) ?? .standard
         self.globalHotKey = environment.preferences.load(UIPreferenceKeys.globalHotKey).flatMap(HotKeyPreset.init(rawValue:)) ?? .defaultPreset
+        self.appearance = environment.preferences.load(UIPreferenceKeys.appearance).flatMap(AppearancePreference.init(rawValue:)) ?? .system
+        self.darkStyle = environment.preferences.load(UIPreferenceKeys.darkStyle).flatMap(DarkStyle.init(rawValue:)) ?? .graphite
+        DarkStyle.current = darkStyle
+        environment.applyAppearance(appearance)
+        self.handoffCollapsed = environment.preferences.load(UIPreferenceKeys.handoffCollapsed) == "1"
+        self.agentPromptMode = environment.preferences.load(UIPreferenceKeys.agentPromptMode).flatMap(AgentPromptMode.init(rawValue:)) ?? .mcp
+        self.sidebarCollapsed = environment.preferences.load(UIPreferenceKeys.sidebarCollapsed) == "1"
+        self.detailTabsEnabled = environment.preferences.load(UIPreferenceKeys.detailTabs).map { $0 == "1" }
+        if let stored = environment.preferences.load(UIPreferenceKeys.splitWidths)?.data(using: .utf8),
+           let decoded = try? JSONDecoder().decode([String: Double].self, from: stored) {
+            self.splitWidths = decoded
+        }
+        self.avatarAccountID = environment.preferences.load(UIPreferenceKeys.avatarAccount)
+        if let stored = environment.preferences.load(UIPreferenceKeys.seenApprovals)?.data(using: .utf8),
+           let decoded = try? JSONDecoder().decode([String: Set<String>].self, from: stored) {
+            self.seenApprovals = decoded
+        }
     }
 
     // MARK: Lifecycle
@@ -299,6 +438,17 @@ public final class AppModel {
             }
         }
         await reload()
+        await askForNotificationsIfNeeded()
+    }
+
+    /// Live app with a connected account and macOS has never asked: ask now, so notifications can't stay
+    /// silently off when the setup assistant was skipped.
+    func askForNotificationsIfNeeded() async {
+        guard mode == .live, !state.accounts.isEmpty, environment.notificationPermission != nil else { return }
+        await refreshNotificationPermission()
+        guard notificationPermission == .notDetermined else { return }
+        _ = await send(.requestNotificationPermission)
+        await refreshNotificationPermission()
     }
 
     /// Stops observing the backend.
@@ -311,7 +461,12 @@ public final class AppModel {
 
     public func reload() async {
         let fresh = await backend.loadState()
-        apply(fresh)
+        // Cards slide in and out and counters roll when sync or a command changes the state (D41).
+        if environment.animatesChanges, isLoaded, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            withAnimation(Motion.smooth) { apply(fresh) }
+        } else {
+            apply(fresh)
+        }
     }
 
     /// Replaces the state and recomputes everything derived from it.
@@ -321,6 +476,7 @@ public final class AppModel {
         indexes = Indexes(newState)
         sections = PopoverDerivation.derive(from: newState, now: now)
         isLoaded = true
+        baselineApprovalsIfNeeded()
         if let selection = popoverSelection, !popoverRows.contains(where: { $0.id == selection }) {
             popoverSelection = nil
         }
@@ -346,7 +502,9 @@ public final class AppModel {
             await reload()
             return result
         } catch {
-            showBanner(.critical, (error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+            let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            lastCommandError = message
+            showBanner(.critical, message)
             await reload()
             return nil
         }
@@ -394,8 +552,9 @@ public final class AppModel {
         }
         if case .approvePreview = command { pendingPreview = nil }
         if case .declinePreview = command { pendingPreview = nil }
-        if let message = result.message {
-            showBanner(result.tone ?? (result.handoffCommand != nil || result.createdTaskID != nil ? .success : .neutral), message)
+        let tone = result.tone ?? (result.handoffCommand != nil || result.createdTaskID != nil ? .success : .neutral)
+        if let message = result.message, result.showsBanner(after: command, tone: tone) {
+            showBanner(tone, message)
         }
     }
 
@@ -469,7 +628,7 @@ public final class AppModel {
     /// Non-terminal task linked to an attention item, if any.
     public func activeTask(for item: AttentionItem) -> TaskRecord? {
         if let linked = task(item.linkedTaskID), !linked.task.isTerminal { return linked }
-        return state.tasks.first { $0.task.origin.attentionItemID == item.id && !$0.task.isTerminal }
+        return state.tasks.first { !$0.task.isTerminal && $0.task.coveredAttentionIDs.contains(item.id) }
     }
 
     /// Tasks created from a change request (newest first).
@@ -508,7 +667,7 @@ public final class AppModel {
         if let badge = mode.badgeText { parts[0] += " (\(badge.lowercased()))" }
         let needs = sections.count(.needsYou)
         let ready = sections.count(.ready)
-        let working = sections.count(.aiWorking)
+        let working = sections.count(.inProgress)
         if needs > 0 { parts.append("\(needs) need\(needs == 1 ? "s" : "") you") }
         if working > 0 { parts.append("\(working) in progress") }
         if ready > 0 { parts.append("\(ready) ready") }
@@ -526,8 +685,27 @@ public final class AppModel {
     // MARK: Popover keyboard navigation
 
     /// Rows visible in the popover (top 3 per section), in keyboard order.
+    /// The popover's Inbox rows after the shared All / Mine / Reviews filter (`inboxFilter.scope`, D54). Counts,
+    /// badges and the menu bar keep using the unfiltered `sections`.
+    public var popoverSections: PopoverSections {
+        let scope = inboxFilter.scope
+        guard scope != .all else { return sections }
+        let involvement = Dictionary(state.changeRequests.map { ($0.key, $0.summary.involvement) }, uniquingKeysWith: { first, _ in first })
+        let keep = { (item: PopoverItem) in scope.includes(involvement[item.changeRequest]) }
+        return PopoverSections(needsYou: sections.needsYou.filter(keep), inProgress: sections.inProgress.filter(keep),
+                               ready: sections.ready.filter(keep))
+    }
+
+    /// Whether the popover shows the review lanes: the Reviews tab, or the Inbox under the Reviews filter (D56).
+    public var popoverShowsReviewLanes: Bool {
+        popoverTab == .reviews || (popoverTab == .inbox && inboxFilter.scope == .reviewing)
+    }
+
     public var popoverRows: [PopoverItem] {
-        PopoverSection.allCases.filter { !collapsedPopoverSections.contains($0) }.flatMap { sections.items($0).prefix(Self.popoverRowLimit) }
+        guard popoverTab == .inbox, inboxFilter.scope != .reviewing else { return [] }
+        return PopoverSection.allCases.filter { !collapsedPopoverSections.contains($0) }.flatMap { section in
+            popoverGroups(section).filter { !collapsedPopoverGroups.contains($0.id) }.flatMap(\.items)
+        }
     }
 
     public static let popoverRowLimit = 3

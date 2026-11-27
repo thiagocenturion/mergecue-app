@@ -118,8 +118,18 @@ struct BitbucketMapper: Sendable {
             updatedAt: updatedAt,
             webURL: webURL,
             involvement: involvement,
-            versionToken: pr.updatedOn
+            versionToken: Self.versionToken(pr)
         )
+    }
+
+    /// The list-level change detector: `updated_on` plus the comment and open-task counts when Bitbucket sends
+    /// them (a new comment or task is detected from the listing even if `updated_on` did not move).
+    static func versionToken(_ pr: BBPullRequest) -> String? {
+        guard let updated = pr.updatedOn else { return nil }
+        var token = updated
+        if let comments = pr.commentCount { token += "|c\(comments)" }
+        if let tasks = pr.taskCount { token += "|t\(tasks)" }
+        return token
     }
 
     func headInfo(_ pr: BBPullRequest) -> HeadInfo {

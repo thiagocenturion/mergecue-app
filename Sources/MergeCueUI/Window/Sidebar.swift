@@ -1,16 +1,19 @@
 import MergeCueCore
 import SwiftUI
 
-/// Logo, navigation (⌘1–⌘5), connected accounts with their sync status, the non-live badge and the sync footer.
+/// Logo, navigation (⌘1–⌘6), connected accounts with their sync status, the non-live badge and the sync footer.
 /// In a narrow window (`compact`) it shows icons only; labels move to tooltips and VoiceOver.
 struct Sidebar: View {
     let model: AppModel
     var compact = false
 
+    /// Gap between the floating sidebar panel and the window edges.
+    static let floatingInset: CGFloat = 8
+
     var body: some View {
         VStack(alignment: compact ? .center : .leading, spacing: 0) {
-            Color.clear.frame(height: MainWindowMetrics.titlebarInset)
-            SidebarLogo(compact: compact)
+            Color.clear.frame(height: 16)
+            SidebarProfile(model: model, compact: compact)
                 .padding(.bottom, compact ? 18 : 26)
             ScrollView(.vertical) {
                 VStack(alignment: compact ? .center : .leading, spacing: 0) {
@@ -18,7 +21,7 @@ struct Sidebar: View {
                         ForEach(MainScreen.allCases) { screen in
                             SidebarNavItem(screen: screen, isSelected: model.screen == screen, badge: badge(for: screen), compact: compact) {
                                 model.screen = screen
-                                if screen == .tasks { model.selectedTaskID = nil }
+                                if screen == .tasks { model.selectedTaskID = nil; model.showsFinishedTasks = false }
                             }
                         }
                     }
@@ -50,6 +53,7 @@ struct Sidebar: View {
         switch screen {
         case .inbox: model.sections.needsYou.filter { if case .attention = $0.source { true } else { false } }.count
         case .tasks: model.sections.count(.ready) + model.state.tasks.filter { [.blocked, .failed, .stale].contains($0.task.state) }.count
+        case .reviews: model.reviewQueue.needsYouCount
         case .rules: model.pendingRuleProposals.count
         case .changeRequests, .settings: 0
         }
@@ -116,16 +120,9 @@ struct SidebarNavItem: View {
             .padding(.vertical, 6)
             .frame(minHeight: 42)
             .frame(maxWidth: compact ? 52 : nil)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isSelected ? Theme.surfaceSelected : (isHovering ? Theme.surfaceHover : .clear))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(isSelected ? Theme.accent.opacity(0.35) : .clear, lineWidth: 1)
-            )
+            .selectableGlass(isSelected: isSelected, isHovering: isHovering, idle: false)
         }
-        .buttonStyle(PlainRowButtonStyle(cornerRadius: 10))
+        .buttonStyle(PlainRowButtonStyle(cornerRadius: Theme.radius))
         .onHover { isHovering = $0 }
         .keyboardShortcut(KeyEquivalent(screen.shortcutDigit), modifiers: .command)
         .help("\(screen.title) (⌘\(String(screen.shortcutDigit)))")
@@ -237,12 +234,12 @@ struct SidebarAccountRow: View {
                             .offset(x: 4, y: 4)
                     }
                     .padding(8)
-                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(isHovering ? Theme.surfaceHover : .clear))
+                    .background(SmoothRect().fill(isHovering ? Theme.surfaceHover : .clear))
             } else {
                 row
             }
         }
-        .buttonStyle(PlainRowButtonStyle(cornerRadius: 10))
+        .buttonStyle(PlainRowButtonStyle(cornerRadius: Theme.radius))
         .onHover { isHovering = $0 }
         .help("\(account.kind.displayName) · \(account.account.displayLabel): \(status)")
         .accessibilityLabel("\(account.kind.displayName) account \(account.account.displayLabel), \(status)")
@@ -276,7 +273,7 @@ struct SidebarAccountRow: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .frame(minHeight: Self.minHeight)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(isHovering ? Theme.surfaceHover : .clear))
+            .background(SmoothRect().fill(isHovering ? Theme.surfaceHover : .clear))
     }
 
     static let spacing: CGFloat = 10

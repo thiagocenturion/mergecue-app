@@ -24,6 +24,7 @@ extension AppModel {
     public func popoverWillShow(fromKeyboard: Bool) {
         popoverPresentationCount += 1
         popoverSelection = nil
+        userDidReturn()
         if fromKeyboard { movePopoverSelection(by: 1) }
     }
 
@@ -35,10 +36,11 @@ extension AppModel {
 
     // MARK: Inbox
 
-    /// Inbox items in the order the list shows them (day groups, current filters).
+    /// Inbox items in the order the list shows them (change request groups, current filters); items of collapsed
+    /// groups are skipped.
     public var inboxKeyboardOrder: [String] {
         let result = InboxQuery.run(state: state, filter: inboxFilter, now: now, showRead: showReadInInbox)
-        return InboxDayGroup.make(result.visibleItems, now: now).flatMap { $0.items.map(\.id) }
+        return result.prGroups(now: now).filter { !collapsedInboxGroups.contains($0.changeRequest.id) }.flatMap { $0.items.map(\.id) }
     }
 
     public func moveInboxSelection(by delta: Int) {
@@ -51,8 +53,8 @@ extension AppModel {
     public func openInboxItem(_ id: String) {
         selectedAttentionID = id
         changeRequestTab = .conversation
-        if let item = attentionItem(id), item.isUnread {
-            Task { await send(.markRead(attentionID: id, read: true)) }
+        if let item = attentionItem(id), conversationIsUnread(item) {
+            Task { await markConversation(item, read: true) }
         }
     }
 
@@ -60,15 +62,16 @@ extension AppModel {
         if let id = selectedAttentionID { openInboxItem(id) }
     }
 
-    /// ⌘↩: the selected item's primary action — its active task, else "Fix with AI" (or the item's other task type).
+    /// ⌘↩: the selected item's primary action — its active task, else "Fix now" (or the item's other task type).
     public func performInboxPrimaryAction() async {
         guard let item = attentionItem(selectedAttentionID) else { return }
-        if let task = activeTask(for: item) {
+        if let task = activeConversationTask(for: item) {
             showTask(task.id)
             return
         }
         switch PopoverDerivation.primaryAction(for: item) {
         case .createTask(let id, let type): await createTaskAndShow(attentionID: id, type: type)
+        case .reviewWithAI(let key): startReview(key)
         default: openInboxItem(item.id)
         }
     }
@@ -82,6 +85,17 @@ extension AppModel {
 
     public func moveChangeRequestSelection(by delta: Int) {
         guard let next = KeyboardSelection.step(changeRequestKeyboardOrder, from: selectedChangeRequestID, by: delta) else { return }
+        if next != selectedChangeRequestID { changeRequestTab = .conversation }
+        selectedChangeRequestID = next
+    }
+
+    /// ↑/↓ on the Reviews screen: the next PR/MR in lane order (collapsed lanes are skipped).
+    public func moveReviewSelection(by delta: Int, in lanes: ReviewQueue? = nil) {
+        let queue = lanes ?? reviewQueue
+        let order = ReviewQueue.lanes
+            .filter { !collapsedReviewLanes.contains($0) }
+            .flatMap { queue.entries($0).map(\.id) }
+        guard let next = KeyboardSelection.step(order, from: selectedChangeRequestID, by: delta) else { return }
         if next != selectedChangeRequestID { changeRequestTab = .conversation }
         selectedChangeRequestID = next
     }
@@ -174,30 +188,36 @@ extension AppModel {
         switch screen {
         case .inbox:
             if let item = attentionItem(selectedAttentionID) {
-                title = "Inbox — \(item.repoFullPath) \(item.providerKind.formattedNumber(item.number))"
+                title = "Inbox · \(item.repoFullPath) \(item.providerKind.formattedNumber(item.number))"
             } else {
                 title = "Inbox"
             }
+        case .reviews:
+            if let snapshot = snapshot(id: selectedChangeRequestID) {
+                title = "\(MainScreen.reviews.title) · \(snapshot.summary.repository.fullPath) \(snapshot.summary.providerKind.formattedNumber(snapshot.summary.key.number))"
+            } else {
+                title = MainScreen.reviews.title
+            }
         case .changeRequests:
             if let snapshot = snapshot(id: selectedChangeRequestID) {
-                title = "\(MainScreen.changeRequests.title) — \(snapshot.summary.repository.fullPath) \(snapshot.summary.providerKind.formattedNumber(snapshot.summary.key.number))"
+                title = "\(MainScreen.changeRequests.title) · \(snapshot.summary.repository.fullPath) \(snapshot.summary.providerKind.formattedNumber(snapshot.summary.key.number))"
             } else {
                 title = MainScreen.changeRequests.title
             }
         case .tasks:
             if let record = task(selectedTaskID) {
-                title = "Task \(record.id.rawValue) — \(TaskStateStyle.label(record))"
+                title = "Task \(record.id.rawValue) · \(TaskStateStyle.label(record))"
             } else {
                 title = "Tasks"
             }
         case .rules:
             if let id = selectedRuleID, let rule = state.rules.first(where: { $0.id == id }) {
-                title = "Rules — \(rule.name)"
+                title = "Rules · \(rule.name)"
             } else {
                 title = "Rules"
             }
         case .settings:
-            title = "Settings — \(settingsTab.title)"
+            title = "Settings · \(settingsTab.title)"
         }
         return (title, subtitle)
     }

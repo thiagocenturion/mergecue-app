@@ -28,7 +28,7 @@ public enum TaskType: String, Codable, Sendable, CaseIterable {
         case .codeSuggestion: .addressSuggestion
         case .reviewerQuestion, .reply: .draftReply
         case .ciFailed: .investigateCI
-        case .reviewRequested, .readyToMerge, .mergeConflict: nil
+        case .reviewRequested, .readyToMerge, .mergeConflict, .reapprovalNeeded, .updatedSinceReview: nil
         }
     }
 }
@@ -91,6 +91,9 @@ public enum TaskTrigger: Codable, Sendable, Hashable {
     case markDone
     // Lifecycle
     case cancel, dismiss, retry, reopen, block, unblock
+    /// User: "In progress" set by hand (the owner works on it, or uses an agent outside MergeCue). No lease, so it
+    /// never goes stale.
+    case startManually
 
     /// Every concrete trigger value, including each associated-value variant (for exhaustive tables/tests).
     public static let allTriggers: [TaskTrigger] =
@@ -98,7 +101,7 @@ public enum TaskTrigger: Codable, Sendable, Hashable {
          .fail(retryable: true), .fail(retryable: false), .agentBlocked, .leaseExpired]
         + RemoteActionKind.allCases.map { .approveAction($0) }
         + [.rejectResult, .actionSucceeded, .actionBlocked, .actionFailed, .markDone,
-           .cancel, .dismiss, .retry, .reopen, .block, .unblock]
+           .cancel, .dismiss, .retry, .reopen, .block, .unblock, .startManually]
 
     /// Stable snake_case name (JSON `type`).
     public var name: String {
@@ -124,6 +127,7 @@ public enum TaskTrigger: Codable, Sendable, Hashable {
         case .reopen: "reopen"
         case .block: "block"
         case .unblock: "unblock"
+        case .startManually: "start_manually"
         }
     }
 

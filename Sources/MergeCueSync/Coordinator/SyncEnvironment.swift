@@ -14,9 +14,16 @@ final class SyncEnvironment: Sendable {
         var configuration: SyncConfiguration
         var pausedUntil: Date?
         var preferences: NotificationPreferences = .allEnabled
-        /// Scopes listed besides "authored". `.all` until the engine forwards the owner's choice.
-        var tracking: TrackingPreferences = .all
+        /// Scopes listed besides "authored". Authored only (the live default) until the engine forwards the owner's
+        /// choice, so a sync that starts before the engine never lists review requests across every repository.
+        var tracking: TrackingPreferences = .authoredOnly
         var hotUntil: Date?
+        /// Change requests with an active agent task (details refresh every cycle).
+        var hotChangeRequests: Set<ChangeRequestKey> = []
+        /// Days off from the chosen calendars (`DayKey` → event title), for `AutoSyncSchedule.pauseOnHolidays`.
+        var holidays: [String: String] = [:]
+        /// Calendar the schedule rules are evaluated in (the user's current calendar and time zone).
+        var calendar: Calendar = .autoupdatingCurrent
         var eventHandler: EventHandler?
     }
 
@@ -25,6 +32,11 @@ final class SyncEnvironment: Sendable {
     let clock: any MCClock
     let onChange: @Sendable (EngineChange) -> Void
     let jitter: @Sendable () -> Double
+    /// Rolling per-account request counts (shown in the UI, drives the budget slowdown).
+    let requestLedger: ProviderRequestLedger
+    /// True when nobody records HTTP requests into `requestLedger` (tests, custom factories): Sync then records
+    /// one request per provider call itself.
+    let countsProviderCalls: Bool
     private let settings: OSAllocatedUnfairLock<Settings>
 
     init(
@@ -33,8 +45,11 @@ final class SyncEnvironment: Sendable {
         clock: any MCClock,
         configuration: SyncConfiguration,
         onChange: @escaping @Sendable (EngineChange) -> Void,
-        jitter: @escaping @Sendable () -> Double = { Double.random(in: 0..<1) }
+        jitter: @escaping @Sendable () -> Double = { Double.random(in: 0..<1) },
+        requestLedger: ProviderRequestLedger? = nil
     ) {
+        self.requestLedger = requestLedger ?? ProviderRequestLedger()
+        self.countsProviderCalls = requestLedger == nil
         self.database = database
         self.notifier = notifier
         self.clock = clock
@@ -47,6 +62,24 @@ final class SyncEnvironment: Sendable {
 
     func update(_ change: @Sendable (inout Settings) -> Void) {
         settings.withLock { change(&$0) }
+    }
+
+    /// Records one provider call of `account` when Sync does the accounting itself.
+    func recordProviderCall(_ account: AccountKey) {
+        guard countsProviderCalls else { return }
+        requestLedger.record(account, at: clock.now)
+    }
+
+    /// The automatic-sync pause in effect at `now` (manual pause or schedule rule), nil = automatic sync runs.
+    func autoSyncPause(now: Date) -> AutoSyncPause? {
+        let current = current
+        return current.tracking.autoSyncPause(at: now, calendar: current.calendar, holidays: current.holidays)
+    }
+
+    /// When the automatic-sync pause may change next (nil = only when the preferences change).
+    func nextAutoSyncChange(now: Date) -> Date? {
+        let current = current
+        return current.tracking.nextAutoSyncChange(after: now, calendar: current.calendar, holidays: current.holidays)
     }
 
     var notificationPolicy: NotificationPolicy {

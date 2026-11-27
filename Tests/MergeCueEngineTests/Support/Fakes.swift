@@ -80,6 +80,8 @@ actor FakeSync: SyncControlling {
     func setNotificationPreferences(_ preferences: NotificationPreferences) async { self.preferences = preferences }
     func setQuietHours(_ quietHours: QuietHours?) async { self.quietHours = .some(quietHours) }
     func setTrackingPreferences(_ preferences: TrackingPreferences) async { tracking = preferences }
+    private(set) var activeChangeRequests: Set<ChangeRequestKey>?
+    func setActiveChangeRequests(_ keys: Set<ChangeRequestKey>) async { activeChangeRequests = keys }
 
     func setStatuses(_ statuses: [AccountSyncStatus]) { statusList = statuses }
 }
@@ -232,6 +234,11 @@ struct FakeProvider: ReviewProvider {
         world.state.update { $0.writes.append(.init(kind: "merge", target: changeRequest.id, body: expectedHeadSHA)) }
     }
 
+    func approve(_ changeRequest: ChangeRequestKey, expectedHeadSHA: String) async throws {
+        if let error = world.state.get().writeError { throw error }
+        world.state.update { $0.writes.append(.init(kind: "approve", target: changeRequest.id, body: expectedHeadSHA)) }
+    }
+
     func fetchHeadSpec(for snapshot: ChangeRequestSnapshot) -> FetchHeadSpec? {
         guard world.state.get().fetchable else { return nil }
         return FetchHeadSpec(
@@ -280,6 +287,8 @@ final class FakeWorkspace: WorkspaceInspecting, @unchecked Sendable {
         /// Pins passed to the pinned `changes` (S2).
         var pinnedCalls: [(gitDirs: WorktreeGitDirs?, checkoutPath: String?)] = []
         var gitDirTampered = false
+        /// Single-pass scans requested (`scanCheckouts`) and the repositories each one matched.
+        var scanCalls: [[RepoKey]] = []
     }
 
     let state = Locked(State())
@@ -314,6 +323,19 @@ final class FakeWorkspace: WorkspaceInspecting, @unchecked Sendable {
 
     func suggestMappings(for repo: Repository, searchRoots: [String]) async -> [MappingSuggestion] {
         searchRoots.map { MappingSuggestion(checkoutPath: $0 + "/" + repo.name, confidence: state.get().suggestionConfidence, reason: "name match") }
+    }
+
+    func scanCheckouts(
+        for repos: [Repository], searchRoots: [String], progress: @escaping @Sendable (CheckoutScanProgress) -> Void
+    ) async -> CheckoutScanResult {
+        state.update { $0.scanCalls.append(repos.map(\.key)) }
+        progress(CheckoutScanProgress(directoriesScanned: 7, checkoutsFound: repos.count))
+        var suggestions: [RepoKey: [MappingSuggestion]] = [:]
+        for repo in repos {
+            suggestions[repo.key] = await suggestMappings(for: repo, searchRoots: searchRoots)
+        }
+        progress(CheckoutScanProgress(directoriesScanned: 7, checkoutsFound: repos.count, isMatching: true))
+        return CheckoutScanResult(suggestions: suggestions, directoriesScanned: 7, checkoutsFound: repos.count)
     }
 
     func match(repo: Repository, checkoutPath: String) async -> MappingSuggestion {

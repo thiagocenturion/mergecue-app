@@ -5,7 +5,7 @@ import MergeCueStore
 extension MergeCueEngine {
     // MARK: Create
 
-    /// "Fix with AI" / "Investigate with AI" / "Draft reply" / "Address with AI": creates a task in
+    /// "Fix now" / "Investigate with AI" / "Draft reply" / "Address with AI": creates a task in
     /// `waiting_for_agent` (the only creation state) from an attention item.
     ///
     /// - `type` overrides `TaskType.inferred(from: item.reason)`.
